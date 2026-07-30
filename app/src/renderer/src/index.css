@@ -1,0 +1,139 @@
+@import 'tailwindcss';
+
+/* Catppuccin Mocha — 어두운 배경에서 본문·보조 텍스트 대비가 좋은 팔레트 */
+@theme {
+  --color-crust:    #11111b;
+  --color-mantle:   #181825;
+  --color-base:     #1e1e2e;
+  --color-surface0: #313244;
+  --color-surface1: #45475a;
+  --color-surface2: #585b70;
+  --color-overlay0: #6c7086;
+  --color-overlay1: #7f849c;
+  --color-overlay2: #9399b2;
+  --color-subtext0: #a6adc8;
+  --color-subtext1: #bac2de;
+  --color-text:     #cdd6f4;
+
+  --color-blue:     #89b4fa;
+  --color-sapphire: #74c7ec;
+  --color-sky:      #89dceb;
+  --color-teal:     #94e2d5;
+  --color-green:    #a6e3a1;
+  --color-yellow:   #f9e2af;
+  --color-peach:    #fab387;
+  --color-maroon:   #eba0ac;
+  --color-red:      #f38ba8;
+  --color-mauve:    #cba6f7;
+  --color-lavender: #b4befe;
+}
+
+/* 라이트 모드 — Catppuccin Latte 기반.
+   원본 팔레트는 문서용이라 UI 에서는 경계선·보조 텍스트가 흐리다.
+   surface / overlay 계열을 한 단계씩 진하게 조정했다. */
+:root[data-theme='light'] {
+  --color-crust:    #dce0e8;
+  --color-mantle:   #e6e9ef;
+  --color-base:     #f5f6f8;
+  --color-surface0: #b9bec9;  /* 경계선 */
+  --color-surface1: #a2a8b6;
+  --color-surface2: #8b91a1;
+  --color-overlay0: #767b8d;
+  --color-overlay1: #626779;  /* 흐린 라벨 */
+  --color-overlay2: #575b6c;
+  --color-subtext0: #4a4e60;
+  --color-subtext1: #3b3f4f;
+  --color-text:     #2a2d3c;  /* 본문 */
+
+  --color-blue:     #1a5fd8;
+  --color-sapphire: #17798c;
+  --color-sky:      #0284a8;
+  --color-teal:     #12787f;
+  --color-green:    #35871f;
+  --color-yellow:   #b8730f;
+  --color-peach:    #d9520a;
+  --color-maroon:   #c93a4a;
+  --color-red:      #c00c33;
+  --color-mauve:    #7530d6;
+  --color-lavender: #4f63e0;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  /* 최소 글씨 14px */
+  font-size: 14px;
+  background: var(--color-base);
+  color: var(--color-text);
+  font-family: 'Pretendard', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 스크롤바 — 배경에 묻히되 호버 시 또렷하게 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-surface1) transparent;
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--color-surface1);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-overlay0);
+  background-clip: content-box;
+}
+::-webkit-scrollbar-corner { background: transparent; }
+
+textarea { resize: none; }
+
+/* shiki 출력 */
+.shiki-wrap pre {
+  margin: 0;
+  padding: 10px 12px;
+  font-family: ui-monospace, 'Cascadia Code', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+/* shiki 는 줄 span 사이에 개행 문자를 넣는다.
+   .line 을 block 으로 만들면 그 개행이 한 줄 더 먹혀 두 줄로 벌어진다.
+   code 에서 개행을 접고(normal), 각 줄 안에서만 공백을 보존(pre)한다. */
+.shiki-wrap code { display: block; white-space: normal; }
+.shiki-wrap .line { display: block; white-space: pre; min-height: 1.6em; }
+
+/* 줄 번호 */
+.shiki-lines pre { padding-left: 0; }
+.shiki-lines .line::before {
+  content: attr(data-line);
+  display: inline-block;
+  width: 3ch;
+  margin-right: 12px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--color-surface2);
+  border-right: 1px solid var(--color-surface0);
+  user-select: none;
+}
+
+/* diff — 추가/삭제 줄 전체를 색으로 구분 */
+.shiki-wrap .diff-add {
+  background: color-mix(in srgb, var(--color-green) 28%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-green);
+}
+.shiki-wrap .diff-del {
+  background: color-mix(in srgb, var(--color-red) 28%, transparent);
+  box-shadow: inset 3px 0 0 var(--color-red);
+}
+/* shiki 가 넣은 글자색보다 우선해 대비를 확보한다 */
+.shiki-wrap .diff-add span { color: var(--color-text) !important; }
+.shiki-wrap .diff-del span { color: var(--color-text) !important; }
+.shiki-wrap .diff-hunk {
+  background: color-mix(in srgb, var(--color-sapphire) 20%, transparent);
+}
+.shiki-wrap .diff-hunk span { color: var(--color-subtext0) !important; }
+.shiki-wrap .diff-file span { color: var(--color-overlay1) !important; font-weight: 600; }

@@ -1,0 +1,153 @@
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import type { DetectedRunner, InstallMethod, ProviderId } from '@shared/session'
+
+const exec = promisify(execFile)
+
+/** 실행 경로로 설치 방식을 추정한다. bun 설치본이 불안정한 사례가 있어 구분해 표시한다. */
+function guessInstallMethod(executable: string): InstallMethod {
+  const p = executable.toLowerCase()
+  if (p.includes('.bun')) return 'bun'
+  if (p.includes('npm') || p.includes('node_modules')) return 'npm'
+  if (!p) return 'unknown'
+  return 'native'
+}
+
+async function tryVersion(cmd: string, args: string[]): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec(cmd, args, { timeout: 10_000, windowsHide: true })
+    // "2.1.220 (Claude Code)" → "2.1.220"
+    return stdout.trim().split(/\s+/)[0] || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Windows PATH 상의 실행 파일 탐지 */
+async function detectWindows(provider: ProviderId, bin: string): Promise<DetectedRunner[]> {
+  if (process.platform !== 'win32') return []
+  try {
+    const { stdout } = await exec('where', [bin], { timeout: 10_000, windowsHide: true })
+    // where 는 셸 래퍼(claude)와 .cmd 를 함께 반환한다. 실행 가능한 .cmd 를 우선한다.
+    const paths = stdout
+      .split(/\r?\n/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const executable = paths.find((p) => p.toLowerCase().endsWith('.cmd')) ?? paths[0]
+    if (!executable) return []
+    return [
+      {
+        id: `win:${provider}`,
+        kind: 'windows-native',
+        provider,
+        executable,
+        version: await tryVersion(executable, ['--version']),
+        installMethod: guessInstallMethod(executable),
+        available: true,
+      },
+    ]
+  } catch {
+    return []
+  }
+}
+
+/** 설치된 WSL 배포판 목록. wsl.exe -l -q 는 UTF-16LE 로 출력한다. */
+async function listWslDistros(): Promise<string[]> {
+  if (process.platform !== 'win32') return []
+  try {
+    const { stdout } = await exec('wsl.exe', ['-l', '-q'], {
+      timeout: 15_000,
+      windowsHide: true,
+      encoding: 'buffer',
+    })
+    return Buffer.from(stdout as unknown as Buffer)
+      .toString('utf16le')
+      .split(/\r?\n/)
+      .map((s) => s.replace(/\0/g, '').trim())
+      .filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+async function detectWsl(provider: ProviderId, bin: string): Promise<DetectedRunner[]> {
+  const distros = await listWslDistros()
+  const found: DetectedRunner[] = []
+
+  for (const distro of distros) {
+    try {
+      const { stdout } = await exec(
+        'wsl.exe',
+        ['-d', distro, '--', 'bash', '-lc', `command -v ${bin}`],
+        { timeout: 15_000, windowsHide: true },
+      )
+      const executable = stdout.trim().split(/\r?\n/)[0]
+      if (!executable) continue
+
+      let version: string | undefined
+      try {
+        const v = await exec(
+          'wsl.exe',
+          ['-d', distro, '--', 'bash', '-lc', `${bin} --version`],
+          { timeout: 15_000, windowsHide: true },
+        )
+        version = v.stdout.trim().split(/\s+/)[0] || undefined
+      } catch {
+        version = undefined
+      }
+
+      found.push({
+        id: `wsl:${distro}:${provider}`,
+        kind: 'wsl',
+        provider,
+        distro,
+        executable,
+        version,
+        installMethod: guessInstallMethod(executable),
+        available: true,
+      })
+    } catch {
+      // 해당 배포판에 미설치 — 무시
+    }
+  }
+  return found
+}
+
+/** 리눅스/맥에서 앱을 직접 실행하는 경우 */
+async function detectPosix(provider: ProviderId, bin: string): Promise<DetectedRunner[]> {
+  if (process.platform === 'win32') return []
+  try {
+    const { stdout } = await exec('bash', ['-lc', `command -v ${bin}`], { timeout: 10_000 })
+    const executable = stdout.trim().split(/\r?\n/)[0]
+    if (!executable) return []
+    return [
+      {
+        id: `posix:${provider}`,
+        kind: 'custom',
+        provider,
+        executable,
+        version: await tryVersion(executable, ['--version']),
+        installMethod: guessInstallMethod(executable),
+        available: true,
+      },
+    ]
+  } catch {
+    return []
+  }
+}
+
+const TARGETS: Array<{ provider: ProviderId; bin: string }> = [
+  { provider: 'claude-cli', bin: 'claude' },
+  { provider: 'codex-cli', bin: 'codex' },
+]
+
+export async function detectRunners(): Promise<DetectedRunner[]> {
+  const results = await Promise.all(
+    TARGETS.flatMap(({ provider, bin }) => [
+      detectWindows(provider, bin),
+      detectWsl(provider, bin),
+      detectPosix(provider, bin),
+    ]),
+  )
+  return results.flat()
+}

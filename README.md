@@ -1,0 +1,198 @@
+<div align="center">
+
+# Agent Workspace
+
+**여러 프로젝트의 Claude Code 세션을 한 화면에서 관리하는 데스크톱 앱**
+
+터미널을 프로젝트 수만큼 띄우는 대신, 하나의 창에서<br/>
+프로젝트를 넘나들며 세션을 굴리고 · 권한을 통제하고 · 산출물을 모아 봅니다.
+
+<br/>
+
+![Electron](https://img.shields.io/badge/Electron-43-47848F?logo=electron&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-7-3178C6?logo=typescript&logoColor=white)
+![Tailwind](https://img.shields.io/badge/Tailwind-4-06B6D4?logo=tailwindcss&logoColor=white)
+![SQLite](https://img.shields.io/badge/node%3Asqlite-내장-003B57?logo=sqlite&logoColor=white)
+
+</div>
+
+---
+
+## 왜 만들었나
+
+CLI 하나로 코딩 에이전트를 쓰는 건 충분히 잘 됩니다. 문제는 **프로젝트가 여러 개일 때**입니다.
+
+- 어느 창에서 뭐가 돌고 있는지 기억해야 한다
+- 승인 요청이 스크롤에 묻혀 지나간다
+- 지난주에 뭘 시켰는지 찾으려면 터미널 히스토리를 뒤져야 한다
+- 코드 블록이 대화에 섞여 흘러가 버린다
+
+이 앱은 그 네 가지를 화면 구조로 푼 것입니다.
+
+---
+
+## 무엇을 하나
+
+### 실행 환경을 사람마다 다르게
+
+같은 Windows PC라도 누구는 네이티브, 누구는 WSL에 CLI를 깔아 씁니다.
+설치된 실행 환경을 **자동 탐지**하고, **프로젝트별로** 무엇을 쓸지 첫 지시 시점에 정합니다.
+
+```
+Provider          Runner
+claude-cli   ×    windows-native
+codex-cli         wsl (배포판별)
+                  custom
+```
+
+WSL의 CLI를 부를 때는 반드시 **탐지된 절대경로**로 실행합니다.
+`wsl -- claude` 는 interop PATH 때문에 Windows 쪽 설치본을 잡아 다른 자격증명으로 돌아갑니다.
+
+### 권한을 가로채서 묻는다
+
+에이전트가 파일을 쓰거나 명령을 돌리기 직전에 **앱이 먼저 받습니다.**
+
+```mermaid
+flowchart LR
+    A[Agent] -->|PreToolUse hook| B[요청 파일]
+    B --> C{앱: 위험도 판정}
+    C -->|허용| D[도구 실행]
+    C -->|이번만/세션 내내| D
+    C -->|거부 + 사유| E[에이전트에게 사유 전달]
+    E --> A
+```
+
+거부해도 세션은 죽지 않습니다. 사유를 되돌려주면 에이전트가 다른 방법을 찾습니다.
+요청·응답은 **파일**로 주고받습니다 — WSL2는 NAT라 WSL→Windows localhost가 통하지 않습니다.
+
+### 대화와 산출물을 분리
+
+긴 코드 블록이 대화에 섞여 스크롤로 흘러가지 않게, 오른쪽 **Artifact 패널**로 뺍니다.
+"나중에 다시 볼 가치가 있는 것"만 담습니다.
+
+| 도구 | Artifact |
+|---|---|
+| Write (신규) | `code` — 확장자로 언어 추론 |
+| Write/Edit (수정) | `diff` — 추가/삭제 줄 배경색 |
+| Bash | 8줄 초과 또는 stderr 있을 때만 `log` |
+| Read · Glob · Grep | 없음 (입력·탐색) |
+
+패널은 접을 수 있고, 경계선을 끌어 폭을 조절합니다.
+
+### Project Agent — 파일 하나가 곧 에이전트
+
+역할·도구 권한·완료 조건을 `<project>/.claude/agents/<name>.md` 에 둡니다.
+**앱 없이도 `claude --agent <name>` 으로 그대로 동작**하고, 파일 하나만 옮기면 공유됩니다.
+
+```yaml
+---
+name: refactor-agent
+description: 리팩터링 전담. 기능 변경 없이 구조만 정리한다.
+model: opus
+x-workspace:                      # 앱 전용 설정은 표준 필드를 안 건드리게 분리
+  allowedTools: [Read, Edit]
+  completion: 테스트 통과 후 변경 요약 보고
+---
+```
+
+### 홈에서 지시하면 에이전트를 찾아준다
+
+프로젝트를 먼저 고르지 않고 "무엇을 해야 하는지"만 적으면,
+등록된 모든 프로젝트의 에이전트 중 맞는 것을 찾아 제안합니다.
+
+```
+지시 입력
+  → 전 프로젝트의 .claude/agents/*.md 수집
+  → 후보 1개면 모델 호출 없이 / 여럿이면 haiku 1회로 선택
+  → 확인 카드 (제안 + 이유 + 직접 고르기)
+  → [실행] 눌러야 세션 시작
+```
+
+**자동 실행하지 않습니다.** 실행 대상 프로젝트가 바뀌는 동작이라 확인을 거칩니다.
+맞는 에이전트가 없으면 없다고 답합니다 — 억지로 고르지 않습니다.
+
+### 그 밖에
+
+- **멀티 세션** — 여러 프로젝트에서 동시에 굴리고, 같은 파일을 건드리면 경고
+- **Git 스냅샷** — 세션 시작 시점을 찍어두고 "이 세션이 바꾼 것"만 diff로
+- **이미지 첨부·주석** — 드래그앤드롭 / 붙여넣기, 캔버스에 화살표·텍스트
+- **Command Palette** — `Ctrl + Space`
+- **다크 / 라이트** — Catppuccin Mocha · Latte
+- **비용·한도** — 세션별 비용과 rate limit 진행률
+
+---
+
+## 구조
+
+```
+┌────────┬──────────────────────┬─────────┐
+│  Rail  │  Session Tabs        │         │
+│        ├──────────────────────┼─────────┤
+│ 프로젝트│  Conversation        │Artifacts│
+│ 승인   │                      │  (접기) │
+│ 실행중 ├──────────────────────┤         │
+│ 사용량 │  Prompt              │         │
+└────────┴──────────────────────┴─────────┘
+```
+
+```
+app/src/
+├── main/                  Electron 메인
+│   ├── adapters/          CLI 어댑터 (stream-json → 앱 이벤트)
+│   ├── approval-broker.ts 승인 요청 감시·응답
+│   ├── router.ts          홈 지시 → 에이전트 라우팅
+│   ├── runner-detect.ts   실행 환경 탐지
+│   ├── session-manager.ts 세션 생명주기
+│   ├── agents.ts          .claude/agents 읽기·쓰기
+│   ├── db.ts              node:sqlite
+│   └── git.ts             스냅샷·diff
+├── preload/               contextBridge
+├── renderer/              React UI
+└── shared/                양쪽이 함께 쓰는 타입
+```
+
+---
+
+## 시작하기
+
+**필요한 것** — Node 20+, 그리고 Claude Code CLI가 Windows 또는 WSL에 설치되어 있을 것.
+
+```bash
+cd app
+npm install
+npm run dev
+```
+
+```bash
+npm run build       # 타입 검사 + 번들
+npm run typecheck   # 타입 검사만
+```
+
+로그인은 CLI가 알아서 안내합니다. 세션이 `auth-required` 로 끝나면 화면에 안내 카드가 뜹니다.
+
+---
+
+## 설계 메모
+
+만들면서 밟은 함정과 그 대응을 남겨뒀습니다. 같은 스택을 쓴다면 몇 개는 그대로 겪습니다.
+
+| 증상 | 원인 |
+|---|---|
+| `spawn EINVAL` | Node 보안 수정 이후 `.cmd`/`.bat` 직접 spawn 불가 → `cmd.exe /c` 로 감싼다 |
+| WSL 세션이 인증 실패 | `wsl -- claude` 가 Windows 설치본을 잡는다 → 탐지된 절대경로로 |
+| 문법 강조가 조용히 실패 | shiki 기본 엔진이 WASM → 렌더러 CSP가 차단. JS 정규식 엔진으로 교체 |
+| 코드가 한 줄씩 떠 보임 | shiki는 줄 사이에 개행을 넣는다. `.line{display:block}` 이면 두 줄이 된다 |
+| 큰 이미지 첨부 실패 | `String.fromCharCode(...arr)` 인자 개수 초과 → 청크로 나눠 base64 |
+| 네이티브 모듈 빌드 불가 | TLS 검사 프록시 뒤에서는 헤더를 못 받는다 → `node:sqlite` 로 우회 |
+
+**조용한 폴백을 만들지 않는다** 가 이 중 여러 건에서 얻은 교훈입니다.
+문법 강조 실패를 평문으로 넘기던 동안에는 원인을 알 수 없었습니다. 실패는 화면에 남겨야 진단이 됩니다.
+
+전체 기록은 [`docs/기술스택.md`](docs/기술스택.md) §15, 제품 정의는 [`docs/기획서.md`](docs/기획서.md) 에 있습니다.
+
+---
+
+<div align="center">
+<sub>개인 프로젝트입니다. 특정 회사·조직과 관련 없습니다.</sub>
+</div>

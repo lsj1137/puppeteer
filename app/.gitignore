@@ -1,0 +1,14 @@
+# 루트 .gitignore 가 대부분을 덮는다. 여기는 앱 전용 산출물만.
+node_modules/
+out/
+dist/
+release/
+*.log
+*.tsbuildinfo
+
+# electron-builder 패키징 결과물
+dist_electron/
+*.exe
+*.dmg
+*.AppImage
+*.snap
