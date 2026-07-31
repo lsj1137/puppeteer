@@ -67,6 +67,8 @@ import type {
 import Markdown from './components/Markdown'
 import ArtifactPanel, { artifactTitle, lineCount } from './components/ArtifactPanel'
 import { splitFences, type Segment, type UiArtifact } from './lib/fences'
+import { toUiArtifactKind } from './lib/artifacts'
+import { runnerEnvironmentLabel } from '@shared/runner'
 
 type Entry =
   | { kind: 'assistant'; id: string; segments: Segment[]; isError?: boolean }
@@ -115,8 +117,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 const PROVIDER_ORDER = ['claude-cli', 'codex-cli', 'claude-agent-sdk']
 
 const runnerLabel = (r: DetectedRunner): string =>
-  (r.kind === 'wsl' ? `WSL · ${r.distro}` : r.kind === 'windows-native' ? 'Windows' : r.kind) +
-  (r.version ? ` · ${r.version}` : '')
+  runnerEnvironmentLabel(r) + (r.version ? ` · ${r.version}` : '')
 
 const RunnerIcon = ({ r, ...p }: { r: DetectedRunner; className?: string }) =>
   r.kind === 'wsl' ? <Terminal {...p} /> : <Monitor {...p} />
@@ -218,8 +219,8 @@ function reduce(v: View, e: SessionEvent, key: string): View {
         artifacts: [
           ...v.artifacts,
           {
-            id: `${key}-log`,
-            kind: e.kind === 'diff' ? 'diff' : 'log',
+            id: `${key}-${e.kind}`,
+            kind: toUiArtifactKind(e.kind),
             language: e.language,
             path: e.path,
             content: e.content,
@@ -382,6 +383,8 @@ export default function App() {
   const usableRunners = runners.filter((r) => r.available)
   /** 홈 라우터 전용 — 라우팅 프롬프트가 Claude CLI 인자로 짜여 있다 */
   const claudeRunners = runners.filter((r) => r.provider === 'claude-cli')
+  const routerRunner =
+    activeRunner?.provider === 'claude-cli' ? activeRunner : claudeRunners[0]
   const { visible: visibleTabs, overflow: overflowTabs } = splitTabs(sessions, activeSession, tabRoom)
   /** 적용 대상·실행 환경이 모두 맞는 것만 */
   const usableAgents = agents.filter((a) => {
@@ -1442,7 +1445,12 @@ export default function App() {
             <AgentsScreen
               agents={agents}
               projects={projects}
-              runner={activeRunner ?? claudeRunners[0]}
+              runner={routerRunner}
+              runnerMissingReason={
+                usableRunners.length > 0
+                  ? '자동 라우팅에는 Claude CLI가 필요합니다'
+                  : '실행 가능한 CLI를 찾지 못했습니다'
+              }
               routeCwd={active || projects[0]?.path}
               onRunAgent={runRouted}
               onEdit={(a) => setEditing({ agent: a, isNew: false })}

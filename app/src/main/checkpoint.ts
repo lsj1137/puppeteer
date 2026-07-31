@@ -53,9 +53,10 @@ export async function build(sessionId: string): Promise<CheckpointDraft | undefi
     .filter((p): p is string => !!p)
 
   let changed: { path: string; status: string }[] = []
+  const workPath = session.worktree?.path ?? session.projectPath
   if (snapshot) {
     try {
-      changed = await changedSince(session.projectPath, snapshot)
+      changed = await changedSince(workPath, snapshot)
     } catch {
       changed = db.listFileChanges(sessionId).map((path) => ({ path, status: '?' }))
     }
@@ -67,8 +68,9 @@ export async function build(sessionId: string): Promise<CheckpointDraft | undefi
     '# 이어받는 작업',
     '',
     `이전 세션: ${session.title ?? '(제목 없음)'}`,
-    `작업 위치: ${session.projectPath}`,
+    `작업 위치: ${workPath}`,
   ]
+  if (session.worktree) lines.push(`원래 프로젝트: ${session.projectPath}`)
   if (snapshot) lines.push(`기준 커밋: ${snapshot.branch} @ ${snapshot.head}`)
 
   lines.push('', '## 무엇을 지시했나', '')

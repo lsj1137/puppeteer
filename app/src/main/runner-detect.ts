@@ -1,4 +1,7 @@
 import { execFile } from 'node:child_process'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import type { DetectedRunner, InstallMethod, ProviderId } from '@shared/session'
 
@@ -32,7 +35,11 @@ async function tryVersion(cmd: string, args: string[]): Promise<string | undefin
   try {
     const { stdout } = await exec(cmd, args, { timeout: 10_000, windowsHide: true })
     // "2.1.220 (Claude Code)" → "2.1.220"
-    return stdout.trim().split(/\s+/)[0] || undefined
+    return stdout
+      .trim()
+      .split(/\s+/)
+      .find((token) => /^v?\d+\.\d+/.test(token))
+      ?.replace(/^v/, '')
   } catch {
     return undefined
   }
@@ -135,14 +142,33 @@ async function detectWsl(provider: ProviderId, bin: string): Promise<DetectedRun
 /** 리눅스/맥에서 앱을 직접 실행하는 경우 */
 async function detectPosix(provider: ProviderId, bin: string): Promise<DetectedRunner[]> {
   if (process.platform === 'win32') return []
-  try {
-    const { stdout } = await exec('bash', ['-lc', `command -v ${bin}`], { timeout: 10_000 })
-    const executable = stdout.trim().split(/\r?\n/)[0]
-    if (!executable) return []
+  for (const shell of posixShells()) {
+    try {
+      const { stdout } = await exec(shell, ['-lc', `command -v ${bin}`], { timeout: 10_000 })
+      const executable = stdout.trim().split(/\r?\n/)[0]
+      if (!executable) continue
+      return [
+        {
+          id: `posix:${provider}`,
+          kind: 'posix',
+          provider,
+          executable,
+          version: await tryVersion(executable, ['--version']),
+          installMethod: guessInstallMethod(executable),
+          available: true,
+        },
+      ]
+    } catch {
+      // 다음 셸로 재시도한다. macOS 는 zsh 설정에만 CLI 경로가 잡힌 경우가 흔하다.
+    }
+  }
+
+  for (const executable of posixFallbackExecutables(provider, bin)) {
+    if (!existsSync(executable)) continue
     return [
       {
         id: `posix:${provider}`,
-        kind: 'custom',
+        kind: 'posix',
         provider,
         executable,
         version: await tryVersion(executable, ['--version']),
@@ -150,6 +176,64 @@ async function detectPosix(provider: ProviderId, bin: string): Promise<DetectedR
         available: true,
       },
     ]
+  }
+  return []
+}
+
+export function posixShells(shell = process.env.SHELL): string[] {
+  return [...new Set([shell, 'zsh', 'bash'].filter((s): s is string => !!s))]
+}
+
+export function posixFallbackExecutables(
+  provider: ProviderId,
+  bin: string,
+  home = homedir(),
+  platform = process.platform,
+  arch = process.arch,
+): string[] {
+  const candidates = [
+    join(home, '.local', 'bin', bin),
+    join(home, '.npm-global', 'bin', bin),
+    join(home, '.bun', 'bin', bin),
+    join(home, '.cargo', 'bin', bin),
+    join(home, '.npm', 'bin', bin),
+    `/opt/homebrew/bin/${bin}`,
+    `/usr/local/bin/${bin}`,
+  ]
+
+  if (provider === 'codex-cli') {
+    const platformDir = codexPlatformDir(platform, arch)
+    if (platformDir) {
+      for (const root of extensionRoots(home)) {
+        candidates.push(...openAiExtensionDirs(root).map((dir) => join(dir, 'bin', platformDir, bin)))
+      }
+    }
+  }
+
+  return [...new Set(candidates)]
+}
+
+export function codexPlatformDir(platform: string, arch: string): string | undefined {
+  if (platform === 'darwin') return arch === 'arm64' ? 'macos-aarch64' : 'macos-x64'
+  if (platform === 'linux') return arch === 'arm64' ? 'linux-aarch64' : 'linux-x64'
+  return undefined
+}
+
+function extensionRoots(home: string): string[] {
+  return [
+    join(home, '.vscode', 'extensions'),
+    join(home, '.vscode-insiders', 'extensions'),
+    join(home, '.cursor', 'extensions'),
+    join(home, '.windsurf', 'extensions'),
+  ]
+}
+
+function openAiExtensionDirs(root: string): string[] {
+  try {
+    return readdirSync(root)
+      .filter((name) => name.startsWith('openai.chatgpt-'))
+      .map((name) => join(root, name))
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
   } catch {
     return []
   }

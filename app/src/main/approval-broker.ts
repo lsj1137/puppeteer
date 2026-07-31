@@ -1,5 +1,5 @@
 import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import type { ApprovalDecision, ApprovalRequest, RiskLevel } from '@shared/session'
 
 const HOLD_REASON =
@@ -158,10 +158,17 @@ export function assessRisk(tool: string, input: unknown, cwd: string): RiskLevel
   if (tool === 'Bash' || tool === 'PowerShell') return 'high'
   if (/^(Write|Edit|NotebookEdit)$/.test(tool)) {
     const p = (input as { file_path?: string })?.file_path
-    if (p && cwd && !p.replace(/\\/g, '/').startsWith(cwd.replace(/\\/g, '/'))) return 'high'
+    if (p && cwd && !isPathInside(p, cwd)) return 'high'
     return 'med'
   }
   return 'low'
+}
+
+function isPathInside(filePath: string, cwd: string): boolean {
+  const target = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath)
+  const root = resolve(cwd)
+  const rel = relative(root, target)
+  return rel === '' || (!!rel && !rel.startsWith('..') && !isAbsolute(rel))
 }
 
 export const APPROVAL_HOLD_REASON = HOLD_REASON

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Bot, Copy, Check, Flag, X } from 'lucide-react'
 import type { AgentDef, CheckpointDraft, DetectedRunner } from '@shared/session'
+import { runnerEnvironmentLabel } from '@shared/runner'
 
 const PROVIDER_LABEL: Record<string, string> = {
   'claude-cli': 'Claude',
@@ -9,7 +10,7 @@ const PROVIDER_LABEL: Record<string, string> = {
 }
 
 const runnerLabel = (r: DetectedRunner): string =>
-  `${PROVIDER_LABEL[r.provider] ?? r.provider} · ${r.kind === 'wsl' ? `WSL ${r.distro}` : 'Windows'}`
+  `${PROVIDER_LABEL[r.provider] ?? r.provider} · ${runnerEnvironmentLabel(r)}`
 
 /**
  * Checkpoint — 작업 상태를 다음 세션으로 넘긴다.

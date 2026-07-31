@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { DetectedRunner, MemoryEntry } from '@shared/session'
+import { runnerEnvironmentLabel } from '@shared/runner'
 import * as library from './agent-library'
 import * as db from './db'
 
@@ -23,7 +24,7 @@ import * as db from './db'
  * `AGENTS.md` 는 도구를 가리지 않는 이름이므로, 이렇게 두면 원본이 하나면서
  * Claude 와 다른 CLI 가 같은 파일을 읽는다.
  *
- * 전역·auto 는 **러너마다 홈이 다르다.** WSL 의 `~` 와 Windows 의 `%USERPROFILE%` 는
+ * 전역·auto 는 **러너마다 홈이 다르다.** WSL 의 `~` 와 호스트 OS 의 홈은
  * 별개 파일이라 하나를 고쳐도 다른 쪽 세션에는 적용되지 않는다.
  *
  * `id` 는 파일 기반이면 `file:<절대경로>`, 에이전트면 `agent:<이름>` 이다.
@@ -72,7 +73,7 @@ export function list(runners: DetectedRunner[], projects: string[]): MemoryEntry
       entry(
         join(home, '.claude', 'CLAUDE.md'),
         'global',
-        r.kind === 'wsl' ? `전역 · WSL ${r.distro}` : '전역 · Windows',
+        `전역 · ${runnerEnvironmentLabel(r)}`,
       ),
     )
   }

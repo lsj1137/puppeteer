@@ -34,28 +34,7 @@ export class CodexCliAdapter {
   start(opts: StartOptions): void {
     this.cwd = opts.cwd
     this.model = opts.model
-    const cliArgs = ['exec', '--json', '--skip-git-repo-check']
-
-    // 이어가기 — thread_id 를 그대로 넘긴다
-    if (opts.resumeSessionId) cliArgs.push('resume', opts.resumeSessionId)
-
-    // 에이전트 지침은 프롬프트 앞에 붙인다 (--agents 상당 기능이 없다)
-    const prompt = opts.agentPrompt ? `${opts.agentPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt
-
-    if (opts.model) cliArgs.push('--model', opts.model)
-    // 파일을 고쳐야 하므로 workspace-write. 실제 통제는 승인 훅이 한다.
-    cliArgs.push('--sandbox', 'workspace-write')
-
-    if (opts.hookCommand) {
-      // 훅은 `-c` 인라인 TOML 로 주입한다 — 세션 단위라 사용자 설정 파일을 건드리지 않는다.
-      // (`hooks_file` 같은 키는 없다. hooks.json 을 쓰면 프로젝트에 파일이 남는다.)
-      cliArgs.push('-c', `hooks.PreToolUse=${inlineHook(GATED_TOOLS, opts.hookCommand)}`)
-      // 비관리 훅은 사람이 /hooks 에서 신뢰해야 도는데, 우리 명령은 세션마다
-      // 승인 디렉터리가 달라 해시가 매번 바뀐다. 자동화에서는 우회가 유일한 길이다.
-      cliArgs.push('--dangerously-bypass-hook-trust')
-    }
-
-    cliArgs.push(prompt)
+    const cliArgs = buildCodexArgs(opts)
 
     const { command, args } = buildRunnerCommand(opts.runner, opts.cwd, cliArgs)
     this.emit({ t: 'status', status: 'starting' })
@@ -252,6 +231,33 @@ export class CodexCliAdapter {
   private looksLikeAuthError(text: string): boolean {
     return /not logged in|unauthorized|401|codex login|missing bearer/i.test(text)
   }
+}
+
+export function buildCodexArgs(
+  opts: Pick<StartOptions, 'agentPrompt' | 'hookCommand' | 'model' | 'prompt' | 'resumeSessionId'>,
+): string[] {
+  const cliArgs = ['exec', '--json', '--skip-git-repo-check']
+
+  if (opts.model) cliArgs.push('--model', opts.model)
+  // 파일을 고쳐야 하므로 workspace-write. 실제 통제는 승인 훅이 한다.
+  cliArgs.push('--sandbox', 'workspace-write')
+
+  if (opts.hookCommand) {
+    // 훅은 `-c` 인라인 TOML 로 주입한다 — 세션 단위라 사용자 설정 파일을 건드리지 않는다.
+    // (`hooks_file` 같은 키는 없다. hooks.json 을 쓰면 프로젝트에 파일이 남는다.)
+    cliArgs.push('-c', `hooks.PreToolUse=${inlineHook(GATED_TOOLS, opts.hookCommand)}`)
+    // 비관리 훅은 사람이 /hooks 에서 신뢰해야 도는데, 우리 명령은 세션마다
+    // 승인 디렉터리가 달라 해시가 매번 바뀐다. 자동화에서는 우회가 유일한 길이다.
+    cliArgs.push('--dangerously-bypass-hook-trust')
+  }
+
+  // 에이전트 지침은 프롬프트 앞에 붙인다 (--agents 상당 기능이 없다)
+  const prompt = opts.agentPrompt ? `${opts.agentPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt
+
+  // `resume` 뒤에는 resume 전용 옵션만 둔다. 공통 exec 옵션은 반드시 앞에 와야 한다.
+  if (opts.resumeSessionId) cliArgs.push('resume', opts.resumeSessionId)
+  cliArgs.push(prompt)
+  return cliArgs
 }
 
 /**

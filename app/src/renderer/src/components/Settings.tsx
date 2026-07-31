@@ -1,5 +1,6 @@
 import { Bell, HelpCircle, Moon, Settings2, Sun, X } from 'lucide-react'
 import type { DetectedRunner } from '@shared/session'
+import { runnerEnvironmentLabel } from '@shared/runner'
 
 /** 라벨 옆 물음표. 설명은 평소엔 숨고 필요할 때만 나온다. */
 function Hint({ text }: { text: string }): React.ReactElement {
@@ -151,9 +152,7 @@ export default function Settings({
                     <span className="text-subtext1">
                       {PROVIDER_LABEL[r.provider] ?? r.provider}
                     </span>
-                    <span className="text-overlay1">
-                      {r.kind === 'wsl' ? `WSL · ${r.distro}` : 'Windows'}
-                    </span>
+                    <span className="text-overlay1">{runnerEnvironmentLabel(r)}</span>
                     {r.version && (
                       <span className="ml-auto font-mono text-[11px] text-overlay1">
                         {r.version}

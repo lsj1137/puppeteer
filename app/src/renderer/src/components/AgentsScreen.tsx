@@ -31,6 +31,7 @@ export default function AgentsScreen({
   agents,
   projects,
   runner,
+  runnerMissingReason = '실행 환경을 찾지 못했습니다',
   routeCwd,
   onRunAgent,
   onEdit,
@@ -42,6 +43,7 @@ export default function AgentsScreen({
   projects: StoredProject[]
   /** 라우터 호출에 쓸 러너. 없으면 지시 입력을 막는다. */
   runner?: DetectedRunner
+  runnerMissingReason?: string
   routeCwd?: string
   onRunAgent: (c: RouteCandidate, projectPath: string, instruction: string) => Promise<void>
   onEdit: (agent: AgentDef) => void
@@ -157,7 +159,7 @@ export default function AgentsScreen({
               placeholder={
                 runner
                   ? '무엇을 해야 하는지 적으면 알맞은 에이전트를 찾아줍니다'
-                  : '실행 환경을 찾지 못했습니다'
+                  : runnerMissingReason
               }
               disabled={!runner}
               className="min-h-[46px] flex-1 resize-none rounded-md bg-base px-2.5 py-2 text-[13px] leading-relaxed text-text outline-none placeholder:text-overlay1 disabled:opacity-50"

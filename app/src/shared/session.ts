@@ -96,7 +96,7 @@ export interface PermissionDenial {
 
 export type ProviderId = 'claude-cli' | 'claude-agent-sdk' | 'codex-cli'
 
-export type RunnerKind = 'windows-native' | 'wsl' | 'custom'
+export type RunnerKind = 'windows-native' | 'wsl' | 'posix' | 'custom'
 
 export type InstallMethod = 'npm' | 'bun' | 'native' | 'unknown'
 
