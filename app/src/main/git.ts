@@ -94,3 +94,55 @@ export async function diffFile(cwd: string, path: string): Promise<string> {
     return ''
   }
 }
+
+/**
+ * 세션 전용 worktree.
+ *
+ * 여러 세션이 같은 작업 디렉토리를 공유하면 서로의 편집을 덮어쓴다. 지금까지는
+ * 감지해서 경고만 했는데(checkConflict), worktree 로 나누면 애초에 부딪히지 않는다.
+ *
+ * 위치는 **저장소 밖**(앱 데이터 폴더)에 둔다. 저장소 안에 만들면 프로젝트마다
+ * .gitignore 를 손대야 하고, 사용자 파일 목록을 오염시킨다.
+ */
+export async function addWorktree(
+  cwd: string,
+  dir: string,
+  branch: string,
+): Promise<{ path: string; branch: string } | undefined> {
+  try {
+    // 기준은 현재 HEAD. 새 브랜치를 만들어 원래 브랜치를 건드리지 않는다.
+    await git(cwd, ['worktree', 'add', '-b', branch, dir, 'HEAD'])
+    return { path: dir, branch }
+  } catch {
+    return undefined
+  }
+}
+
+/** 세션이 끝나거나 지워질 때 정리. 작업 내용이 남아 있으면 지우지 않는다. */
+export async function removeWorktree(cwd: string, dir: string, force = false): Promise<boolean> {
+  try {
+    await git(cwd, ['worktree', 'remove', ...(force ? ['--force'] : []), dir])
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** worktree 안에서 커밋되지 않은 변경이 있는지 */
+export async function worktreeDirty(dir: string): Promise<boolean> {
+  try {
+    return (await git(dir, ['status', '--porcelain'])).trim().length > 0
+  } catch {
+    return false
+  }
+}
+
+/** 원래 브랜치 기준으로 worktree 브랜치가 몇 커밋 앞서 있는지 */
+export async function worktreeAhead(cwd: string, branch: string, base: string): Promise<number> {
+  try {
+    const out = await git(cwd, ['rev-list', '--count', `${base}..${branch}`])
+    return Number(out.trim()) || 0
+  } catch {
+    return 0
+  }
+}
