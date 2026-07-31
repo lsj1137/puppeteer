@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
+import { app } from 'electron'
 import type {
   ApprovalDecision,
   ApprovalRequest,
@@ -9,6 +10,7 @@ import type {
   RunningSession,
   SessionEvent,
   SessionStatus,
+  SessionWorktree,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
@@ -16,7 +18,14 @@ import { ApprovalBroker } from './approval-broker'
 import { hookCommand, toRunnerPath } from './paths'
 import * as library from './agent-library'
 import * as db from './db'
-import { changedSince, diffFile, snapshot } from './git'
+import {
+  addWorktree,
+  changedSince,
+  diffFile,
+  removeWorktree,
+  snapshot,
+  worktreeDirty,
+} from './git'
 import { notifyApproval, notifyStatus } from './notify'
 
 export interface StartSessionInput {
@@ -29,6 +38,8 @@ export interface StartSessionInput {
   attachments?: string[]
   /** 적용할 Project Agent 이름 (.claude/agents/<name>.md) */
   agentName?: string
+  /** 전용 worktree 에서 격리 실행 */
+  isolate?: boolean
   /**
    * 이어서 지시하는 경우 기존 세션 id.
    * 주면 새 세션 행을 만들지 않고 그 세션에 이벤트를 계속 쌓는다.
@@ -58,7 +69,7 @@ export class SessionManager {
     this.broker = new ApprovalBroker((req) => this.onApproval(req))
   }
 
-  start(input: StartSessionInput): string {
+  async start(input: StartSessionInput): Promise<string> {
     const prev = input.continueSessionId ? db.getSession(input.continueSessionId) : undefined
     const id = prev?.id ?? randomUUID()
 
@@ -85,7 +96,36 @@ export class SessionManager {
     // 사용자 지시도 이벤트로 남겨야 대화를 그대로 복원할 수 있다
     this.persistAndSend(id, { t: 'message', role: 'user', messageId: `u-${id}`, text: prompt })
 
-    const approvalDir = join(input.cwd, '.agent-workspace', 'approvals', id)
+    /**
+     * 격리 실행. 이어가는 턴이면 이미 만들어 둔 worktree 를 그대로 쓴다.
+     * 만들지 못해도 세션은 진행한다 — 격리 실패로 작업 자체를 막을 이유는 없다.
+     */
+    let worktree = (prev?.worktree ?? undefined) as SessionWorktree | undefined
+    if (!worktree && input.isolate) {
+      const dir = join(app.getPath('userData'), 'worktrees', id)
+      const made = await addWorktree(input.cwd, dir, `puppeteer/${id.slice(0, 8)}`)
+      if (made) {
+        worktree = { ...made, origin: input.cwd }
+        db.setWorktree(id, worktree)
+        this.persistAndSend(id, {
+          t: 'artifact',
+          kind: 'log',
+          path: made.path,
+          content: `격리 실행\n브랜치: ${made.branch}\n경로: ${made.path}`,
+        })
+      } else {
+        this.persistAndSend(id, {
+          t: 'message',
+          role: 'assistant',
+          messageId: `wt-${id}`,
+          text: '격리 실행을 준비하지 못했습니다(git 저장소가 아니거나 worktree 생성 실패). 원래 폴더에서 진행합니다.',
+          isError: true,
+        })
+      }
+    }
+    const workCwd = worktree?.path ?? input.cwd
+
+    const approvalDir = join(workCwd, '.agent-workspace', 'approvals', id)
     this.broker.attach(id, approvalDir)
 
     // provider 에 맞는 어댑터를 고른다. 이벤트 계약은 같다.
@@ -106,7 +146,7 @@ export class SessionManager {
     // 세션 시작 전 git 상태를 남긴다 (실패해도 세션은 진행).
     // 이어가는 턴에는 다시 찍지 않는다 — 기준점은 대화가 시작된 시점이어야 한다.
     if (!prev) {
-      void snapshot(input.cwd).then((snap) => {
+      void snapshot(workCwd).then((snap) => {
         if (!snap) return
         db.setSnapshot(id, snap)
         this.persistAndSend(id, { t: 'snapshot', snapshot: snap })
@@ -130,7 +170,7 @@ export class SessionManager {
 
     adapter.start({
       runner: input.runner,
-      cwd: input.cwd,
+      cwd: workCwd,
       prompt,
       resumeSessionId: input.resumeCliSessionId,
       hookCommand: hookCommand(input.runner, approvalDir),
@@ -155,23 +195,49 @@ export class SessionManager {
     const session = db.getSession(sessionId)
     const snap = db.getSnapshot(sessionId) as GitSnapshot | undefined
     if (!session || !snap) return db.listFileChanges(sessionId).map((path) => ({ path, status: '?' }))
-    return changedSince(session.projectPath, snap)
+    // 격리 실행 중이면 변경은 worktree 안에 있다
+    return changedSince(session.worktree?.path ?? session.projectPath, snap)
   }
 
   async fileDiff(sessionId: string, path: string): Promise<string> {
     const session = db.getSession(sessionId)
-    return session ? diffFile(session.projectPath, path) : ''
+    if (!session) return ''
+    return diffFile(session.worktree?.path ?? session.projectPath, path)
   }
 
   /** 실행 중이면 중지한 뒤 기록까지 삭제한다 */
-  remove(sessionId: string): void {
+  async remove(sessionId: string): Promise<void> {
     const live = this.sessions.get(sessionId)
     if (live) {
       live.adapter.stop()
       this.broker.detach(sessionId)
       this.sessions.delete(sessionId)
     }
+
+    // worktree 는 비어 있을 때만 지운다. 커밋 안 된 작업이 남아 있으면 그대로 둔다 —
+    // 세션 기록을 지우는 것과 사람이 만든 코드를 지우는 것은 다른 일이다.
+    const stored = db.getSession(sessionId)
+    const wt = stored?.worktree
+    if (wt) {
+      const dirty = await worktreeDirty(wt.path)
+      if (!dirty) await removeWorktree(wt.origin, wt.path)
+    }
+
     db.deleteSession(sessionId)
+  }
+
+  /** 격리 실행 중인 세션의 worktree 정보 */
+  worktreeOf(sessionId: string): SessionWorktree | undefined {
+    return db.getSession(sessionId)?.worktree ?? undefined
+  }
+
+  /** worktree 를 사용자가 직접 정리할 때 */
+  async dropWorktree(sessionId: string, force: boolean): Promise<boolean> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return false
+    const ok = await removeWorktree(wt.origin, wt.path, force)
+    if (ok) db.setWorktree(sessionId, null)
+    return ok
   }
 
   /** 지금 살아 있는 세션 (프로젝트를 넘나들며 표시하기 위해) */

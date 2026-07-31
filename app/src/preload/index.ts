@@ -12,6 +12,7 @@ import type {
   UpdateCheck,
   MemoryEntry,
   MemoryEdit,
+  CheckpointDraft,
   RunningSession,
   SessionEvent,
   StoredEvent,
@@ -33,6 +34,8 @@ export interface StartSessionArgs {
   attachments?: string[]
   /** 적용할 Project Agent 이름 */
   agentName?: string
+  /** 전용 worktree 에서 격리 실행 */
+  isolate?: boolean
   /** 이어서 지시하는 경우 기존 세션 id (새 세션을 만들지 않는다) */
   continueSessionId?: string
 }
@@ -84,6 +87,10 @@ const api = {
     name: string,
     opts: { tools?: string[]; model?: string | null },
   ): Promise<AgentDef | undefined> => ipcRenderer.invoke('agent:applyUpdate', name, opts),
+  dropWorktree: (sessionId: string, force: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('session:dropWorktree', sessionId, force),
+  buildCheckpoint: (sessionId: string): Promise<CheckpointDraft | undefined> =>
+    ipcRenderer.invoke('checkpoint:build', sessionId),
   listMemories: (): Promise<MemoryEntry[]> => ipcRenderer.invoke('memory:list'),
   readMemory: (id: string): Promise<string> => ipcRenderer.invoke('memory:read', id),
   saveMemory: (id: string, content: string): Promise<boolean> =>

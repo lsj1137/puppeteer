@@ -5,6 +5,7 @@ import {
   ChevronDown,
   CircleStop,
   FileCode2,
+  Flag,
   FolderPlus,
   Brain,
   Bot,
@@ -43,6 +44,7 @@ import AgentsScreen from './components/AgentsScreen'
 import AgentImport from './components/AgentImport'
 import MemoryScreen from './components/MemoryScreen'
 import Settings from './components/Settings'
+import Checkpoint from './components/Checkpoint'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -57,6 +59,7 @@ import type {
   ChangedFile,
   CostTotals,
   GitSnapshot,
+  CheckpointDraft,
   RouteCandidate,
   StoredProject,
   StoredSession,
@@ -307,6 +310,9 @@ export default function App() {
   const [tabMenu, setTabMenu] = useState(false)
   const [importing, setImporting] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [checkpoint, setCheckpoint] = useState<CheckpointDraft>()
+  /** 새 세션을 전용 worktree 에서 격리 실행할지 */
+  const [isolate, setIsolate] = useState(false)
   /**
    * 다음 지시를 보낼 러너. 세션마다 다를 수 있어 프로젝트 기본값과 따로 둔다.
    * 열어둔 세션이 있으면 그 세션이 쓰던 러너를 기본으로 잡는다.
@@ -370,6 +376,8 @@ export default function App() {
    * 바꾸는 순간 이어가기가 끊긴다. 바꾸려면 새 세션을 연다.
    */
   const runnerLocked = !!selected
+  /** 격리 실행 중인 세션 */
+  const sessionWorktree = selected?.worktree ?? undefined
   /** 세션을 돌릴 수 있는 러너 전체. provider 를 가리지 않는다. */
   const usableRunners = runners.filter((r) => r.available)
   /** 홈 라우터 전용 — 라우팅 프롬프트가 Claude CLI 인자로 짜여 있다 */
@@ -647,6 +655,35 @@ export default function App() {
     setPendingPick(text)
   }
 
+  /**
+   * 체크포인트 인계. 세션 ID 가 아니라 텍스트를 넘기므로
+   * 실행 환경과 에이전트를 바꿔서 시작할 수 있다.
+   */
+  async function handoff(body: string, runnerId: string, agent?: string): Promise<void> {
+    const runner = runners.find((r) => r.id === runnerId)
+    const path = checkpoint?.projectPath ?? active
+    if (!runner || !path) return
+
+    setCheckpoint(undefined)
+    setActiveSession(undefined) // 새 세션으로 간다
+    setNextRunnerId(runnerId)
+    setAgentName(agent)
+
+    try {
+      const id = await window.api.startSession({ runner, cwd: path, prompt: body, agentName: agent })
+      setActiveSession(id)
+      setSelectedArtifact(undefined)
+      void refresh(path)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setViews((vs) => ({
+        ...vs,
+        ['start-error']: { ...(vs['start-error'] ?? EMPTY), status: 'failed', statusReason: msg },
+      }))
+      setActiveSession('start-error')
+    }
+  }
+
   /** 세션 열기. 이미 메모리에 있으면 그대로, 아니면 DB 에서 복원한다. */
   async function openSession(id: string): Promise<void> {
     setScreen('project')
@@ -690,6 +727,7 @@ export default function App() {
   function newSession(): void {
     setScrolled(false)
     setPendingPick(undefined)
+    setIsolate(false)
     setActiveSession(undefined)
     setSelectedArtifact(undefined)
     taRef.current?.focus()
@@ -764,6 +802,7 @@ export default function App() {
         continueSessionId,
         attachments: attachments.map((a) => a.path),
         agentName,
+        isolate: selected ? undefined : isolate,
       })
       setAttachments([])
       // 사용자 지시는 main 이 이벤트로 되돌려주므로 여기서 따로 넣지 않는다
@@ -789,6 +828,19 @@ export default function App() {
       icon: MessageSquarePlus,
       run: newSession,
     },
+    ...(selected
+      ? [
+          {
+            id: 'act:checkpoint',
+            group: '명령',
+            label: '체크포인트로 인계',
+            icon: Flag,
+            run: () => {
+              void window.api.buildCheckpoint(selected.id).then((d) => d && setCheckpoint(d))
+            },
+          },
+        ]
+      : []),
     {
       id: 'act:overview',
       group: '명령',
@@ -1300,6 +1352,45 @@ export default function App() {
                 </>
               )}
             </div>
+
+            {sessionWorktree ? (
+              <span
+                title={`격리 실행 중\n브랜치 ${sessionWorktree.branch}\n${sessionWorktree.path}`}
+                className="flex items-center gap-1.5 rounded-md bg-teal/15 px-2 py-1 text-[11px] text-teal"
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                {sessionWorktree.branch}
+              </span>
+            ) : (
+              !selected && (
+                <button
+                  onClick={() => setIsolate((v) => !v)}
+                  title="전용 git worktree 를 만들어 다른 세션과 파일이 부딪히지 않게 합니다"
+                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
+                    isolate
+                      ? 'bg-teal/15 text-teal'
+                      : 'text-overlay1 hover:bg-surface0 hover:text-subtext1'
+                  }`}
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  격리 실행
+                </button>
+              )
+            )}
+
+            {selected && (
+              <button
+                onClick={async () => {
+                  const d = await window.api.buildCheckpoint(selected.id)
+                  if (d) setCheckpoint(d)
+                }}
+                title="이 세션의 작업 상태를 정리해 다른 세션으로 넘깁니다"
+                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-subtext0 hover:bg-surface0 hover:text-text"
+              >
+                <Flag className="h-3.5 w-3.5 text-teal" />
+                체크포인트
+              </button>
+            )}
 
             {activeRunner ? (
               <button
@@ -1825,6 +1916,16 @@ export default function App() {
           confirmLabel="삭제"
           onConfirm={() => void removeSession(confirmDelSession.id)}
           onCancel={() => setConfirmDelSession(undefined)}
+        />
+      )}
+
+      {checkpoint && (
+        <Checkpoint
+          draft={checkpoint}
+          runners={usableRunners}
+          agents={agents}
+          onClose={() => setCheckpoint(undefined)}
+          onHandoff={(body, rid, ag) => void handoff(body, rid, ag)}
         />
       )}
 

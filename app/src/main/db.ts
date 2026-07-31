@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import type {
   MemoryEdit,
+  SessionWorktree,
   ApprovalDecision,
   ApprovalRequest,
   SessionEvent,
@@ -94,6 +95,7 @@ function migrate(): void {
 
   addColumn('session', 'snapshot', 'TEXT')
   addColumn('session', 'agent_name', 'TEXT')
+  addColumn('session', 'worktree', 'TEXT')
 }
 
 /** SQLite 는 ADD COLUMN IF NOT EXISTS 가 없어 직접 확인한다 */
@@ -171,21 +173,43 @@ export function listSessions(projectPath: string, limit = 50): StoredSession[] {
     .prepare(
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
-              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt
+              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree
        FROM session WHERE project_path = ? ORDER BY started_at DESC LIMIT ?`,
     )
-    .all(projectPath, limit) as unknown as StoredSession[]
+    .all(projectPath, limit)
+    .map(hydrate) as unknown as StoredSession[]
 }
 
 export function getSession(id: string): StoredSession | undefined {
-  return db
+  const row = db
     .prepare(
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
-              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt
+              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree
        FROM session WHERE id = ?`,
     )
     .get(id) as unknown as StoredSession | undefined
+  return row ? (hydrate(row) as unknown as StoredSession) : undefined
+}
+
+/** worktree 는 TEXT 컬럼에 JSON 으로 넣는다. 읽을 때 되돌린다. */
+function hydrate(row: unknown): unknown {
+  const r = row as Record<string, unknown>
+  if (typeof r.worktree === 'string') {
+    try {
+      r.worktree = JSON.parse(r.worktree)
+    } catch {
+      r.worktree = null
+    }
+  }
+  return r
+}
+
+export function setWorktree(id: string, wt: SessionWorktree | null): void {
+  db.prepare('UPDATE session SET worktree = ? WHERE id = ?').run(
+    wt ? JSON.stringify(wt) : null,
+    id,
+  )
 }
 
 /** Overview 용 프로젝트별 집계 */

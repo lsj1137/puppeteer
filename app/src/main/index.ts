@@ -8,6 +8,7 @@ import * as db from './db'
 import * as library from './agent-library'
 import { route } from './router'
 import * as memory from './memory'
+import { build as buildCheckpoint } from './checkpoint'
 import { initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
 import type { StartSessionInput } from './session-manager'
@@ -126,6 +127,7 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('memory:read', (_e, id: string) => memory.read(id))
   ipcMain.handle('memory:save', (_e, id: string, content: string) => memory.save(id, content))
+  ipcMain.handle('checkpoint:build', (_e, sessionId: string) => buildCheckpoint(sessionId))
   ipcMain.handle('memory:history', (_e, entryId?: string) => db.memoryEdits(entryId))
 
   ipcMain.handle('agent:route', (_e, instruction: string, runner: DetectedRunner, cwd: string) =>
@@ -152,6 +154,9 @@ app.whenReady().then(() => {
   ipcMain.handle('session:start', (_e, input: StartSessionInput) => sessions.start(input))
   ipcMain.handle('session:stop', (_e, id: string) => sessions.stop(id))
   ipcMain.handle('session:delete', (_e, id: string) => sessions.remove(id))
+  ipcMain.handle('session:dropWorktree', (_e, id: string, force: boolean) =>
+    sessions.dropWorktree(id, force),
+  )
   ipcMain.handle(
     'approval:resolve',
     (_e, approvalId: string, decision: ApprovalDecision, reason?: string) =>

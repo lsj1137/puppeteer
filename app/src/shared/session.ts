@@ -128,6 +128,8 @@ export interface StoredProject {
 }
 
 export interface StoredSession {
+  /** 격리 실행 중이면 그 정보 */
+  worktree?: SessionWorktree | null
   id: string
   projectPath: string
   cliSessionId: string | null
@@ -304,4 +306,22 @@ export interface MemoryEdit {
   entryId: string
   bytes: number
   at: number
+}
+
+/** 세션 전용 worktree */
+export interface SessionWorktree {
+  /** worktree 실제 경로 (세션의 cwd 가 된다) */
+  path: string
+  branch: string
+  /** worktree 를 만든 원래 프로젝트 경로 */
+  origin: string
+}
+
+/** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
+export interface CheckpointDraft {
+  sessionId: string
+  title: string
+  projectPath: string
+  /** 편집 가능한 본문 (마크다운) */
+  body: string
 }
