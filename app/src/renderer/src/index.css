@@ -58,16 +58,30 @@
   --color-lavender: #4f63e0;
 }
 
+/* Pretendard 가변 폰트 — 파일을 번들에 넣는다.
+   렌더러 CSP 가 외부 요청을 막으므로 웹폰트 CDN 은 쓸 수 없고,
+   쓸 수 있더라도 네트워크가 막히면 글꼴이 통째로 바뀐다.
+   가변 하나로 45~920 전 굵기를 덮어 파일이 하나면 된다. */
+@font-face {
+  font-family: 'Pretendard';
+  /* 'woff2-variations' 는 폐기된 표기다. 최신 Chrome 이 규칙을 통째로 건너뛰어
+     조용히 시스템 폰트로 떨어진다. 가변이어도 format 은 'woff2' 가 맞다. */
+  src: url('./assets/fonts/PretendardVariable.woff2') format('woff2');
+  font-weight: 45 920;
+  font-style: normal;
+  font-display: swap;
+}
+
 html, body, #root { height: 100%; }
 body {
   margin: 0;
-  /* 최소 글씨 14px */
-  font-size: 14px;
   background: var(--color-base);
   color: var(--color-text);
   font-family: 'Pretendard', system-ui, -apple-system, 'Segoe UI', sans-serif;
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
+  /* 한글은 자간이 살짝 좁아야 라틴과 균형이 맞는다 */
+  letter-spacing: -0.01em;
 }
 
 /* 스크롤바 — 배경에 묻히되 호버 시 또렷하게 */
