@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
-import type { AgentDef, DetectedRunner, RouteCandidate, RouteResult } from '@shared/session'
+import type { DetectedRunner, RouteCandidate, RouteResult } from '@shared/session'
 import { buildRunnerCommand } from './adapters/claude-cli'
-import { listAgents } from './agents'
+import * as library from './agent-library'
 import * as db from './db'
 
 /**
@@ -17,25 +17,21 @@ import * as db from './db'
 const ROUTER_MODEL = 'claude-haiku-4-5'
 const TIMEOUT_MS = 45_000
 
+/**
+ * 후보는 에이전트 단위다. 예전처럼 (프로젝트 × 에이전트) 로 펼치지 않는다 —
+ * 같은 에이전트가 여러 번 뜨면 모델이 고르기만 어려워진다.
+ * 어느 프로젝트에서 돌릴지는 확인 카드에서 정한다.
+ */
 export function collectCandidates(): RouteCandidate[] {
-  const out: RouteCandidate[] = []
-  for (const project of db.listProjects()) {
-    let agents: AgentDef[] = []
-    try {
-      agents = listAgents(project.path)
-    } catch {
-      // 프로젝트 폴더가 사라졌거나 접근 불가 — 라우팅에서 빠질 뿐이다
-    }
-    for (const a of agents) {
-      out.push({
-        projectPath: project.path,
-        projectName: project.path.split(/[\\/]/).filter(Boolean).pop() ?? project.path,
-        agentName: a.name,
-        description: a.description,
-      })
-    }
-  }
-  return out
+  const registered = db.listProjects().map((p) => p.path)
+  return library.list().map((a) => ({
+    agentName: a.name,
+    description: a.description,
+    // 적용 대상이 비어 있으면 전체 허용. 등록이 풀린 경로는 걸러낸다.
+    projects: a.workspace.projects?.length
+      ? a.workspace.projects.filter((p) => registered.includes(p))
+      : registered,
+  }))
 }
 
 export async function route(
@@ -57,7 +53,7 @@ export async function route(
   }
 
   const list = candidates
-    .map((c, i) => `${i + 1}. [${c.projectName}] ${c.agentName} — ${c.description || '(설명 없음)'}`)
+    .map((c, i) => `${i + 1}. ${c.agentName} — ${c.description || '(설명 없음)'}`)
     .join('\n')
 
   const prompt = `아래는 사용자의 지시와, 실행 가능한 에이전트 목록이다.

@@ -8,6 +8,10 @@ import type {
   ProjectStat,
   DetectedRunner,
   RouteResult,
+  FetchedAgent,
+  UpdateCheck,
+  MemoryEntry,
+  MemoryEdit,
   RunningSession,
   SessionEvent,
   StoredEvent,
@@ -52,14 +56,42 @@ const api = {
   listOpenApprovals: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke('approval:open'),
   listRunningSessions: (): Promise<RunningSession[]> => ipcRenderer.invoke('session:running'),
   costTotals: (): Promise<CostTotals> => ipcRenderer.invoke('cost:totals'),
+  setNotifyEnabled: (v: boolean): Promise<void> => ipcRenderer.invoke('notify:setEnabled', v),
+  /** 알림을 눌러 들어온 경우 그 세션으로 이동 */
+  onNotifyJump: (cb: (j: { sessionId: string; cwd: string }) => void): (() => void) => {
+    const h = (_e: IpcRendererEvent, j: { sessionId: string; cwd: string }): void => cb(j)
+    ipcRenderer.on('notify:jump', h)
+    return () => ipcRenderer.removeListener('notify:jump', h)
+  },
 
-  listAgents: (projectPath: string): Promise<AgentDef[]> =>
-    ipcRenderer.invoke('agent:list', projectPath),
+  /** 전역 라이브러리의 에이전트 전부 */
+  listAgents: (): Promise<AgentDef[]> => ipcRenderer.invoke('agent:list'),
+  /** 아직 라이브러리로 안 옮긴 프로젝트 파일들 (가져오기 후보) */
+  scanProjectAgents: (projectPath: string): Promise<AgentDef[]> =>
+    ipcRenderer.invoke('agent:scan', projectPath),
   saveAgent: (agent: AgentDef): Promise<string> => ipcRenderer.invoke('agent:save', agent),
+  deleteAgent: (name: string): Promise<void> => ipcRenderer.invoke('agent:delete', name),
+  importAgent: (projectPath: string, name: string): Promise<AgentDef | undefined> =>
+    ipcRenderer.invoke('agent:import', projectPath, name),
+  exportAgent: (name: string, projectPath: string): Promise<string | undefined> =>
+    ipcRenderer.invoke('agent:export', name, projectPath),
+  fetchAgentFromUrl: (url: string): Promise<FetchedAgent> =>
+    ipcRenderer.invoke('agent:fetchUrl', url),
+  fetchAgentFromFile: (): Promise<FetchedAgent | undefined> => ipcRenderer.invoke('agent:fetchFile'),
+  checkAgentUpdate: (name: string): Promise<UpdateCheck> =>
+    ipcRenderer.invoke('agent:checkUpdate', name),
+  applyAgentUpdate: (
+    name: string,
+    opts: { tools?: string[]; model?: string | null },
+  ): Promise<AgentDef | undefined> => ipcRenderer.invoke('agent:applyUpdate', name, opts),
+  listMemories: (): Promise<MemoryEntry[]> => ipcRenderer.invoke('memory:list'),
+  readMemory: (id: string): Promise<string> => ipcRenderer.invoke('memory:read', id),
+  saveMemory: (id: string, content: string): Promise<boolean> =>
+    ipcRenderer.invoke('memory:save', id, content),
+  memoryHistory: (entryId?: string): Promise<MemoryEdit[]> =>
+    ipcRenderer.invoke('memory:history', entryId),
   routeInstruction: (instruction: string, runner: DetectedRunner, cwd: string): Promise<RouteResult> =>
     ipcRenderer.invoke('agent:route', instruction, runner, cwd),
-  deleteAgent: (projectPath: string, name: string): Promise<void> =>
-    ipcRenderer.invoke('agent:delete', projectPath, name),
   overviewStats: (): Promise<{
     projects: ProjectStat[]
     recent: StoredSession[]

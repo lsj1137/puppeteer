@@ -11,11 +11,25 @@ export interface StartOptions {
   resumeSessionId?: string
   /** PreToolUse hook 실행 명령. 지정하면 승인 인터셉트가 켜진다. */
   hookCommand?: string
-  /** .claude/agents/<name>.md 의 이름. 메인 세션에 그 역할을 적용한다. */
+  /** 메인 세션에 적용할 에이전트 이름 */
   agentName?: string
+  /** `--agents` 로 넘길 정의 JSON. 주면 파일이 어디 있든 상관없이 그 정의가 쓰인다. */
+  agentsJson?: string
   /** 도구 제한 */
   allowedTools?: string[]
   disallowedTools?: string[]
+
+  // ── 아래는 Codex 어댑터가 쓴다 (Claude 는 무시) ──
+  /** 에이전트 지침 본문. --agents 가 없는 CLI 는 프롬프트 앞에 붙인다. */
+  agentPrompt?: string
+  /** 모델 슬러그 */
+  model?: string
+  /** 승인 디렉터리(호스트 경로). 훅 정의 파일을 여기 쓴다. */
+  approvalDirHost?: string
+  /** 러너가 볼 수 있는 훅 정의 파일 경로 */
+  hooksFileRunnerPath?: string
+  /** 검사 프록시의 CA 번들. rustls 계열이 시스템 저장소만 볼 때 넘긴다. */
+  caBundle?: string
 }
 
 /**
@@ -49,7 +63,9 @@ export class ClaudeCliAdapter {
     ]
     if (opts.resumeSessionId) cliArgs.push('--resume', opts.resumeSessionId)
 
-    // Project Agent — 파일은 .claude/agents 에 두고 플래그로만 지정한다
+    // 에이전트는 앱 라이브러리에서 관리하므로 정의를 인라인으로 넘긴다.
+    // 파일을 러너 홈(.claude/agents)에 배치할 필요가 없다 — WSL/Windows 홈이 다르다.
+    if (opts.agentsJson) cliArgs.push('--agents', opts.agentsJson)
     if (opts.agentName) cliArgs.push('--agent', opts.agentName)
     if (opts.allowedTools?.length) cliArgs.push('--allowedTools', opts.allowedTools.join(' '))
     if (opts.disallowedTools?.length)

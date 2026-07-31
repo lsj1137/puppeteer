@@ -5,6 +5,21 @@ import type { DetectedRunner, InstallMethod, ProviderId } from '@shared/session'
 const exec = promisify(execFile)
 
 /** 실행 경로로 설치 방식을 추정한다. bun 설치본이 불안정한 사례가 있어 구분해 표시한다. */
+/**
+ * WSL 홈을 Windows 에서 접근할 수 있는 UNC 경로로.
+ * `\\wsl.localhost\<배포판>\home\<user>` — Win10 이후에서 동작한다.
+ */
+async function wslHome(distro: string): Promise<string | undefined> {
+  try {
+    const { stdout } = await exec('wsl.exe', ['-d', distro, '--', 'sh', '-c', 'echo $HOME'])
+    const home = stdout.trim().split(/\r?\n/)[0]
+    if (!home?.startsWith('/')) return undefined
+    return `\\\\wsl.localhost\\${distro}${home.replace(/\//g, '\\')}`
+  } catch {
+    return undefined
+  }
+}
+
 function guessInstallMethod(executable: string): InstallMethod {
   const p = executable.toLowerCase()
   if (p.includes('.bun')) return 'bun'
@@ -84,6 +99,9 @@ async function detectWsl(provider: ProviderId, bin: string): Promise<DetectedRun
       const executable = stdout.trim().split(/\r?\n/)[0]
       if (!executable) continue
 
+      // 이 배포판의 홈. Windows 쪽에서 파일을 직접 읽고 쓰려면 UNC 가 필요하다.
+      const home = await wslHome(distro)
+
       let version: string | undefined
       try {
         const v = await exec(
@@ -102,6 +120,7 @@ async function detectWsl(provider: ProviderId, bin: string): Promise<DetectedRun
         provider,
         distro,
         executable,
+        home,
         version,
         installMethod: guessInstallMethod(executable),
         available: true,

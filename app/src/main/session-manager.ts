@@ -11,11 +11,13 @@ import type {
   SessionStatus,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
+import { CodexCliAdapter } from './adapters/codex-cli'
 import { ApprovalBroker } from './approval-broker'
 import { hookCommand, toRunnerPath } from './paths'
-import { readAgent } from './agents'
+import * as library from './agent-library'
 import * as db from './db'
 import { changedSince, diffFile, snapshot } from './git'
+import { notifyApproval, notifyStatus } from './notify'
 
 export interface StartSessionInput {
   runner: DetectedRunner
@@ -37,7 +39,7 @@ export interface StartSessionInput {
 
 interface LiveSession {
   id: string
-  adapter: ClaudeCliAdapter
+  adapter: ClaudeCliAdapter | CodexCliAdapter
   status: SessionStatus
   projectPath: string
   title: string
@@ -86,7 +88,11 @@ export class SessionManager {
     const approvalDir = join(input.cwd, '.agent-workspace', 'approvals', id)
     this.broker.attach(id, approvalDir)
 
-    const adapter = new ClaudeCliAdapter((event) => this.onEvent(id, event))
+    // provider 에 맞는 어댑터를 고른다. 이벤트 계약은 같다.
+    const adapter =
+      input.runner.provider === 'codex-cli'
+        ? new CodexCliAdapter((event) => this.onEvent(id, event))
+        : new ClaudeCliAdapter((event) => this.onEvent(id, event))
     this.sessions.set(id, {
       id,
       adapter,
@@ -107,7 +113,20 @@ export class SessionManager {
       })
     }
 
-    const agent = input.agentName ? readAgent(input.cwd, input.agentName) : undefined
+    const agent = input.agentName ? library.read(input.agentName) : undefined
+
+    // ★ 마지막 방어선. 화면에서 걸러도 여기서 한 번 더 막는다 —
+    //   지침 전문이 그대로 모델에 실려 나가므로 실수 한 번이 곧 유출이다.
+    if (agent && !library.allowsProvider(agent, input.runner.provider)) {
+      this.persistAndSend(id, {
+        t: 'status',
+        status: 'failed',
+        reason:
+          `«${agent.name}» 는 ${input.runner.provider} 로 실행할 수 없습니다. ` +
+          '이 에이전트는 허용된 실행 환경이 지정되어 있습니다.',
+      })
+      return id
+    }
 
     adapter.start({
       runner: input.runner,
@@ -115,7 +134,12 @@ export class SessionManager {
       prompt,
       resumeSessionId: input.resumeCliSessionId,
       hookCommand: hookCommand(input.runner, approvalDir),
-      agentName: input.agentName,
+      agentName: agent ? input.agentName : undefined,
+      agentsJson: agent ? library.toCliAgents(agent) : undefined,
+      agentPrompt: agent ? library.toPromptPrefix(agent) : undefined,
+      model: agent?.model,
+      approvalDirHost: approvalDir,
+      hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
       disallowedTools: agent?.workspace.disallowedTools,
     })
@@ -168,6 +192,7 @@ export class SessionManager {
   private onApproval(req: ApprovalRequest): void {
     db.recordApproval(req)
     this.getWindow()?.webContents.send('approval:request', req)
+    notifyApproval(req)
     if (!req.pending) this.onEvent(req.sessionId, { t: 'status', status: 'approval-required' })
   }
 
@@ -179,6 +204,12 @@ export class SessionManager {
       db.updateSession(sessionId, { status: event.status })
       if (TERMINAL.includes(event.status)) {
         db.updateSession(sessionId, { ended: true })
+        // 세션을 지우기 전에 알린다 — 지운 뒤엔 제목·경로를 알 수 없다
+        const meta = session ?? db.getSession(sessionId)
+        if (meta) {
+          const cwd = 'projectPath' in meta ? meta.projectPath : ''
+          notifyStatus(event.status, meta.title ?? '', cwd, sessionId, event.reason)
+        }
         this.broker.detach(sessionId)
         this.sessions.delete(sessionId)
       }

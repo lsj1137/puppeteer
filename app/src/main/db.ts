@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type {
+  MemoryEdit,
   ApprovalDecision,
   ApprovalRequest,
   SessionEvent,
@@ -79,6 +80,16 @@ function migrate(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_file_change_session ON file_change(session_id);
     CREATE INDEX IF NOT EXISTS idx_file_change_path ON file_change(path);
+
+    -- Memory 변경 이력. 파일 자체는 CLI 가 읽는 정본이라 건드리지 않고,
+    -- "언제 누가 얼마나 고쳤는지"만 앱이 따로 남긴다(기획서 11장).
+    CREATE TABLE IF NOT EXISTS memory_edit (
+      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      entry_id TEXT NOT NULL,
+      bytes    INTEGER NOT NULL,
+      at       INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_edit_entry ON memory_edit(entry_id);
   `)
 
   addColumn('session', 'snapshot', 'TEXT')
@@ -308,4 +319,21 @@ export function listOpenApprovals(): ApprovalRequest[] {
     )
     .all() as unknown as Array<Omit<ApprovalRequest, 'input' | 'pending'> & { input: string }>
   return rows.map((r) => ({ ...r, input: JSON.parse(r.input) as unknown, pending: true }))
+}
+
+export function recordMemoryEdit(entryId: string, bytes: number): void {
+  db.prepare('INSERT INTO memory_edit (entry_id, bytes, at) VALUES (?, ?, ?)').run(
+    entryId,
+    bytes,
+    Date.now(),
+  )
+}
+
+/** 최근 변경 이력. 한 항목만 볼 수도, 전체를 볼 수도 있다. */
+export function memoryEdits(entryId?: string, limit = 20): MemoryEdit[] {
+  const sql = entryId
+    ? 'SELECT id, entry_id AS entryId, bytes, at FROM memory_edit WHERE entry_id = ? ORDER BY at DESC LIMIT ?'
+    : 'SELECT id, entry_id AS entryId, bytes, at FROM memory_edit ORDER BY at DESC LIMIT ?'
+  const args = entryId ? [entryId, limit] : [limit]
+  return db.prepare(sql).all(...args) as unknown as MemoryEdit[]
 }

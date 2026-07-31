@@ -5,10 +5,19 @@ import { randomUUID } from 'node:crypto'
 import { detectRunners } from './runner-detect'
 import { SessionManager } from './session-manager'
 import * as db from './db'
-import * as agents from './agents'
+import * as library from './agent-library'
 import { route } from './router'
+import * as memory from './memory'
+import { initNotifications, setNotifyEnabled } from './notify'
+import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
 import type { StartSessionInput } from './session-manager'
-import type { AgentDef, ApprovalDecision, DetectedRunner } from '@shared/session'
+import type {
+  AgentDef,
+  ApprovalDecision,
+  DetectedRunner,
+  FetchedAgent,
+  UpdateCheck,
+} from '@shared/session'
 
 let mainWindow: BrowserWindow | undefined
 
@@ -50,6 +59,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   db.openDb()
+  initNotifications(() => mainWindow)
   const sessions = new SessionManager(() => mainWindow)
 
   // 실행 환경 탐지 — 사용자마다 CLI 설치 위치/방식이 다르므로 강제하지 않는다
@@ -79,14 +89,47 @@ app.whenReady().then(() => {
   }))
   ipcMain.handle('session:running', () => sessions.listRunning())
   ipcMain.handle('cost:totals', () => db.costTotals())
+  ipcMain.handle('notify:setEnabled', (_e, v: boolean) => setNotifyEnabled(v))
 
-  ipcMain.handle('agent:list', (_e, projectPath: string) => agents.listAgents(projectPath))
-  ipcMain.handle('agent:save', (_e, agent: AgentDef) => agents.saveAgent(agent))
+  // 에이전트는 전역 라이브러리에서 관리한다. 프로젝트 스캔은 가져오기 후보용.
+  ipcMain.handle('agent:list', () => library.list())
+  ipcMain.handle('agent:scan', (_e, projectPath: string) => library.scanProject(projectPath))
+  ipcMain.handle('agent:save', (_e, agent: AgentDef) => library.save(agent))
+  ipcMain.handle('agent:delete', (_e, name: string) => library.remove(name))
+  ipcMain.handle('agent:import', (_e, projectPath: string, name: string) =>
+    library.importFrom(projectPath, name),
+  )
+  ipcMain.handle('agent:export', (_e, name: string, projectPath: string) =>
+    library.exportTo(name, projectPath),
+  )
+  // 가져오기는 파싱만 한다. 저장은 사용자가 검토 화면에서 승인해야 일어난다.
+  ipcMain.handle('agent:fetchUrl', (_e, url: string): Promise<FetchedAgent> => fetchFromUrl(url))
+  ipcMain.handle('agent:fetchFile', async (): Promise<FetchedAgent | undefined> => {
+    const r = await dialog.showOpenDialog({
+      title: '에이전트 파일 선택',
+      filters: [{ name: 'Agent', extensions: ['md'] }],
+      properties: ['openFile'],
+    })
+    return r.canceled || !r.filePaths[0] ? undefined : fetchFromFile(r.filePaths[0])
+  })
+  // 연결된 원본 확인 — 확인만 하고 바꾸지 않는다
+  ipcMain.handle('agent:checkUpdate', (_e, name: string): Promise<UpdateCheck> => checkUpdate(name))
+  ipcMain.handle(
+    'agent:applyUpdate',
+    (_e, name: string, opts: { tools?: string[]; model?: string | null }) =>
+      applyUpdate(name, opts),
+  )
+  // Memory — CLI 가 읽는 파일이 정본이므로 앱은 그 파일을 직접 읽고 쓴다
+  ipcMain.handle('memory:list', async () => {
+    const runners = await detectRunners()
+    return memory.list(runners, db.listProjects().map((p) => p.path))
+  })
+  ipcMain.handle('memory:read', (_e, id: string) => memory.read(id))
+  ipcMain.handle('memory:save', (_e, id: string, content: string) => memory.save(id, content))
+  ipcMain.handle('memory:history', (_e, entryId?: string) => db.memoryEdits(entryId))
+
   ipcMain.handle('agent:route', (_e, instruction: string, runner: DetectedRunner, cwd: string) =>
     route(instruction, runner, cwd),
-  )
-  ipcMain.handle('agent:delete', (_e, projectPath: string, name: string) =>
-    agents.deleteAgent(projectPath, name),
   )
   ipcMain.handle('project:reveal', (_e, path: string) => shell.openPath(path))
   ipcMain.handle('session:changes', (_e, id: string) => sessions.changes(id))
