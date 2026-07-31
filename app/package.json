@@ -5,9 +5,9 @@
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
-    "dev": "electron-vite dev",
+    "dev": "node ./scripts/run-electron-vite.mjs dev",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
-    "start": "electron-vite preview",
+    "start": "node ./scripts/run-electron-vite.mjs preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
   },
   "dependencies": {
