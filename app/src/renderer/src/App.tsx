@@ -6,12 +6,14 @@ import {
   CircleStop,
   FileCode2,
   FolderPlus,
+  Brain,
   Bot,
   Gauge,
   PanelRightOpen,
   Pencil,
   Plus,
   KeyRound,
+  Lock,
   Loader2,
   FolderOpen,
   MessageSquarePlus,
@@ -24,6 +26,7 @@ import {
   Moon,
   PencilLine,
   Paperclip,
+  Settings2,
   Sun,
   GitBranch,
   FileDiff,
@@ -36,6 +39,10 @@ import CommandPalette, { type Command } from './components/CommandPalette'
 import ImageAnnotator from './components/ImageAnnotator'
 import AgentEditor, { emptyAgent } from './components/AgentEditor'
 import Overview from './components/Overview'
+import AgentsScreen from './components/AgentsScreen'
+import AgentImport from './components/AgentImport'
+import MemoryScreen from './components/MemoryScreen'
+import Settings from './components/Settings'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -67,6 +74,8 @@ interface View {
   entries: Entry[]
   artifacts: UiArtifact[]
   cost: number
+  /** 비용을 안 주는 CLI(Codex)를 위해 토큰도 들고 있는다 */
+  tokens: number
   status?: SessionStatus
   statusReason?: string
   meta?: SessionMeta
@@ -75,7 +84,7 @@ interface View {
   conflicts: { path: string; otherTitle: string }[]
 }
 
-const EMPTY: View = { entries: [], artifacts: [], cost: 0, conflicts: [] }
+const EMPTY: View = { entries: [], artifacts: [], cost: 0, tokens: 0, conflicts: [] }
 
 const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   starting: { label: '시작 중', color: 'text-sky' },
@@ -95,6 +104,13 @@ const RISK: Record<string, { ring: string; text: string; label: string }> = {
   low: { ring: 'border-surface1 bg-surface0/40', text: 'text-subtext0', label: '낮음' },
 }
 
+const PROVIDER_LABEL: Record<string, string> = {
+  'claude-cli': 'Claude',
+  'codex-cli': 'Codex',
+  'claude-agent-sdk': 'Claude (SDK)',
+}
+const PROVIDER_ORDER = ['claude-cli', 'codex-cli', 'claude-agent-sdk']
+
 const runnerLabel = (r: DetectedRunner): string =>
   (r.kind === 'wsl' ? `WSL · ${r.distro}` : r.kind === 'windows-native' ? 'Windows' : r.kind) +
   (r.version ? ` · ${r.version}` : '')
@@ -103,6 +119,10 @@ const RunnerIcon = ({ r, ...p }: { r: DetectedRunner; className?: string }) =>
   r.kind === 'wsl' ? <Terminal {...p} /> : <Monitor {...p} />
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
+
+/** 12345 → 12.3k */
+const fmtTokens = (n: number): string =>
+  n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 
 /**
  * 큰 이미지는 `String.fromCharCode(...arr)` 로 한 번에 못 바꾼다.
@@ -210,7 +230,11 @@ function reduce(v: View, e: SessionEvent, key: string): View {
         ? v
         : { ...v, conflicts: [...v.conflicts, { path: e.path, otherTitle: e.otherTitle }] }
     case 'usage':
-      return { ...v, cost: e.usage.totalCostUsd }
+      return {
+        ...v,
+        cost: e.usage.totalCostUsd,
+        tokens: e.usage.inputTokens + e.usage.outputTokens,
+      }
     default:
       return v
   }
@@ -266,7 +290,13 @@ export default function App() {
   const [attachments, setAttachments] = useState<{ path: string; url: string; name: string }[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [annotating, setAnnotating] = useState<number>()
-  const [showOverview, setShowOverview] = useState(false)
+  /** 프로젝트 화면 / 전역 화면(Overview·Agents) 전환 */
+  const [screen, setScreen] = useState<'project' | 'overview' | 'agents' | 'memory'>('project')
+  const showOverview = screen === 'overview'
+  const showAgents = screen === 'agents'
+  const showMemory = screen === 'memory'
+  /** 프로젝트 화면이 아님 — 탭바·대화·Artifact 를 전부 감춘다 */
+  const showHome = screen !== 'project'
   const [cost, setCost] = useState<CostTotals>({ today: 0, month: 0, all: 0 })
   const [now, setNow] = useState(Date.now())
   /** 대화가 위로 스크롤됐는지 — 페이드·그림자를 그때만 보인다 */
@@ -275,6 +305,14 @@ export default function App() {
   const [agentName, setAgentName] = useState<string>()
   const [agentMenu, setAgentMenu] = useState(false)
   const [tabMenu, setTabMenu] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  /**
+   * 다음 지시를 보낼 러너. 세션마다 다를 수 있어 프로젝트 기본값과 따로 둔다.
+   * 열어둔 세션이 있으면 그 세션이 쓰던 러너를 기본으로 잡는다.
+   */
+  const [nextRunnerId, setNextRunnerId] = useState<string>()
+  const [notify, setNotify] = useState(() => localStorage.getItem('ws.notify') !== 'off')
   /** 탭바 가용 폭 — 창 크기·Artifact 폭에 따라 바뀌므로 관찰한다 */
   const [tabRoom, setTabRoom] = useState(0)
   const [confirmDelSession, setConfirmDelSession] = useState<StoredSession>()
@@ -321,10 +359,31 @@ export default function App() {
 
   const view = (activeSession && views[activeSession]) || EMPTY
   const activeProject = projects.find((p) => p.path === active)
-  const activeRunner = runners.find((r) => r.id === activeProject?.runnerId)
-  const claudeRunners = runners.filter((r) => r.provider === 'claude-cli')
   const selected = sessions.find((s) => s.id === activeSession)
+  const selectedSessionRunnerId = selected?.runnerId
+  /** 지금 화면이 가리키는 러너 — 세션 것 > 사용자가 고른 것 > 프로젝트 기본값 */
+  const activeRunnerId = nextRunnerId ?? selectedSessionRunnerId ?? activeProject?.runnerId
+  const activeRunner = runners.find((r) => r.id === activeRunnerId)
+  /**
+   * 세션이 한 번 시작되면 실행 환경을 못 바꾼다.
+   * 세션 기록이 러너 홈마다 따로라(WSL ~/.claude · Windows %USERPROFILE% · Codex ~/.codex)
+   * 바꾸는 순간 이어가기가 끊긴다. 바꾸려면 새 세션을 연다.
+   */
+  const runnerLocked = !!selected
+  /** 세션을 돌릴 수 있는 러너 전체. provider 를 가리지 않는다. */
+  const usableRunners = runners.filter((r) => r.available)
+  /** 홈 라우터 전용 — 라우팅 프롬프트가 Claude CLI 인자로 짜여 있다 */
+  const claudeRunners = runners.filter((r) => r.provider === 'claude-cli')
   const { visible: visibleTabs, overflow: overflowTabs } = splitTabs(sessions, activeSession, tabRoom)
+  /** 적용 대상·실행 환경이 모두 맞는 것만 */
+  const usableAgents = agents.filter((a) => {
+    const inScope =
+      !a.workspace.projects?.length || (active ? a.workspace.projects.includes(active) : true)
+    const provider = activeRunner?.provider
+    const okProvider =
+      !a.workspace.providers?.length || !provider || a.workspace.providers.includes(provider)
+    return inScope && okProvider
+  })
   /** 활성 세션이 실행 중일 때만 입력을 잠근다. 다른 세션은 계속 돌아도 된다. */
   const busy = running.some((r) => r.id === activeSession)
 
@@ -375,14 +434,24 @@ export default function App() {
     else setSessions([])
   }, [active, refresh])
 
-  const reloadAgents = useCallback(async (projectPath?: string) => {
-    setAgents(projectPath ? await window.api.listAgents(projectPath) : [])
+  const reloadAgents = useCallback(async () => {
+    setAgents(await window.api.listAgents())
   }, [])
 
   useEffect(() => {
-    void reloadAgents(active)
+    void reloadAgents()
     setAgentName(undefined)
   }, [active, reloadAgents])
+
+  useEffect(() => {
+    localStorage.setItem('ws.notify', notify ? 'on' : 'off')
+    void window.api.setNotifyEnabled(notify)
+  }, [notify])
+
+  // 알림을 눌러 들어오면 그 세션을 연다
+  useEffect(() => {
+    return window.api.onNotifyJump(({ sessionId, cwd }) => void jumpTo(sessionId, cwd))
+  })
 
   useLayoutEffect(() => {
     const el = tabBarRef.current
@@ -390,7 +459,7 @@ export default function App() {
     const ro = new ResizeObserver(([e]) => setTabRoom(e.contentRect.width))
     ro.observe(el)
     return () => ro.disconnect()
-  }, [showOverview])
+  }, [screen])
 
   // ── 실시간 이벤트 — 세션별로 라우팅 ──
   useEffect(() => {
@@ -550,7 +619,9 @@ export default function App() {
   }
 
   function selectProject(path: string): void {
-    setShowOverview(false)
+    setScreen('project')
+    setPendingPick(undefined)
+    setNextRunnerId(undefined)
     setScrolled(false)
     setActive(path)
     setActiveSession(undefined)
@@ -563,14 +634,14 @@ export default function App() {
    * 실행 환경은 여기서 임의로 정하지 않는다 — 프로젝트에 아직 없으면
    * 일반 세션과 똑같이 첫 지시 시점에 사용자가 고르게 한다.
    */
-  async function runRouted(c: RouteCandidate, text: string): Promise<void> {
-    selectProject(c.projectPath)
+  async function runRouted(c: RouteCandidate, projectPath: string, text: string): Promise<void> {
+    selectProject(projectPath)
     setAgentName(c.agentName)
 
-    const proj = projects.find((p) => p.path === c.projectPath)
+    const proj = projects.find((p) => p.path === projectPath)
     const runner = runners.find((r) => r.id === proj?.runnerId)
-    if (runner) return void run(runner.id, text, c.projectPath)
-    if (claudeRunners.length === 1) return void chooseRunner(claudeRunners[0].id, text, c.projectPath)
+    if (runner) return void run(runner.id, text, projectPath)
+    if (usableRunners.length === 1) return void chooseRunner(usableRunners[0].id, text, projectPath)
 
     // 고를 게 여럿이면 선택 UI 를 띄우고 멈춘다
     setPendingPick(text)
@@ -578,7 +649,9 @@ export default function App() {
 
   /** 세션 열기. 이미 메모리에 있으면 그대로, 아니면 DB 에서 복원한다. */
   async function openSession(id: string): Promise<void> {
-    setShowOverview(false)
+    setScreen('project')
+    setPendingPick(undefined)
+    setNextRunnerId(sessions.find((x) => x.id === id)?.runnerId ?? undefined)
     setScrolled(false)
     setActiveSession(id)
     setAgentName(sessions.find((x) => x.id === id)?.agentName ?? undefined)
@@ -616,6 +689,7 @@ export default function App() {
 
   function newSession(): void {
     setScrolled(false)
+    setPendingPick(undefined)
     setActiveSession(undefined)
     setSelectedArtifact(undefined)
     taRef.current?.focus()
@@ -640,9 +714,9 @@ export default function App() {
     const text = prompt.trim()
     if (!active || !text || busy) return
 
-    const runnerId = activeProject?.runnerId
+    const runnerId = nextRunnerId ?? selectedSessionRunnerId ?? activeProject?.runnerId
     if (runnerId && runners.some((r) => r.id === runnerId)) return void run(runnerId, text)
-    if (claudeRunners.length === 1) return void chooseRunner(claudeRunners[0].id, text)
+    if (usableRunners.length === 1) return void chooseRunner(usableRunners[0].id, text)
 
     setPendingPick(text)
     setPrompt('')
@@ -655,6 +729,8 @@ export default function App() {
   async function chooseRunner(runnerId: string, text?: string, cwd?: string): Promise<void> {
     const path = cwd ?? active
     if (!path) return
+    setNextRunnerId(runnerId)
+    // 프로젝트 기본값도 갱신한다 — 다음 새 세션이 이걸 물려받는다
     await window.api.setProjectRunner(path, runnerId)
     setProjects(await window.api.listProjects())
     const body = text ?? pendingPick
@@ -669,8 +745,14 @@ export default function App() {
 
     // 열어둔 세션이 있으면 그 CLI 세션을 이어간다.
     // 앱 세션도 새로 만들지 않고 그대로 이어간다 — 한 대화가 턴마다 쪼개지면 안 된다.
-    const resumeCliSessionId = selected?.cliSessionId ?? undefined
+    //
+    // 단 **러너가 바뀌면 이어갈 수 없다.** 세션 기록이 러너 홈마다 따로 있어
+    // (WSL ~/.claude · Windows %USERPROFILE% · Codex ~/.codex) 세션 ID 가 통하지 않는다.
+    const sameRunner = !selected || selected.runnerId === runnerId
+    const resumeCliSessionId = sameRunner ? (selected?.cliSessionId ?? undefined) : undefined
     const continueSessionId = resumeCliSessionId ? activeSession : undefined
+    // 러너를 바꿔 이어갈 수 없게 된 경우, 새 세션으로 시작하는 편이 덜 혼란스럽다
+    if (!sameRunner) setActiveSession(undefined)
     setPrompt('')
 
     try {
@@ -712,7 +794,7 @@ export default function App() {
       group: '명령',
       label: 'Overview 열기',
       icon: LayoutDashboard,
-      run: () => setShowOverview(true),
+      run: () => setScreen('overview'),
     },
     ...agents.map((a) => ({
       id: `ag:${a.name}`,
@@ -831,18 +913,50 @@ export default function App() {
           <div className="flex h-6 w-6 items-center justify-center rounded bg-mauve/20">
             <Terminal className="h-3.5 w-3.5 text-mauve" />
           </div>
-          <span className="text-sm font-semibold">Agent Workspace</span>
+          <span className="flex-1 text-sm font-semibold">Puppeteer</span>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            title="설정"
+            className="rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-text"
+          >
+            <Settings2 className="h-4 w-4" />
+          </button>
         </div>
 
-        <button
-          onClick={() => setShowOverview(true)}
-          className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-            showOverview ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
-          }`}
-        >
-          <LayoutDashboard className="h-4 w-4 text-sapphire" />
-          Overview
-        </button>
+        <div className="flex flex-col gap-0.5">
+          <button
+            onClick={() => setScreen('agents')}
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+              showAgents ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
+            }`}
+          >
+            <Bot className="h-4 w-4 text-mauve" />
+            Agents
+            {agents.length > 0 && (
+              <span className="ml-auto text-[11px] text-overlay1">{agents.length}</span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setScreen('memory')}
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+              showMemory ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
+            }`}
+          >
+            <Brain className="h-4 w-4 text-teal" />
+            Memory
+          </button>
+
+          <button
+            onClick={() => setScreen('overview')}
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+              showOverview ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
+            }`}
+          >
+            <LayoutDashboard className="h-4 w-4 text-sapphire" />
+            Overview
+          </button>
+        </div>
 
         {/* 중앙 승인 — 다른 프로젝트/세션의 요청도 모두 모인다 */}
         {approvals.length > 0 && (
@@ -990,19 +1104,35 @@ export default function App() {
             <span className="text-overlay1">이번 달</span>
             <span className="font-mono tabular-nums text-subtext1">${cost.month.toFixed(2)}</span>
           </div>
-          {view.cost > 0 && (
+          {(view.cost > 0 || view.tokens > 0) && (
             <div className="flex items-center justify-between text-[11px]">
               <span className="text-overlay1">현재 세션</span>
-              <span className="font-mono tabular-nums text-text">${view.cost.toFixed(4)}</span>
+              {/* Codex 는 비용을 주지 않는다. 단가를 지어내 환산하느니 토큰을 그대로 보여준다. */}
+              <span className="font-mono tabular-nums text-text" title={`${view.tokens.toLocaleString()} 토큰`}>
+                {view.cost > 0 ? `$${view.cost.toFixed(4)}` : `${fmtTokens(view.tokens)} 토큰`}
+              </span>
             </div>
           )}
         </section>
       </aside>
 
       {/* ── Session Tabs ─────────────────────────── */}
-      {!showOverview && active && (
+      {!showHome && active && (
         <div className="col-start-2 col-end-4 row-start-1 z-20 flex items-end bg-mantle pl-2 pr-2 pt-1">
           <div ref={tabBarRef} className="flex min-w-0 flex-1 items-end gap-0.5">
+            {/* 새 세션은 맨 왼쪽 고정 — 탭 개수가 변해도 자리가 안 움직인다 */}
+            <button
+              onClick={newSession}
+              title="새 세션"
+              className={`flex shrink-0 items-center gap-1 rounded-t-lg px-2.5 py-1.5 text-[13px] ${
+                activeSession === undefined
+                  ? 'bg-base text-text'
+                  : 'text-subtext0 hover:bg-surface0/60'
+              }`}
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+            </button>
+
             {visibleTabs.map((s) => {
             const on = s.id === activeSession
             const live = running.some((r) => r.id === s.id)
@@ -1053,7 +1183,7 @@ export default function App() {
                 <button
                   onClick={() => setTabMenu((v) => !v)}
                   title={`세션 ${overflowTabs.length}개 더`}
-                  className="mb-px flex items-center gap-1 rounded-t-lg px-2 py-1.5 text-[12px] text-subtext0 hover:bg-surface0/60 hover:text-text"
+                  className="flex items-center gap-1 rounded-t-lg px-2 py-1.5 text-[12px] text-subtext0 hover:bg-surface0/60 hover:text-text"
                 >
                   <ChevronDown className="h-3.5 w-3.5" />
                   {overflowTabs.length}
@@ -1089,15 +1219,6 @@ export default function App() {
               </div>
             )}
 
-            <button
-              onClick={newSession}
-              title="새 세션"
-              className={`mb-px flex shrink-0 items-center gap-1 rounded-t-lg px-2.5 py-1.5 text-[13px] ${
-                activeSession === undefined ? 'bg-base text-text' : 'text-subtext0 hover:bg-surface0/60'
-              }`}
-            >
-              <MessageSquarePlus className="h-4 w-4" />
-            </button>
           </div>
 
           <div className="mb-1 flex shrink-0 items-center gap-1.5 pl-2">
@@ -1131,7 +1252,7 @@ export default function App() {
                       에이전트 없이 실행
                     </button>
 
-                    {agents.map((a) => (
+                    {usableAgents.map((a) => (
                       <div
                         key={a.name}
                         className={`group flex items-center gap-1 ${
@@ -1168,7 +1289,7 @@ export default function App() {
 
                     <button
                       onClick={() => {
-                        if (active) setEditing({ agent: emptyAgent(active), isNew: true })
+                        setEditing({ agent: emptyAgent(active), isNew: true })
                         setAgentMenu(false)
                       }}
                       className="flex w-full items-center gap-1.5 border-t border-surface0 px-3 py-2 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
@@ -1182,42 +1303,71 @@ export default function App() {
 
             {activeRunner ? (
               <button
-                onClick={() => setPendingPick(prompt.trim() || '')}
-                title={`실행 환경 변경 · ${activeRunner.executable}`}
-                className="flex items-center gap-1.5 rounded-md bg-surface0/60 px-2 py-1 text-[11px] text-subtext1 hover:bg-surface0 hover:text-text"
+                disabled={runnerLocked}
+                onClick={() => !runnerLocked && setPendingPick(prompt.trim() || '')}
+                title={
+                  runnerLocked
+                    ? `이 세션은 ${runnerLabel(activeRunner)} 로 시작했습니다. 바꾸려면 새 세션을 여세요.`
+                    : `실행 환경 변경 · ${activeRunner.executable}`
+                }
+                /* Claude 가 아니면 눈에 띄게 — 어디로 내용이 나가는지는 한눈에 보여야 한다 */
+                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
+                  activeRunner.provider === 'claude-cli'
+                    ? 'bg-surface0/60 text-subtext1'
+                    : 'bg-peach/15 text-peach'
+                } ${
+                  runnerLocked
+                    ? 'cursor-default'
+                    : activeRunner.provider === 'claude-cli'
+                      ? 'hover:bg-surface0 hover:text-text'
+                      : 'hover:bg-peach/25'
+                }`}
               >
-                <RunnerIcon r={activeRunner} className="h-3.5 w-3.5 text-sapphire" />
+                <RunnerIcon
+                  r={activeRunner}
+                  className={`h-3.5 w-3.5 ${
+                    activeRunner.provider === 'claude-cli' ? 'text-sapphire' : ''
+                  }`}
+                />
+                {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider} ·{' '}
                 {runnerLabel(activeRunner)}
+                {runnerLocked && <Lock className="h-3 w-3 text-overlay1" />}
               </button>
             ) : (
               <span className="rounded-md border border-dashed border-surface1 px-2 py-1 text-[11px] text-overlay1">
                 실행 환경 미지정
               </span>
             )}
-            <button
-              onClick={toggleTheme}
-              title={theme === 'dark' ? '라이트 모드' : '다크 모드'}
-              className="rounded-md p-1.5 text-subtext0 hover:bg-surface0 hover:text-text"
-            >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
           </div>
         </div>
       )}
 
-      {/* ── Conversation / Overview ──────────────── */}
-      {showOverview ? (
+      {/* ── Conversation / Overview / Agents ─────── */}
+      {showHome ? (
         <main className="col-start-2 col-end-4 row-start-1 row-end-4 min-h-0 overflow-hidden">
-          <Overview
-            running={running}
-            approvals={approvals}
-            statusLabel={(st) => STATUS[st]}
-            onOpenProject={selectProject}
-            onOpenSession={(id, path) => void jumpTo(id, path)}
-            runner={activeRunner ?? claudeRunners[0]}
-            routeCwd={active || projects[0]?.path}
-            onRunAgent={runRouted}
-          />
+          {showMemory ? (
+            <MemoryScreen />
+          ) : showAgents ? (
+            <AgentsScreen
+              agents={agents}
+              projects={projects}
+              runner={activeRunner ?? claudeRunners[0]}
+              routeCwd={active || projects[0]?.path}
+              onRunAgent={runRouted}
+              onEdit={(a) => setEditing({ agent: a, isNew: false })}
+              onNew={() => setEditing({ agent: emptyAgent(active), isNew: true })}
+              onImport={() => setImporting(true)}
+              onReload={() => void reloadAgents()}
+            />
+          ) : (
+            <Overview
+              running={running}
+              approvals={approvals}
+              statusLabel={(st) => STATUS[st]}
+              onOpenProject={selectProject}
+              onOpenSession={(id, path) => void jumpTo(id, path)}
+            />
+          )}
         </main>
       ) : (
       <main
@@ -1433,7 +1583,7 @@ export default function App() {
       )}
 
       {/* ── Artifacts ────────────────────────────── */}
-      {!showOverview && !artifactsOpen && (
+      {!showHome && !artifactsOpen && (
         <aside className="col-start-3 row-start-2 row-end-4 flex flex-col items-center gap-2 border-l border-surface0 bg-mantle py-2.5">
           <button
             onClick={toggleArtifacts}
@@ -1453,7 +1603,7 @@ export default function App() {
         </aside>
       )}
 
-      {!showOverview && artifactsOpen && (
+      {!showHome && artifactsOpen && (
       <aside className="relative col-start-3 row-start-2 row-end-4 flex min-h-0 flex-col overflow-hidden border-l border-surface0 bg-mantle">
         <div
           onPointerDown={startResize}
@@ -1519,29 +1669,42 @@ export default function App() {
       )}
 
       {/* ── Prompt ───────────────────────────────── */}
-      {!showOverview && (
+      {!showHome && (
       <div className="col-start-2 row-start-3 bg-mantle p-2.5">
-        {pendingPick !== undefined && (
+        {pendingPick !== undefined && !runnerLocked && (
           <div className="mb-2.5 rounded-lg bg-surface0/60 p-3">
             <div className="mb-2 text-[12px] text-subtext1">
               이 프로젝트를 어디서 실행할까요?
               <span className="ml-2 text-overlay1">한 번 정하면 기억합니다</span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {claudeRunners.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => void chooseRunner(r.id)}
-                  className="flex items-center gap-2 rounded-md bg-surface0 px-3 py-2 text-left text-[12px] hover:bg-surface1"
-                >
-                  <RunnerIcon r={r} className="h-4 w-4 text-sapphire" />
-                  <span>
-                    <span className="block text-subtext1">{runnerLabel(r)}</span>
-                    <span className="block text-[11px] text-overlay1">{r.installMethod}</span>
-                  </span>
-                </button>
+            <div className="space-y-2">
+              {PROVIDER_ORDER.filter((p) => usableRunners.some((r) => r.provider === p)).map((p) => (
+                <div key={p}>
+                  <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
+                    {PROVIDER_LABEL[p]}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {usableRunners
+                      .filter((r) => r.provider === p)
+                      .map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => void chooseRunner(r.id)}
+                          className="flex items-center gap-2 rounded-md bg-surface0 px-3 py-2 text-left text-[12px] hover:bg-surface1"
+                        >
+                          <RunnerIcon r={r} className="h-4 w-4 text-sapphire" />
+                          <span>
+                            <span className="block text-subtext1">{runnerLabel(r)}</span>
+                            <span className="block text-[11px] text-overlay1">
+                              {r.installMethod}
+                            </span>
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                </div>
               ))}
-              {claudeRunners.length === 0 && (
+              {usableRunners.length === 0 && (
                 <span className="text-[12px] text-yellow">실행 가능한 CLI를 찾지 못했습니다</span>
               )}
             </div>
@@ -1665,20 +1828,44 @@ export default function App() {
         />
       )}
 
+      {settingsOpen && (
+        <Settings
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          notify={notify}
+          onToggleNotify={setNotify}
+          runners={usableRunners}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+
+      {importing && (
+        <AgentImport
+          projects={projects}
+          existingNames={agents.map((a) => a.name)}
+          onClose={() => setImporting(false)}
+          onSaved={() => {
+            setImporting(false)
+            void reloadAgents()
+          }}
+        />
+      )}
+
       {editing && (
         <AgentEditor
           agent={editing.agent}
           isNew={editing.isNew}
+          projects={projects}
           onClose={() => setEditing(undefined)}
           onSaved={(a) => {
             setEditing(undefined)
             setAgentName(a.name)
-            void reloadAgents(active)
+            void reloadAgents()
           }}
           onDeleted={(name) => {
             setEditing(undefined)
             if (agentName === name) setAgentName(undefined)
-            void reloadAgents(active)
+            void reloadAgents()
           }}
         />
       )}
