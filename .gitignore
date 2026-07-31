@@ -1,0 +1,37 @@
+# ── 의존성 · 빌드 산출물 ────────────────────────────────
+node_modules/
+out/
+dist/
+build/
+release/
+*.tsbuildinfo
+
+# ── 로그 ────────────────────────────────────────────────
+# npm-install.log, electron-install.log, build.log, dev.log 등
+# 이 PC 에서 빌드하며 남은 것들이라 저장소에 들어갈 이유가 없다
+*.log
+
+# ── 로컬 실행 흔적 ──────────────────────────────────────
+# 앱이 승인 요청·응답 파일을 주고받는 곳. 세션마다 생겼다 사라진다.
+.agent-workspace/
+
+# 스파이크는 실측 근거인 REPORT.md 만 남겼다(문서가 인용한다).
+# 스크립트를 다시 돌리면 CLI 원본 응답(jsonl)이 여기 쌓이는데,
+# 세션 ID·로컬 절대경로가 그대로 들어 있으므로 올리지 않는다.
+spike/*
+!spike/*.md
+
+# ── 편집기 · OS ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── 개인 설정 ──────────────────────────────────────────
+# 프로젝트 공용 설정(.claude/agents 등)은 올리되 개인 것만 제외한다
+.claude/settings.local.json
+.env
+.env.*
+!.env.example
