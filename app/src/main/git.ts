@@ -3,6 +3,7 @@ import { promisify } from 'node:util'
 import type {
   GitSnapshot,
   WorktreeCommitResult,
+  WorktreeConflictFile,
   SessionWorktree,
   WorktreeMergeResult,
   WorktreeRebaseResult,
@@ -390,6 +391,44 @@ export async function rebaseWorktree(
       conflictFiles,
       status: await worktreeStatus(wt),
     }
+  }
+}
+
+function languageFromPath(path: string): string | undefined {
+  const name = path.toLowerCase()
+  if (name.endsWith('.tsx') || name.endsWith('.jsx')) return name.slice(-3)
+  const ext = name.split('.').pop()
+  return ext && ext !== name ? ext : undefined
+}
+
+async function showFile(cwd: string, ref: string, path: string): Promise<{ content: string; missing: boolean }> {
+  try {
+    return { content: await git(cwd, ['show', `${ref}:${path}`]), missing: false }
+  } catch {
+    return { content: '(파일 없음)', missing: true }
+  }
+}
+
+/** 충돌 판단에 쓸 원본/작업 브랜치 파일 내용을 나란히 읽는다. */
+export async function worktreeConflictFile(
+  wt: SessionWorktree,
+  path: string,
+): Promise<WorktreeConflictFile> {
+  const base = wt.baseBranch ?? 'HEAD'
+  const [origin, worktree] = await Promise.all([
+    showFile(wt.origin, base, path),
+    showFile(wt.origin, wt.branch, path),
+  ])
+
+  return {
+    path,
+    originLabel: base,
+    worktreeLabel: wt.branch,
+    originContent: origin.content,
+    worktreeContent: worktree.content,
+    originMissing: origin.missing,
+    worktreeMissing: worktree.missing,
+    language: languageFromPath(path),
   }
 }
 

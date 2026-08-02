@@ -12,6 +12,7 @@ import type {
   SessionStatus,
   SessionWorktree,
   WorktreeCommitResult,
+  WorktreeConflictFile,
   WorktreeMergeResult,
   WorktreeRebaseResult,
   WorktreeRebaseStrategy,
@@ -33,6 +34,7 @@ import {
   removeWorktree,
   snapshot,
   worktreeDiff as readWorktreeDiff,
+  worktreeConflictFile as readWorktreeConflictFile,
   worktreeDirty,
   worktreeStatus as inspectWorktree,
 } from './git'
@@ -279,6 +281,15 @@ export class SessionManager {
     const wt = db.getSession(sessionId)?.worktree
     if (!wt) return '(이 세션에 연결된 worktree가 없습니다.)'
     return readWorktreeDiff(wt)
+  }
+
+  async worktreeConflictFile(
+    sessionId: string,
+    path: string,
+  ): Promise<WorktreeConflictFile | undefined> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return undefined
+    return readWorktreeConflictFile(wt, path)
   }
 
   async commitWorktree(sessionId: string, message: string): Promise<WorktreeCommitResult> {

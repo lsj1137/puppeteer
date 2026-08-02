@@ -9,6 +9,7 @@ import {
   commitWorktree,
   mergeWorktree,
   rebaseWorktree,
+  worktreeConflictFile,
   worktreeDiff,
   worktreeStatus,
 } from './git'
@@ -174,6 +175,15 @@ describe('worktree merge', () => {
     expect(result.conflictFiles).toContain('shared.txt')
     expect(await git(worktreePath, ['rev-parse', 'HEAD'])).toBe(beforeHead)
     expect(await git(worktreePath, ['status', '--porcelain'])).toBe('')
+
+    const file = await worktreeConflictFile(wt, 'shared.txt')
+    expect(file).toMatchObject({
+      path: 'shared.txt',
+      originContent: 'origin\n',
+      worktreeContent: 'worktree\n',
+      originMissing: false,
+      worktreeMissing: false,
+    })
   })
 
   it('resolves rebase conflicts by preferring worktree files', async () => {

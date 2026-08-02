@@ -19,6 +19,7 @@ import type {
   StoredProject,
   StoredSession,
   WorktreeCommitResult,
+  WorktreeConflictFile,
   WorktreeMergeResult,
   WorktreeRebaseResult,
   WorktreeRebaseStrategy,
@@ -98,6 +99,11 @@ const api = {
     ipcRenderer.invoke('session:worktreeStatus', sessionId),
   worktreeDiff: (sessionId: string): Promise<string> =>
     ipcRenderer.invoke('session:worktreeDiff', sessionId),
+  worktreeConflictFile: (
+    sessionId: string,
+    path: string,
+  ): Promise<WorktreeConflictFile | undefined> =>
+    ipcRenderer.invoke('session:worktreeConflictFile', sessionId, path),
   commitWorktree: (sessionId: string, message: string): Promise<WorktreeCommitResult> =>
     ipcRenderer.invoke('session:commitWorktree', sessionId, message),
   rebaseWorktree: (

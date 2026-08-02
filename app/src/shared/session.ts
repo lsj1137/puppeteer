@@ -362,6 +362,17 @@ export interface WorktreeRebaseResult {
 
 export type WorktreeRebaseStrategy = 'origin' | 'worktree'
 
+export interface WorktreeConflictFile {
+  path: string
+  originLabel: string
+  worktreeLabel: string
+  originContent: string
+  worktreeContent: string
+  originMissing: boolean
+  worktreeMissing: boolean
+  language?: string
+}
+
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
 export interface CheckpointDraft {
   sessionId: string

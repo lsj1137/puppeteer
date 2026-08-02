@@ -15,7 +15,12 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { SessionWorktree, WorktreeRebaseStrategy, WorktreeStatus } from '@shared/session'
+import type {
+  SessionWorktree,
+  WorktreeConflictFile,
+  WorktreeRebaseStrategy,
+  WorktreeStatus,
+} from '@shared/session'
 import Code from './Code'
 
 interface Props {
@@ -35,6 +40,8 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const [message, setMessage] = useState<{ ok: boolean; text: string }>()
   const [commitMessage, setCommitMessage] = useState('작업 변경 반영')
   const [conflictFiles, setConflictFiles] = useState<string[]>([])
+  const [conflictPreview, setConflictPreview] = useState<WorktreeConflictFile>()
+  const [conflictLoading, setConflictLoading] = useState(false)
   const [diff, setDiff] = useState<string>()
   const [diffLoading, setDiffLoading] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -45,6 +52,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       const next = await window.api.worktreeStatus(sessionId)
       setStatus(next)
       setConflictFiles([])
+      setConflictPreview(undefined)
       if (!next) setMessage({ ok: false, text: '연결된 worktree 정보를 찾지 못했습니다.' })
     } catch (error) {
       setMessage({
@@ -90,6 +98,20 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
     }
   }
 
+  async function openConflict(path: string): Promise<void> {
+    setConflictLoading(true)
+    try {
+      setConflictPreview(await window.api.worktreeConflictFile(sessionId, path))
+    } catch (error) {
+      setMessage({
+        ok: false,
+        text: error instanceof Error ? error.message : '충돌 파일을 읽지 못했습니다.',
+      })
+    } finally {
+      setConflictLoading(false)
+    }
+  }
+
   async function merge(): Promise<void> {
     setMerging(true)
     setMessage(undefined)
@@ -119,8 +141,10 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       if (result.status) setStatus(result.status)
       setMessage({ ok: result.ok, text: result.message })
       setConflictFiles(result.conflictFiles ?? [])
+      if (!result.ok && result.conflictFiles?.[0]) await openConflict(result.conflictFiles[0])
       if (result.ok) {
         setConflictFiles([])
+        setConflictPreview(undefined)
         await onChanged()
         if (diff !== undefined) setDiff(await window.api.worktreeDiff(sessionId))
       }
@@ -198,7 +222,9 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       }}
     >
       <div
-        className="w-full max-w-lg rounded-lg border border-surface1 bg-mantle shadow-2xl"
+        className={`max-h-[calc(100vh-3rem)] w-full overflow-auto rounded-lg border border-surface1 bg-mantle shadow-2xl ${
+          conflictPreview ? 'max-w-6xl' : 'max-w-lg'
+        }`}
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
@@ -324,33 +350,82 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
               </div>
               {conflictFiles.length > 0 && (
                 <div className="mt-3 rounded-md border border-yellow/20 bg-yellow/5 p-2.5">
-                  <div className="mb-2 text-[11px] font-semibold text-yellow">충돌 파일</div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <div className="text-[11px] font-semibold text-yellow">충돌 파일</div>
+                    {conflictLoading && <Loader2 className="h-3 w-3 animate-spin text-yellow" />}
+                  </div>
                   <div className="mb-2 flex flex-wrap gap-1.5">
                     {conflictFiles.map((file) => (
-                      <span
+                      <button
                         key={file}
-                        className="rounded bg-surface0 px-1.5 py-0.5 font-mono text-[11px] text-subtext1"
+                        onClick={() => void openConflict(file)}
+                        className={`rounded px-1.5 py-0.5 font-mono text-[11px] ${
+                          conflictPreview?.path === file
+                            ? 'bg-yellow/20 text-yellow'
+                            : 'bg-surface0 text-subtext1 hover:bg-surface1 hover:text-text'
+                        }`}
                       >
                         {file}
-                      </span>
+                      </button>
                     ))}
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      onClick={() => void rebase('origin')}
-                      disabled={!canRebase || busy}
-                      className="flex min-h-8 flex-1 items-center justify-center rounded-md border border-surface1 px-3 py-1.5 text-[12px] font-medium text-subtext1 hover:bg-surface0 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      원본 사용
-                    </button>
-                    <button
-                      onClick={() => void rebase('worktree')}
-                      disabled={!canRebase || busy}
-                      className="flex min-h-8 flex-1 items-center justify-center rounded-md bg-mauve/20 px-3 py-1.5 text-[12px] font-medium text-mauve hover:bg-mauve/30 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      내 작업 사용
-                    </button>
-                  </div>
+                  {conflictPreview && (
+                    <div className="grid gap-2 lg:grid-cols-2">
+                      <div className="min-w-0 rounded-md border border-surface1 bg-mantle">
+                        <div className="flex items-center gap-2 border-b border-surface0 px-2.5 py-2">
+                          <span className="flex-1 truncate text-[12px] font-semibold text-text">
+                            원본
+                          </span>
+                          <span className="truncate font-mono text-[11px] text-overlay1">
+                            {conflictPreview.originLabel}
+                          </span>
+                        </div>
+                        <div className="max-h-72 overflow-auto p-2">
+                          <Code
+                            code={conflictPreview.originContent}
+                            language={conflictPreview.language}
+                            lineNumbers={!conflictPreview.originMissing}
+                          />
+                        </div>
+                        <div className="border-t border-surface0 p-2">
+                          <button
+                            onClick={() => void rebase('origin')}
+                            disabled={!canRebase || busy}
+                            className="flex min-h-8 w-full items-center justify-center rounded-md border border-surface1 px-3 py-1.5 text-[12px] font-medium text-subtext1 hover:bg-surface0 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            이 버전 사용
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="min-w-0 rounded-md border border-mauve/25 bg-mantle">
+                        <div className="flex items-center gap-2 border-b border-surface0 px-2.5 py-2">
+                          <span className="flex-1 truncate text-[12px] font-semibold text-text">
+                            내 작업
+                          </span>
+                          <span className="truncate font-mono text-[11px] text-overlay1">
+                            {conflictPreview.worktreeLabel}
+                          </span>
+                        </div>
+                        <div className="max-h-72 overflow-auto p-2">
+                          <Code
+                            code={conflictPreview.worktreeContent}
+                            language={conflictPreview.language}
+                            lineNumbers={!conflictPreview.worktreeMissing}
+                          />
+                        </div>
+                        <div className="border-t border-surface0 p-2">
+                          <button
+                            onClick={() => void rebase('worktree')}
+                            disabled={!canRebase || busy}
+                            className="flex min-h-8 w-full items-center justify-center rounded-md bg-mauve/20 px-3 py-1.5 text-[12px] font-medium text-mauve hover:bg-mauve/30 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            이 버전 사용
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
