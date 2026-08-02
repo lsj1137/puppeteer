@@ -37,12 +37,14 @@ CLI 하나로 코딩 에이전트를 쓰는 건 충분히 잘 됩니다. 문제�
 ### 실행 환경을 사람마다 다르게
 
 같은 Windows PC라도 누구는 네이티브, 누구는 WSL에 CLI를 깔아 씁니다.
+macOS/Linux에서는 POSIX 설치 경로를 훑습니다.
 설치된 실행 환경을 **자동 탐지**하고, **프로젝트별로** 무엇을 쓸지 첫 지시 시점에 정합니다.
 
 ```
 Provider          Runner
 claude-cli   ×    windows-native
 codex-cli         wsl (배포판별)
+                  posix (macOS/Linux)
                   custom
 ```
 
@@ -164,7 +166,12 @@ app/src/
 
 ## 시작하기
 
-**필요한 것** — Node 20+, 그리고 Claude Code CLI가 Windows 또는 WSL에 설치되어 있을 것.
+**필요한 것**
+
+- Node 20.11+ (권장: 현재 LTS 이상)
+- Claude Code CLI 또는 Codex CLI
+- macOS/Linux: 일반 POSIX 경로에 CLI 설치
+- Windows: Windows 네이티브 또는 WSL 중 한 곳에 CLI 설치
 
 ```bash
 cd app
@@ -172,10 +179,21 @@ npm install
 npm run dev
 ```
 
+`npm run dev` 는 `electron-vite dev` 를 직접 부르지 않고 `scripts/run-electron-vite.mjs` 를 거칩니다.
+이 래퍼는 `ELECTRON_RUN_AS_NODE` 같은 부모 환경 변수를 정리하고 로컬 `electron-vite` CLI를 Node로 실행해,
+macOS와 Windows 양쪽에서 Electron 실행 경로가 흔들리지 않게 합니다.
+
+### 검증 명령
+
 ```bash
+npm run typecheck   # 타입 검사
+npm test            # 단위 테스트
 npm run build       # 타입 검사 + 번들
-npm run typecheck   # 타입 검사만
+npm run smoke       # 빌드 후 실제 Electron 앱 최소 실행
 ```
+
+`npm run smoke` 는 빌드된 Electron 앱을 실제로 띄운 뒤 렌더러 로드, runner 감지, 정상 종료까지 확인합니다.
+`npm test` 가 함수 단위 회귀를 잡는다면, smoke 는 "설치·빌드·Electron 실행"이 최소한 깨지지 않았는지 보는 얇은 E2E 테스트입니다.
 
 로그인은 CLI가 알아서 안내합니다. 세션이 `auth-required` 로 끝나면 화면에 안내 카드가 뜹니다.
 
