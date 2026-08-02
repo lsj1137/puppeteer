@@ -323,8 +323,6 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [checkpoint, setCheckpoint] = useState<CheckpointDraft>()
   const [worktreeOpen, setWorktreeOpen] = useState<string>()
-  /** 새 세션은 기본으로 전용 worktree 에서 격리한다 */
-  const [isolate, setIsolate] = useState(true)
   /**
    * 다음 지시를 보낼 러너. 세션마다 다를 수 있어 프로젝트 기본값과 따로 둔다.
    * 열어둔 세션이 있으면 그 세션이 쓰던 러너를 기본으로 잡는다.
@@ -747,7 +745,6 @@ export default function App() {
   function newSession(): void {
     setScrolled(false)
     setPendingPick(undefined)
-    setIsolate(true)
     setActiveSession(undefined)
     setSelectedArtifact(undefined)
     taRef.current?.focus()
@@ -822,7 +819,6 @@ export default function App() {
         continueSessionId,
         attachments: attachments.map((a) => a.path),
         agentName,
-        isolate: selected ? undefined : isolate,
       })
       setAttachments([])
       // 사용자 지시는 main 이 이벤트로 되돌려주므로 여기서 따로 넣지 않는다
@@ -1373,7 +1369,7 @@ export default function App() {
               )}
             </div>
 
-            {sessionWorktree && selected ? (
+            {sessionWorktree && selected && (
               <button
                 onClick={() => setWorktreeOpen(selected.id)}
                 title={`격리 실행 중\n브랜치 ${sessionWorktree.branch}\n${sessionWorktree.path}`}
@@ -1383,30 +1379,6 @@ export default function App() {
                 <span className="truncate">{sessionWorktree.branch}</span>
                 <ChevronDown className="h-3 w-3 shrink-0" />
               </button>
-            ) : (
-              !selected && (
-                <button
-                  onClick={() => setIsolate((v) => !v)}
-                  aria-pressed={isolate}
-                  title={
-                    isolate
-                      ? '새 세션을 전용 Git worktree에서 시작합니다. 클릭하면 현재 폴더를 사용합니다.'
-                      : '새 세션을 현재 프로젝트 폴더에서 시작합니다. 클릭하면 worktree로 분리합니다.'
-                  }
-                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
-                    isolate
-                      ? 'bg-teal/15 text-teal'
-                      : 'bg-yellow/10 text-yellow hover:bg-yellow/15'
-                  }`}
-                >
-                  {isolate ? (
-                    <GitBranch className="h-3.5 w-3.5" />
-                  ) : (
-                    <FolderOpen className="h-3.5 w-3.5" />
-                  )}
-                  {isolate ? 'Worktree 자동' : '현재 폴더'}
-                </button>
-              )
             )}
 
             {selected && (
