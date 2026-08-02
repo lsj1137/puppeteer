@@ -316,6 +316,31 @@ export interface SessionWorktree {
   branch: string
   /** worktree 를 만든 원래 프로젝트 경로 */
   origin: string
+  /** 생성 당시 원래 프로젝트에서 체크아웃되어 있던 브랜치 */
+  baseBranch?: string
+  /** worktree 가 갈라진 전체 커밋 해시 */
+  baseHead?: string
+}
+
+/** worktree 브랜치를 원래 프로젝트로 합칠 수 있는지 확인한 결과 */
+export interface WorktreeStatus {
+  worktree: SessionWorktree
+  currentBranch?: string
+  baseBranch?: string
+  dirty: boolean
+  originDirty: boolean
+  ahead: number
+  behind: number
+  merged: boolean
+  canMerge: boolean
+  reason?: string
+}
+
+/** fast-forward 병합 시도 결과 */
+export interface WorktreeMergeResult {
+  ok: boolean
+  message: string
+  status?: WorktreeStatus
 }
 
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */

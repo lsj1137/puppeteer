@@ -11,6 +11,8 @@ import type {
   SessionEvent,
   SessionStatus,
   SessionWorktree,
+  WorktreeMergeResult,
+  WorktreeStatus,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
@@ -22,11 +24,14 @@ import {
   addWorktree,
   changedSince,
   diffFile,
+  mergeWorktree as mergeGitWorktree,
   removeWorktree,
   snapshot,
   worktreeDirty,
+  worktreeStatus as inspectWorktree,
 } from './git'
 import { notifyApproval, notifyStatus } from './notify'
+import { shouldCreateWorktree } from './worktree-policy'
 
 export interface StartSessionInput {
   runner: DetectedRunner
@@ -38,7 +43,7 @@ export interface StartSessionInput {
   attachments?: string[]
   /** 적용할 Project Agent 이름 (.claude/agents/<name>.md) */
   agentName?: string
-  /** 전용 worktree 에서 격리 실행 */
+  /** 새 세션을 전용 worktree 에서 격리할지. 생략하면 기본으로 격리한다. */
   isolate?: boolean
   /**
    * 이어서 지시하는 경우 기존 세션 id.
@@ -97,11 +102,12 @@ export class SessionManager {
     this.persistAndSend(id, { t: 'message', role: 'user', messageId: `u-${id}`, text: prompt })
 
     /**
-     * 격리 실행. 이어가는 턴이면 이미 만들어 둔 worktree 를 그대로 쓴다.
-     * 만들지 못해도 세션은 진행한다 — 격리 실패로 작업 자체를 막을 이유는 없다.
+     * 새 세션은 기본으로 격리한다. 이어가는 턴은 최초 작업 위치를 유지하고,
+     * 만들지 못해도 현재 폴더에서 진행한다.
      */
     let worktree = (prev?.worktree ?? undefined) as SessionWorktree | undefined
-    if (!worktree && input.isolate) {
+    if (!worktree && shouldCreateWorktree(input.isolate, Boolean(prev))) {
+      const originSnapshot = await snapshot(input.cwd)
       const dir = join(app.getPath('userData'), 'worktrees', id)
       const made = await addWorktree(input.cwd, dir, `puppeteer/${id.slice(0, 8)}`)
       if (made) {
@@ -113,13 +119,22 @@ export class SessionManager {
           path: made.path,
           content: `격리 실행\n브랜치: ${made.branch}\n경로: ${made.path}`,
         })
+        const excluded =
+          (originSnapshot?.modified.length ?? 0) + (originSnapshot?.untracked.length ?? 0)
+        if (excluded > 0) {
+          this.persistAndSend(id, {
+            t: 'notice',
+            level: 'warning',
+            title: '원본 폴더의 변경은 제외됨',
+            text: `원본 프로젝트에 커밋되지 않은 파일 ${excluded}개가 있습니다. worktree는 현재 HEAD에서 만들어져 이 변경을 포함하지 않습니다.`,
+          })
+        }
       } else {
         this.persistAndSend(id, {
-          t: 'message',
-          role: 'assistant',
-          messageId: `wt-${id}`,
-          text: '격리 실행을 준비하지 못했습니다(git 저장소가 아니거나 worktree 생성 실패). 원래 폴더에서 진행합니다.',
-          isError: true,
+          t: 'notice',
+          level: 'warning',
+          title: 'Worktree 자동 분리 실패',
+          text: 'Git 저장소가 아니거나 worktree를 만들 수 없어 현재 폴더에서 진행합니다.',
         })
       }
     }
@@ -238,6 +253,33 @@ export class SessionManager {
     const ok = await removeWorktree(wt.origin, wt.path, force)
     if (ok) db.setWorktree(sessionId, null)
     return ok
+  }
+
+  async worktreeStatus(sessionId: string): Promise<WorktreeStatus | undefined> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return undefined
+    const status = await inspectWorktree(wt)
+    if (this.sessions.has(sessionId)) {
+      return {
+        ...status,
+        canMerge: false,
+        reason: '세션이 실행 중입니다. 작업이 끝난 뒤 병합해 주세요.',
+      }
+    }
+    return status
+  }
+
+  async mergeWorktree(sessionId: string): Promise<WorktreeMergeResult> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
+    if (this.sessions.has(sessionId)) {
+      return {
+        ok: false,
+        message: '세션이 실행 중입니다. 작업이 끝난 뒤 병합해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    return mergeGitWorktree(wt)
   }
 
   /** 지금 살아 있는 세션 (프로젝트를 넘나들며 표시하기 위해) */

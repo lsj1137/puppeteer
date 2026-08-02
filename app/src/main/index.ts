@@ -162,6 +162,8 @@ app.whenReady().then(() => {
   ipcMain.handle('session:dropWorktree', (_e, id: string, force: boolean) =>
     sessions.dropWorktree(id, force),
   )
+  ipcMain.handle('session:worktreeStatus', (_e, id: string) => sessions.worktreeStatus(id))
+  ipcMain.handle('session:mergeWorktree', (_e, id: string) => sessions.mergeWorktree(id))
   ipcMain.handle(
     'approval:resolve',
     (_e, approvalId: string, decision: ApprovalDecision, reason?: string) =>

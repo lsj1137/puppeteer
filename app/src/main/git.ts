@@ -1,6 +1,11 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import type { GitSnapshot } from '@shared/session'
+import type {
+  GitSnapshot,
+  SessionWorktree,
+  WorktreeMergeResult,
+  WorktreeStatus,
+} from '@shared/session'
 
 const exec = promisify(execFile)
 
@@ -108,11 +113,17 @@ export async function addWorktree(
   cwd: string,
   dir: string,
   branch: string,
-): Promise<{ path: string; branch: string } | undefined> {
+): Promise<Omit<SessionWorktree, 'origin'> | undefined> {
   try {
+    const [baseBranch, baseHead] = await Promise.all([
+      git(cwd, ['symbolic-ref', '--short', 'HEAD'])
+        .then((out) => out.trim())
+        .catch(() => ''),
+      git(cwd, ['rev-parse', 'HEAD']).then((out) => out.trim()),
+    ])
     // 기준은 현재 HEAD. 새 브랜치를 만들어 원래 브랜치를 건드리지 않는다.
     await git(cwd, ['worktree', 'add', '-b', branch, dir, 'HEAD'])
-    return { path: dir, branch }
+    return { path: dir, branch, ...(baseBranch ? { baseBranch } : {}), baseHead }
   } catch {
     return undefined
   }
@@ -144,5 +155,116 @@ export async function worktreeAhead(cwd: string, branch: string, base: string): 
     return Number(out.trim()) || 0
   } catch {
     return 0
+  }
+}
+
+/** worktree 브랜치의 현재 상태와 안전한 fast-forward 병합 가능 여부 */
+export async function worktreeStatus(wt: SessionWorktree): Promise<WorktreeStatus> {
+  const base = wt.baseBranch
+  const blocked = (reason: string, partial: Partial<WorktreeStatus> = {}): WorktreeStatus => ({
+    worktree: wt,
+    baseBranch: base,
+    dirty: false,
+    originDirty: false,
+    ahead: 0,
+    behind: 0,
+    merged: false,
+    canMerge: false,
+    reason,
+    ...partial,
+  })
+
+  if (!base || !wt.baseHead) {
+    return blocked('이 worktree에는 원본 브랜치 정보가 없어 자동 병합할 수 없습니다. 직접 병합해 주세요.')
+  }
+
+  try {
+    const [currentBranch, worktreeBranch, worktreeHead, dirtyText, originDirtyText] = await Promise.all([
+      git(wt.origin, ['symbolic-ref', '--short', 'HEAD']).then((out) => out.trim()),
+      git(wt.path, ['symbolic-ref', '--short', 'HEAD']).then((out) => out.trim()),
+      git(wt.path, ['rev-parse', 'HEAD']).then((out) => out.trim()),
+      git(wt.path, ['status', '--porcelain']),
+      git(wt.origin, ['status', '--porcelain']),
+    ])
+
+    if (worktreeBranch !== wt.branch) {
+      return blocked('worktree가 앱이 만든 작업 브랜치와 다른 브랜치를 가리키고 있습니다.', {
+        currentBranch,
+      })
+    }
+
+    const [aheadText, behindText, baseHeadIsAncestor] = await Promise.all([
+      git(wt.origin, ['rev-list', '--count', `${base}..${wt.branch}`]),
+      git(wt.origin, ['rev-list', '--count', `${wt.branch}..${base}`]),
+      git(wt.origin, ['merge-base', '--is-ancestor', wt.baseHead, worktreeHead])
+        .then(() => true)
+        .catch(() => false),
+    ])
+    const ahead = Number(aheadText.trim()) || 0
+    const behind = Number(behindText.trim()) || 0
+    const dirty = dirtyText.trim().length > 0
+    const originDirty = originDirtyText.trim().length > 0
+    const merged = ahead === 0
+    const common = {
+      currentBranch,
+      dirty,
+      originDirty,
+      ahead,
+      behind,
+      merged,
+    }
+
+    if (!baseHeadIsAncestor) {
+      return blocked('작업 브랜치의 기준 이력이 달라져 자동 병합할 수 없습니다.', common)
+    }
+    if (currentBranch !== base) {
+      return blocked(`원본 프로젝트에서 ${base} 브랜치로 전환한 뒤 다시 시도해 주세요.`, common)
+    }
+    if (dirty) {
+      return blocked('worktree에 커밋되지 않은 변경이 있습니다. 먼저 변경을 커밋해 주세요.', common)
+    }
+    if (originDirty) {
+      return blocked('원본 프로젝트에 커밋되지 않은 변경이 있습니다. 먼저 정리해 주세요.', common)
+    }
+    if (merged) {
+      return blocked('작업 브랜치의 커밋이 이미 원본 브랜치에 반영되어 있습니다.', common)
+    }
+    if (behind > 0) {
+      return blocked('원본 브랜치와 작업 브랜치가 갈라져 fast-forward 병합할 수 없습니다.', common)
+    }
+
+    return {
+      worktree: wt,
+      baseBranch: base,
+      ...common,
+      canMerge: true,
+    }
+  } catch {
+    return blocked('worktree 또는 원본 저장소의 Git 상태를 읽지 못했습니다.')
+  }
+}
+
+/** 충돌 상태를 남기지 않는 fast-forward 병합만 수행한다. */
+export async function mergeWorktree(wt: SessionWorktree): Promise<WorktreeMergeResult> {
+  const before = await worktreeStatus(wt)
+  if (!before.canMerge) {
+    return { ok: false, message: before.reason ?? '지금은 병합할 수 없습니다.', status: before }
+  }
+
+  try {
+    await git(wt.origin, ['merge', '--ff-only', wt.branch])
+    const status = await worktreeStatus(wt)
+    return {
+      ok: true,
+      message: `${wt.branch}의 커밋을 ${wt.baseBranch}에 반영했습니다.`,
+      status,
+    }
+  } catch {
+    const status = await worktreeStatus(wt)
+    return {
+      ok: false,
+      message: status.reason ?? '병합 직전에 저장소 상태가 바뀌어 작업을 중단했습니다.',
+      status,
+    }
   }
 }

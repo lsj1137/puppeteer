@@ -45,6 +45,7 @@ import AgentImport from './components/AgentImport'
 import MemoryScreen from './components/MemoryScreen'
 import Settings from './components/Settings'
 import Checkpoint from './components/Checkpoint'
+import WorktreeDialog from './components/WorktreeDialog'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -321,8 +322,9 @@ export default function App() {
   const [importing, setImporting] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [checkpoint, setCheckpoint] = useState<CheckpointDraft>()
-  /** 새 세션을 전용 worktree 에서 격리 실행할지 */
-  const [isolate, setIsolate] = useState(false)
+  const [worktreeOpen, setWorktreeOpen] = useState<string>()
+  /** 새 세션은 기본으로 전용 worktree 에서 격리한다 */
+  const [isolate, setIsolate] = useState(true)
   /**
    * 다음 지시를 보낼 러너. 세션마다 다를 수 있어 프로젝트 기본값과 따로 둔다.
    * 열어둔 세션이 있으면 그 세션이 쓰던 러너를 기본으로 잡는다.
@@ -745,7 +747,7 @@ export default function App() {
   function newSession(): void {
     setScrolled(false)
     setPendingPick(undefined)
-    setIsolate(false)
+    setIsolate(true)
     setActiveSession(undefined)
     setSelectedArtifact(undefined)
     taRef.current?.focus()
@@ -1371,27 +1373,38 @@ export default function App() {
               )}
             </div>
 
-            {sessionWorktree ? (
-              <span
+            {sessionWorktree && selected ? (
+              <button
+                onClick={() => setWorktreeOpen(selected.id)}
                 title={`격리 실행 중\n브랜치 ${sessionWorktree.branch}\n${sessionWorktree.path}`}
-                className="flex items-center gap-1.5 rounded-md bg-teal/15 px-2 py-1 text-[11px] text-teal"
+                className="flex min-w-0 max-w-[220px] items-center gap-1.5 rounded-md bg-teal/15 px-2 py-1 text-[11px] text-teal hover:bg-teal/25"
               >
-                <GitBranch className="h-3.5 w-3.5" />
-                {sessionWorktree.branch}
-              </span>
+                <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{sessionWorktree.branch}</span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </button>
             ) : (
               !selected && (
                 <button
                   onClick={() => setIsolate((v) => !v)}
-                  title="전용 git worktree 를 만들어 다른 세션과 파일이 부딪히지 않게 합니다"
+                  aria-pressed={isolate}
+                  title={
+                    isolate
+                      ? '새 세션을 전용 Git worktree에서 시작합니다. 클릭하면 현재 폴더를 사용합니다.'
+                      : '새 세션을 현재 프로젝트 폴더에서 시작합니다. 클릭하면 worktree로 분리합니다.'
+                  }
                   className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
                     isolate
                       ? 'bg-teal/15 text-teal'
-                      : 'text-overlay1 hover:bg-surface0 hover:text-subtext1'
+                      : 'bg-yellow/10 text-yellow hover:bg-yellow/15'
                   }`}
                 >
-                  <GitBranch className="h-3.5 w-3.5" />
-                  격리 실행
+                  {isolate ? (
+                    <GitBranch className="h-3.5 w-3.5" />
+                  ) : (
+                    <FolderOpen className="h-3.5 w-3.5" />
+                  )}
+                  {isolate ? 'Worktree 자동' : '현재 폴더'}
                 </button>
               )
             )}
@@ -1966,6 +1979,15 @@ export default function App() {
           agents={agents}
           onClose={() => setCheckpoint(undefined)}
           onHandoff={(body, rid, ag) => void handoff(body, rid, ag)}
+        />
+      )}
+
+      {worktreeOpen && selected?.id === worktreeOpen && selected.worktree && (
+        <WorktreeDialog
+          sessionId={selected.id}
+          worktree={selected.worktree}
+          onChanged={() => refresh(active)}
+          onClose={() => setWorktreeOpen(undefined)}
         />
       )}
 

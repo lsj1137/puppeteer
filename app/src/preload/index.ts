@@ -18,6 +18,8 @@ import type {
   StoredEvent,
   StoredProject,
   StoredSession,
+  WorktreeMergeResult,
+  WorktreeStatus,
 } from '@shared/session'
 
 export interface SessionEventEnvelope {
@@ -34,7 +36,7 @@ export interface StartSessionArgs {
   attachments?: string[]
   /** 적용할 Project Agent 이름 */
   agentName?: string
-  /** 전용 worktree 에서 격리 실행 */
+  /** 새 세션을 전용 worktree 에서 격리할지. 생략하면 기본으로 격리한다. */
   isolate?: boolean
   /** 이어서 지시하는 경우 기존 세션 id (새 세션을 만들지 않는다) */
   continueSessionId?: string
@@ -89,6 +91,10 @@ const api = {
   ): Promise<AgentDef | undefined> => ipcRenderer.invoke('agent:applyUpdate', name, opts),
   dropWorktree: (sessionId: string, force: boolean): Promise<boolean> =>
     ipcRenderer.invoke('session:dropWorktree', sessionId, force),
+  worktreeStatus: (sessionId: string): Promise<WorktreeStatus | undefined> =>
+    ipcRenderer.invoke('session:worktreeStatus', sessionId),
+  mergeWorktree: (sessionId: string): Promise<WorktreeMergeResult> =>
+    ipcRenderer.invoke('session:mergeWorktree', sessionId),
   buildCheckpoint: (sessionId: string): Promise<CheckpointDraft | undefined> =>
     ipcRenderer.invoke('checkpoint:build', sessionId),
   listMemories: (): Promise<MemoryEntry[]> => ipcRenderer.invoke('memory:list'),
