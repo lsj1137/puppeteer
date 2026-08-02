@@ -352,6 +352,14 @@ export interface WorktreeCommitResult {
   status?: WorktreeStatus
 }
 
+/** 원본 브랜치의 새 커밋 위로 worktree 브랜치를 재배치한 결과 */
+export interface WorktreeRebaseResult {
+  ok: boolean
+  message: string
+  conflictFiles?: string[]
+  status?: WorktreeStatus
+}
+
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
 export interface CheckpointDraft {
   sessionId: string

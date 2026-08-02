@@ -9,6 +9,7 @@ import {
   GitBranch,
   GitCommitHorizontal,
   GitMerge,
+  GitPullRequestArrow,
   Loader2,
   RefreshCw,
   Trash2,
@@ -28,6 +29,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const [status, setStatus] = useState<WorktreeStatus>()
   const [loading, setLoading] = useState(true)
   const [committing, setCommitting] = useState(false)
+  const [rebasing, setRebasing] = useState(false)
   const [merging, setMerging] = useState(false)
   const [dropping, setDropping] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string }>()
@@ -58,11 +60,11 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !committing && !merging && !dropping) onClose()
+      if (event.key === 'Escape' && !committing && !rebasing && !merging && !dropping) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [committing, dropping, merging, onClose])
+  }, [committing, dropping, merging, onClose, rebasing])
 
   async function commit(): Promise<void> {
     setCommitting(true)
@@ -100,6 +102,27 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       })
     } finally {
       setMerging(false)
+    }
+  }
+
+  async function rebase(): Promise<void> {
+    setRebasing(true)
+    setMessage(undefined)
+    try {
+      const result = await window.api.rebaseWorktree(sessionId)
+      if (result.status) setStatus(result.status)
+      setMessage({ ok: result.ok, text: result.message })
+      if (result.ok) {
+        await onChanged()
+        if (diff !== undefined) setDiff(await window.api.worktreeDiff(sessionId))
+      }
+    } catch (error) {
+      setMessage({
+        ok: false,
+        text: error instanceof Error ? error.message : '원본 변경 반영 요청에 실패했습니다.',
+      })
+    } finally {
+      setRebasing(false)
     }
   }
 
@@ -146,8 +169,9 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const hasDirtyWork = Boolean(status?.dirty)
   const running = status?.reason?.startsWith('세션이 실행 중') ?? false
   const canCommit = Boolean(status && hasDirtyWork && !running && commitMessage.trim())
+  const canRebase = Boolean(status && status.behind > 0 && hasCommits && !hasDirtyWork && !status.originDirty && !running)
   const canDrop = Boolean(status && !hasDirtyWork && (merged || !hasCommits))
-  const busy = committing || merging || dropping
+  const busy = committing || rebasing || merging || dropping
   const commitLabel = loading
     ? '확인 중...'
     : hasDirtyWork
@@ -260,6 +284,36 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
             <div className="flex gap-2 rounded-md border border-yellow/30 bg-yellow/5 px-3 py-2.5 text-[12px] text-yellow">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span className="leading-relaxed">{status.reason}</span>
+            </div>
+          )}
+
+          {!loading && canRebase && (
+            <div className="-mx-5 border-y border-surface0 bg-base/35 px-5 py-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-mauve/15 text-mauve">
+                    <GitPullRequestArrow className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold text-text">원본 변경 반영</div>
+                    <div className="truncate text-[11px] text-overlay1">
+                      원본보다 {status?.behind ?? 0}개 뒤처짐
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => void rebase()}
+                  disabled={!canRebase || busy}
+                  className="flex min-h-8 items-center justify-center gap-1.5 rounded-md bg-mauve px-3 py-1.5 text-[12px] font-semibold text-crust hover:bg-pink disabled:cursor-not-allowed disabled:bg-surface1 disabled:text-overlay1"
+                >
+                  {rebasing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <GitPullRequestArrow className="h-3.5 w-3.5" />
+                  )}
+                  반영
+                </button>
+              </div>
             </div>
           )}
 

@@ -5,6 +5,7 @@ import type {
   WorktreeCommitResult,
   SessionWorktree,
   WorktreeMergeResult,
+  WorktreeRebaseResult,
   WorktreeStatus,
 } from '@shared/session'
 
@@ -323,6 +324,59 @@ export async function commitWorktree(
     return {
       ok: false,
       message: error instanceof Error ? error.message : 'worktree 커밋에 실패했습니다.',
+      status: await worktreeStatus(wt),
+    }
+  }
+}
+
+/** worktree 브랜치를 현재 원본 브랜치 위로 재배치한다. 충돌이 나면 즉시 abort 한다. */
+export async function rebaseWorktree(wt: SessionWorktree): Promise<WorktreeRebaseResult> {
+  const before = await worktreeStatus(wt)
+  if (before.dirty) {
+    return { ok: false, message: 'worktree 변경을 먼저 커밋해 주세요.', status: before }
+  }
+  if (before.originDirty) {
+    return { ok: false, message: '원본 프로젝트의 미커밋 변경을 먼저 정리해 주세요.', status: before }
+  }
+  if (!before.hasCommits) {
+    return { ok: false, message: '재배치할 worktree 커밋이 없습니다.', status: before }
+  }
+  if (before.behind === 0) {
+    return { ok: false, message: '이미 원본 브랜치 기준으로 최신 상태입니다.', status: before }
+  }
+  if (!wt.baseBranch) {
+    return { ok: false, message: '원본 브랜치 정보가 없어 재배치할 수 없습니다.', status: before }
+  }
+
+  try {
+    await gitWithError(wt.path, ['rebase', wt.baseBranch])
+    const baseHead = await git(wt.origin, ['rev-parse', wt.baseBranch]).then((out) => out.trim())
+    const nextWt = { ...wt, baseHead }
+    return {
+      ok: true,
+      message: `${wt.branch}를 ${wt.baseBranch} 최신 커밋 위로 재배치했습니다.`,
+      status: await worktreeStatus(nextWt),
+    }
+  } catch (error) {
+    const conflictFiles = await git(wt.path, ['diff', '--name-only', '--diff-filter=U'])
+      .then((out) =>
+        out
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean),
+      )
+      .catch(() => [])
+    await gitWithError(wt.path, ['rebase', '--abort']).catch(() => undefined)
+    const message =
+      conflictFiles.length > 0
+        ? `원본 변경 반영 중 충돌이 발생해 재배치를 취소했습니다. 충돌 파일: ${conflictFiles.join(', ')}`
+        : error instanceof Error
+          ? error.message
+          : '원본 변경 반영 중 충돌이 발생했습니다.'
+    return {
+      ok: false,
+      message,
+      conflictFiles,
       status: await worktreeStatus(wt),
     }
   }

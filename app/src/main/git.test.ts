@@ -4,7 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { addWorktree, commitWorktree, mergeWorktree, worktreeDiff, worktreeStatus } from './git'
+import {
+  addWorktree,
+  commitWorktree,
+  mergeWorktree,
+  rebaseWorktree,
+  worktreeDiff,
+  worktreeStatus,
+} from './git'
 
 const exec = promisify(execFile)
 const roots: string[] = []
@@ -134,6 +141,39 @@ describe('worktree merge', () => {
     const status = await worktreeStatus(wt)
     expect(status).toMatchObject({ canMerge: false, ahead: 1, behind: 1 })
     expect(status.reason).toContain('갈라져')
+  })
+
+  it('rebases a diverged worktree onto the updated source branch', async () => {
+    const { origin, worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'feature.txt'), 'feature\n')
+    await commit(worktreePath, 'feature')
+    await writeFile(join(origin, 'origin.txt'), 'origin\n')
+    await commit(origin, 'origin change')
+
+    const result = await rebaseWorktree(wt)
+
+    expect(result.ok).toBe(true)
+    expect(result.status).toMatchObject({ canMerge: true, ahead: 1, behind: 0 })
+    expect(result.status?.worktree.baseHead).toBe(await git(origin, ['rev-parse', 'main']))
+    expect(await worktreeDiff(result.status?.worktree ?? wt)).toContain('feature.txt')
+    expect(await worktreeDiff(result.status?.worktree ?? wt)).not.toContain('origin.txt')
+  })
+
+  it('aborts a rebase and reports conflict files', async () => {
+    const { origin, worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'shared.txt'), 'worktree\n')
+    await commit(worktreePath, 'worktree shared')
+    const beforeHead = await git(worktreePath, ['rev-parse', 'HEAD'])
+
+    await writeFile(join(origin, 'shared.txt'), 'origin\n')
+    await commit(origin, 'origin shared')
+
+    const result = await rebaseWorktree(wt)
+
+    expect(result.ok).toBe(false)
+    expect(result.conflictFiles).toContain('shared.txt')
+    expect(await git(worktreePath, ['rev-parse', 'HEAD'])).toBe(beforeHead)
+    expect(await git(worktreePath, ['status', '--porcelain'])).toBe('')
   })
 
   it('blocks a merge when the original checkout is on another branch', async () => {

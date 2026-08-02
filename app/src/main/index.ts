@@ -167,6 +167,7 @@ app.whenReady().then(() => {
   ipcMain.handle('session:commitWorktree', (_e, id: string, message: string) =>
     sessions.commitWorktree(id, message),
   )
+  ipcMain.handle('session:rebaseWorktree', (_e, id: string) => sessions.rebaseWorktree(id))
   ipcMain.handle('session:mergeWorktree', (_e, id: string) => sessions.mergeWorktree(id))
   ipcMain.handle(
     'approval:resolve',
