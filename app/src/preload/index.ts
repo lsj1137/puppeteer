@@ -127,6 +127,11 @@ const api = {
     ipcRenderer.on('approval:request', listener)
     return () => ipcRenderer.off('approval:request', listener)
   },
+  onApprovalCleared: (cb: (id: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, id: string): void => cb(id)
+    ipcRenderer.on('approval:cleared', listener)
+    return () => ipcRenderer.off('approval:cleared', listener)
+  },
 
   /** 세션 이벤트 구독. 반환값을 호출하면 구독 해제된다. */
   onSessionEvent: (cb: (envelope: SessionEventEnvelope) => void): (() => void) => {

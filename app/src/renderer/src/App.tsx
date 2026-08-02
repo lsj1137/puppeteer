@@ -72,6 +72,7 @@ import { runnerEnvironmentLabel } from '@shared/runner'
 
 type Entry =
   | { kind: 'assistant'; id: string; segments: Segment[]; isError?: boolean }
+  | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; title: string; text: string }
   | { kind: 'tool'; id: string; toolUseId: string; name: string; input: unknown; result?: { ok: boolean; preview: string } }
   | { kind: 'user'; id: string; text: string }
 
@@ -196,6 +197,14 @@ function reduce(v: View, e: SessionEvent, key: string): View {
         artifacts: [...v.artifacts, ...artifacts],
       }
     }
+    case 'notice':
+      return {
+        ...v,
+        entries: [
+          ...v.entries,
+          { kind: 'notice', id: key, level: e.level, title: e.title, text: e.text },
+        ],
+      }
     case 'tool-use':
       return {
         ...v,
@@ -490,6 +499,12 @@ export default function App() {
           ? prev.map((a) => (a.id === req.id ? req : a))
           : [...prev, req],
       )
+    })
+  }, [])
+
+  useEffect(() => {
+    return window.api.onApprovalCleared((id) => {
+      setApprovals((prev) => prev.filter((a) => a.id !== id))
     })
   }, [])
 
@@ -1545,6 +1560,23 @@ export default function App() {
                     {e.result.preview}
                   </pre>
                 )}
+              </div>
+            ) : e.kind === 'notice' ? (
+              <div
+                key={e.id}
+                className={`flex gap-2 rounded-lg border p-3 text-[12px] ${
+                  e.level === 'error'
+                    ? 'border-red/50 bg-red/5 text-red'
+                    : e.level === 'warning'
+                      ? 'border-yellow/50 bg-yellow/10 text-yellow'
+                      : 'border-sapphire/40 bg-sapphire/10 text-sapphire'
+                }`}
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <div className="min-w-0">
+                  <div className="font-semibold text-text">{e.title}</div>
+                  <div className="mt-0.5 whitespace-pre-wrap text-subtext1">{e.text}</div>
+                </div>
               </div>
             ) : e.isError ? (
               <div

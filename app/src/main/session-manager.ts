@@ -253,13 +253,28 @@ export class SessionManager {
   resolveApproval(approvalId: string, decision: ApprovalDecision, reason?: string): void {
     db.decideApproval(approvalId, decision)
     this.broker.resolve(approvalId, decision, reason)
+    this.getWindow()?.webContents.send('approval:cleared', approvalId)
   }
 
   private onApproval(req: ApprovalRequest): void {
     db.recordApproval(req)
+    if (req.pending) {
+      db.decideApproval(req.id, 'deny')
+      this.getWindow()?.webContents.send('approval:cleared', req.id)
+      this.onEvent(req.sessionId, {
+        t: 'notice',
+        level: 'warning',
+        title: '승인 요청 시간 초과',
+        text:
+          `${req.tool} 승인 요청이 응답 대기 시간을 넘겨 자동으로 닫혔습니다.\n` +
+          'CLI에는 해당 작업이 거절/보류되었다고 전달했습니다.\n\n' +
+          summarizeApproval(req.input),
+      })
+      return
+    }
     this.getWindow()?.webContents.send('approval:request', req)
     notifyApproval(req)
-    if (!req.pending) this.onEvent(req.sessionId, { t: 'status', status: 'approval-required' })
+    this.onEvent(req.sessionId, { t: 'status', status: 'approval-required' })
   }
 
   private onEvent(sessionId: string, event: SessionEvent): void {
@@ -324,4 +339,9 @@ export class SessionManager {
     db.appendEvent(sessionId, event)
     this.getWindow()?.webContents.send('session:event', { sessionId, event })
   }
+}
+
+function summarizeApproval(input: unknown): string {
+  const text = JSON.stringify(input, null, 2)
+  return text.length <= 600 ? text : `${text.slice(0, 600)}\n…`
 }

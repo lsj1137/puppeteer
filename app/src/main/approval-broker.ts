@@ -132,8 +132,8 @@ export class ApprovalBroker {
       const id = `${base}::${tool}`
       this.open.set(id, { dir: w.dir, base, sessionId })
 
-      // hook 이 자체 타임아웃으로 빠져나가면 응답 파일이 소비되지 않고 남는다.
-      // 그 경우에도 요청은 Inbox 에 살아 있어야 하므로 pending 으로 표시만 한다.
+      // hook 이 자체 타임아웃으로 빠져나가면 응답 파일이 소비되지 않는다.
+      // 앱에는 pending 으로 알려 UI 알림을 닫고 세션 기록에 timeout 을 남긴다.
       setTimeout(() => {
         if (this.open.has(id)) this.onRequest({ ...this.describe(id, sessionId, tool, input, cwd), pending: true })
       }, 285_000)

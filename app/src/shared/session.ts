@@ -21,6 +21,7 @@ export type SessionEvent =
   | { t: 'status'; status: SessionStatus; reason?: string }
   | { t: 'session-meta'; meta: SessionMeta }
   | { t: 'message'; role: 'assistant' | 'user'; messageId: string; text: string; isError?: boolean }
+  | { t: 'notice'; level: 'info' | 'warning' | 'error'; title: string; text: string }
   | { t: 'tool-use'; toolUseId: string; name: string; input: unknown }
   | { t: 'tool-result'; toolUseId: string; ok: boolean; preview: string }
   | { t: 'artifact'; kind: ArtifactKind; path?: string; language?: string; content: string }

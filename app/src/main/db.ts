@@ -20,6 +20,7 @@ import type {
  * Electron 헤더 다운로드가 막히고 C++ 빌드 도구도 없어 리빌드가 불가능했다.
  */
 let db: DatabaseSync
+const APPROVAL_STALE_MS = 5 * 60 * 1000
 
 export function openDb(): void {
   db = new DatabaseSync(join(app.getPath('userData'), 'workspace.db'))
@@ -336,6 +337,7 @@ export function decideApproval(id: string, decision: ApprovalDecision): void {
 
 /** 아직 결정되지 않은 승인 (Approval Inbox) */
 export function listOpenApprovals(): ApprovalRequest[] {
+  expireStaleApprovals()
   const rows = db
     .prepare(
       `SELECT id, session_id AS sessionId, tool, input, cwd, risk
@@ -343,6 +345,14 @@ export function listOpenApprovals(): ApprovalRequest[] {
     )
     .all() as unknown as Array<Omit<ApprovalRequest, 'input' | 'pending'> & { input: string }>
   return rows.map((r) => ({ ...r, input: JSON.parse(r.input) as unknown, pending: true }))
+}
+
+function expireStaleApprovals(): void {
+  db.prepare(
+    `UPDATE approval
+       SET decision = 'deny', decided_at = ?
+     WHERE decision IS NULL AND created_at < ?`,
+  ).run(now(), now() - APPROVAL_STALE_MS)
 }
 
 export function recordMemoryEdit(entryId: string, bytes: number): void {
