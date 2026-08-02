@@ -7,6 +7,7 @@ import {
   FileDiff,
   FolderOpen,
   GitBranch,
+  GitCommitHorizontal,
   GitMerge,
   Loader2,
   RefreshCw,
@@ -263,27 +264,47 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           )}
 
           {!loading && hasDirtyWork && (
-            <div className="rounded-md border border-surface1 bg-surface0/30 p-3">
-              <div className="mb-2 text-[12px] font-medium text-subtext1">Worktree 변경 커밋</div>
-              <div className="flex gap-2">
-                <input
-                  value={commitMessage}
-                  onChange={(event) => setCommitMessage(event.target.value)}
-                  disabled={busy || running}
-                  placeholder="커밋 메시지"
-                  className="min-w-0 flex-1 rounded-md border border-surface1 bg-mantle px-2.5 py-1.5 text-[12px] text-text outline-none placeholder:text-overlay0 focus:border-blue disabled:opacity-50"
-                />
+            <div className="-mx-5 border-y border-surface0 bg-base/35 px-5 py-3">
+              <div className="mb-2 flex items-center gap-2">
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue/15 text-blue">
+                  <GitCommitHorizontal className="h-3.5 w-3.5" />
+                </span>
+                <span className="text-[12px] font-semibold text-text">변경 커밋</span>
+                <span
+                  className={`ml-auto rounded px-1.5 py-0.5 text-[11px] ${
+                    commitMessage.trim()
+                      ? 'bg-blue/15 text-blue'
+                      : 'bg-yellow/10 text-yellow'
+                  }`}
+                >
+                  {commitMessage.trim() ? '준비됨' : '메시지 필요'}
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <div className="min-w-0 flex-1 rounded-md border border-surface1 bg-mantle px-2.5 py-1.5 focus-within:border-blue">
+                  <input
+                    value={commitMessage}
+                    onChange={(event) => setCommitMessage(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && canCommit && !busy) void commit()
+                    }}
+                    disabled={busy || running}
+                    placeholder="커밋 메시지"
+                    className="w-full bg-transparent text-[12px] text-text outline-none placeholder:text-overlay0 disabled:opacity-50"
+                  />
+                </div>
                 <button
                   onClick={() => void commit()}
                   disabled={!canCommit || busy}
-                  className="flex min-w-[96px] items-center justify-center gap-1.5 rounded-md bg-blue/20 px-3 py-1.5 text-[12px] font-medium text-blue hover:bg-blue/30 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex min-h-8 items-center justify-center gap-1.5 rounded-md bg-blue px-3 py-1.5 text-[12px] font-semibold text-crust hover:bg-sky disabled:cursor-not-allowed disabled:bg-surface1 disabled:text-overlay1"
                 >
                   {committing ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <GitCommitHorizontal className="h-3.5 w-3.5" />
                   )}
-                  변경 커밋
+                  커밋
                 </button>
               </div>
             </div>
