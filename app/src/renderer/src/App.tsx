@@ -332,6 +332,7 @@ export default function App() {
   /** 탭바 가용 폭 — 창 크기·Artifact 폭에 따라 바뀌므로 관찰한다 */
   const [tabRoom, setTabRoom] = useState(0)
   const [confirmDelSession, setConfirmDelSession] = useState<StoredSession>()
+  const [sessionDeleteError, setSessionDeleteError] = useState<string>()
   const [editing, setEditing] = useState<{ agent: AgentDef; isNew: boolean }>()
   const [artifactsOpen, setArtifactsOpen] = useState(
     () => localStorage.getItem('ws.artifacts') !== 'closed',
@@ -728,8 +729,13 @@ export default function App() {
   }
 
   async function removeSession(id: string): Promise<void> {
+    setSessionDeleteError(undefined)
+    const result = await window.api.deleteSession(id)
+    if (!result.ok) {
+      setSessionDeleteError(result.message ?? '세션을 삭제하지 못했습니다.')
+      return
+    }
     setConfirmDelSession(undefined)
-    await window.api.deleteSession(id)
     setViews((vs) => {
       const next = { ...vs }
       delete next[id]
@@ -891,7 +897,10 @@ export default function App() {
             label: '현재 세션 삭제',
             hint: selected.title ?? '',
             icon: Trash2,
-            run: () => setConfirmDelSession(selected),
+            run: () => {
+              setSessionDeleteError(undefined)
+              setConfirmDelSession(selected)
+            },
           },
         ]
       : []),
@@ -1233,6 +1242,7 @@ export default function App() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
+                    setSessionDeleteError(undefined)
                     setConfirmDelSession(s)
                   }}
                   title="세션 삭제"
@@ -1936,11 +1946,14 @@ export default function App() {
           title="이 세션을 삭제할까요?"
           description={`대화 기록·승인 이력·변경 파일 기록이 모두 지워집니다. 되돌릴 수 없습니다.${
             running.some((r) => r.id === confirmDelSession.id) ? ' 실행 중이라 먼저 중지됩니다.' : ''
-          }`}
-          detail={confirmDelSession.title ?? ''}
+          }${sessionDeleteError ? `\n\n삭제 중단: ${sessionDeleteError}` : ''}`}
+          detail={confirmDelSession.worktree?.path ?? confirmDelSession.title ?? ''}
           confirmLabel="삭제"
           onConfirm={() => void removeSession(confirmDelSession.id)}
-          onCancel={() => setConfirmDelSession(undefined)}
+          onCancel={() => {
+            setSessionDeleteError(undefined)
+            setConfirmDelSession(undefined)
+          }}
         />
       )}
 

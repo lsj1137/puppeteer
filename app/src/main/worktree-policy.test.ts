@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { shouldCreateWorktree } from './worktree-policy'
+import {
+  sessionDeletionBlockReason,
+  shouldCreateWorktree,
+} from './worktree-policy'
 
 describe('worktree launch policy', () => {
   it('isolates a new session by default', () => {
@@ -17,5 +20,25 @@ describe('worktree launch policy', () => {
   it('keeps the original working directory when continuing a session', () => {
     expect(shouldCreateWorktree(undefined, true)).toBe(false)
     expect(shouldCreateWorktree(true, true)).toBe(false)
+  })
+
+})
+
+describe('worktree session deletion policy', () => {
+  it('blocks deletion when worktree state is unknown', () => {
+    expect(sessionDeletionBlockReason(undefined, { hasCommits: false, merged: false })).toContain('확인하지 못')
+  })
+
+  it('blocks deletion when uncommitted work remains', () => {
+    expect(sessionDeletionBlockReason(true, { hasCommits: false, merged: false })).toContain('커밋되지 않은')
+  })
+
+  it('blocks deletion when commits have not been merged', () => {
+    expect(sessionDeletionBlockReason(false, { hasCommits: true, merged: false })).toContain('병합하지 않은')
+  })
+
+  it('allows clean untouched or merged worktrees to be removed', () => {
+    expect(sessionDeletionBlockReason(false, { hasCommits: false, merged: false })).toBeUndefined()
+    expect(sessionDeletionBlockReason(false, { hasCommits: true, merged: true })).toBeUndefined()
   })
 })

@@ -9,6 +9,7 @@ import type {
   GitSnapshot,
   RunningSession,
   SessionEvent,
+  SessionDeleteResult,
   SessionStatus,
   SessionWorktree,
   WorktreeCommitResult,
@@ -27,6 +28,7 @@ import * as library from './agent-library'
 import * as db from './db'
 import {
   addWorktree,
+  abortWorktreeRebase as abortGitWorktreeRebase,
   changedSince,
   commitWorktree as commitGitWorktree,
   diffFile,
@@ -41,7 +43,10 @@ import {
   worktreeStatus as inspectWorktree,
 } from './git'
 import { notifyApproval, notifyStatus } from './notify'
-import { shouldCreateWorktree } from './worktree-policy'
+import {
+  sessionDeletionBlockReason,
+  shouldCreateWorktree,
+} from './worktree-policy'
 
 export interface StartSessionInput {
   runner: DetectedRunner
@@ -231,7 +236,7 @@ export class SessionManager {
   }
 
   /** 실행 중이면 중지한 뒤 기록까지 삭제한다 */
-  async remove(sessionId: string): Promise<void> {
+  async remove(sessionId: string): Promise<SessionDeleteResult> {
     const live = this.sessions.get(sessionId)
     if (live) {
       live.adapter.stop()
@@ -239,16 +244,22 @@ export class SessionManager {
       this.sessions.delete(sessionId)
     }
 
-    // worktree 는 비어 있을 때만 지운다. 커밋 안 된 작업이 남아 있으면 그대로 둔다 —
-    // 세션 기록을 지우는 것과 사람이 만든 코드를 지우는 것은 다른 일이다.
+    // 코드가 남은 worktree는 세션과 함께 추적돼야 한다. 미커밋/미병합 작업이 있으면
+    // 세션 삭제도 중단하고 Worktree 관리 화면에서 먼저 정리하게 한다.
     const stored = db.getSession(sessionId)
     const wt = stored?.worktree
     if (wt) {
       const dirty = await worktreeDirty(wt.path)
-      if (!dirty) await removeWorktree(wt.origin, wt.path)
+      const status = await inspectWorktree(wt)
+      const blocked = sessionDeletionBlockReason(dirty, status)
+      if (blocked) return { ok: false, message: blocked }
+      if (!(await removeWorktree(wt.origin, wt.path))) {
+        return { ok: false, message: 'worktree 폴더를 정리하지 못해 세션 삭제를 중단했습니다.' }
+      }
     }
 
     db.deleteSession(sessionId)
+    return { ok: true }
   }
 
   /** 격리 실행 중인 세션의 worktree 정보 */
@@ -341,6 +352,11 @@ export class SessionManager {
     const result = await resolveGitWorktreeConflicts(wt, files)
     if (result.ok && result.status?.worktree) db.setWorktree(sessionId, result.status.worktree)
     return result
+  }
+
+  async abortWorktreeRebase(sessionId: string): Promise<boolean> {
+    const wt = db.getSession(sessionId)?.worktree
+    return wt ? abortGitWorktreeRebase(wt) : false
   }
 
   async mergeWorktree(sessionId: string): Promise<WorktreeMergeResult> {

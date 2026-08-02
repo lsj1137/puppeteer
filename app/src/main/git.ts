@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, unlink, writeFile } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type {
@@ -45,6 +45,12 @@ async function gitWithError(cwd: string, args: string[]): Promise<{ stdout: stri
     const err = error as { stdout?: string; stderr?: string; message?: string }
     throw new Error((err.stderr || err.stdout || err.message || 'git 명령 실행에 실패했습니다.').trim())
   }
+}
+
+async function unmergedFiles(cwd: string): Promise<string[]> {
+  return git(cwd, ['diff', '--name-only', '--diff-filter=U'])
+    .then((out) => out.split('\n').map((line) => line.trim()).filter(Boolean))
+    .catch(() => [])
 }
 
 function safeWorktreePath(root: string, path: string): string {
@@ -170,11 +176,11 @@ export async function removeWorktree(cwd: string, dir: string, force = false): P
 }
 
 /** worktree 안에서 커밋되지 않은 변경이 있는지 */
-export async function worktreeDirty(dir: string): Promise<boolean> {
+export async function worktreeDirty(dir: string): Promise<boolean | undefined> {
   try {
     return (await git(dir, ['status', '--porcelain'])).trim().length > 0
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -207,6 +213,15 @@ export async function worktreeStatus(wt: SessionWorktree): Promise<WorktreeStatu
 
   if (!base || !wt.baseHead) {
     return blocked('이 worktree에는 원본 브랜치 정보가 없어 자동 병합할 수 없습니다. 직접 병합해 주세요.')
+  }
+
+  const pendingConflicts = await unmergedFiles(wt.path)
+  if (pendingConflicts.length > 0) {
+    return blocked('원본 변경 반영 중 충돌 해결이 진행 중입니다.', {
+      dirty: true,
+      hasCommits: true,
+      conflictFiles: pendingConflicts,
+    })
   }
 
   try {
@@ -342,7 +357,7 @@ export async function commitWorktree(
   }
 }
 
-/** worktree 브랜치를 현재 원본 브랜치 위로 재배치한다. 충돌이 나면 즉시 abort 한다. */
+/** worktree 브랜치를 현재 원본 브랜치 위로 재배치한다. 충돌은 해결 창에서 이어갈 수 있게 유지한다. */
 export async function rebaseWorktree(
   wt: SessionWorktree,
   strategy?: WorktreeRebaseStrategy,
@@ -389,10 +404,14 @@ export async function rebaseWorktree(
           .filter(Boolean),
       )
       .catch(() => [])
-    await gitWithError(wt.path, ['rebase', '--abort']).catch(() => undefined)
+    if (conflictFiles.length === 0 || strategy) {
+      await gitWithError(wt.path, ['rebase', '--abort']).catch(() => undefined)
+    }
     const message =
       conflictFiles.length > 0
-        ? `원본 변경 반영 중 충돌이 발생해 재배치를 취소했습니다. 충돌 파일: ${conflictFiles.join(', ')}`
+        ? strategy
+          ? `선택한 우선순위로 해결하지 못해 재배치를 취소했습니다. 충돌 파일: ${conflictFiles.join(', ')}`
+          : `원본 변경 반영 중 충돌이 발생했습니다. 해결할 파일: ${conflictFiles.join(', ')}`
         : error instanceof Error
           ? error.message
           : '원본 변경 반영 중 충돌이 발생했습니다.'
@@ -400,7 +419,7 @@ export async function rebaseWorktree(
       ok: false,
       message,
       conflictFiles,
-      status: await worktreeStatus(wt),
+      status: strategy ? await worktreeStatus(wt) : before,
     }
   }
 }
@@ -416,8 +435,13 @@ async function showFile(cwd: string, ref: string, path: string): Promise<{ conte
   try {
     return { content: await git(cwd, ['show', `${ref}:${path}`]), missing: false }
   } catch {
-    return { content: '(파일 없음)', missing: true }
+    return { content: '', missing: true }
   }
+}
+
+async function binaryDiff(cwd: string, args: string[]): Promise<boolean> {
+  const out = await git(cwd, ['diff', '--numstat', ...args]).catch(() => '')
+  return out.split('\n').some((line) => line.startsWith('-\t-\t'))
 }
 
 /** 충돌 판단에 쓸 원본/작업 브랜치 파일 내용을 나란히 읽는다. */
@@ -426,24 +450,56 @@ export async function worktreeConflictFile(
   path: string,
 ): Promise<WorktreeConflictFile> {
   const base = wt.baseBranch ?? 'HEAD'
+  const staged = await git(wt.path, ['ls-files', '-u', '--', path]).catch(() => '')
+  const duringRebase = staged.trim().length > 0
   const [origin, worktree] = await Promise.all([
-    showFile(wt.origin, base, path),
-    showFile(wt.origin, wt.branch, path),
+    duringRebase ? showFile(wt.path, ':2', path) : showFile(wt.origin, base, path),
+    duringRebase ? showFile(wt.path, ':3', path) : showFile(wt.origin, wt.branch, path),
   ])
+  const binary =
+    origin.content.includes('\0') ||
+    worktree.content.includes('\0') ||
+    (duringRebase
+      ? await binaryDiff(wt.path, ['--', path])
+      : await binaryDiff(wt.origin, [base, wt.branch, '--', path]))
 
   return {
     path,
-    originLabel: base,
-    worktreeLabel: wt.branch,
+    originLabel: duringRebase ? `${base} (현재 rebase 원본)` : base,
+    worktreeLabel: duringRebase ? `${wt.branch} (현재 적용 커밋)` : wt.branch,
     originContent: origin.content,
     worktreeContent: worktree.content,
     originMissing: origin.missing,
     worktreeMissing: worktree.missing,
+    binary,
     language: languageFromPath(path),
   }
 }
 
-/** 선택한 충돌 결과를 파일에 쓰고 rebase 를 이어간다. 실패하면 abort 한다. */
+async function writeResolvedFile(root: string, file: WorktreeResolvedFile): Promise<void> {
+  const full = safeWorktreePath(root, file.path)
+  if (file.deleted) {
+    await unlink(full).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'ENOENT') throw error
+    })
+    return
+  }
+  if (file.side) {
+    await gitWithError(root, ['checkout', file.side === 'origin' ? '--ours' : '--theirs', '--', file.path])
+    return
+  }
+  if (file.content === undefined) throw new Error(`${file.path}: 적용할 해결 내용이 없습니다.`)
+
+  await mkdir(dirname(full), { recursive: true })
+  const info = await lstat(full).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') return undefined
+    throw error
+  })
+  if (info?.isSymbolicLink()) await unlink(full)
+  await writeFile(full, file.content)
+}
+
+/** 선택한 충돌 결과를 파일에 쓰고 rebase 를 이어간다. 다음 충돌은 유지해 다시 선택받는다. */
 export async function resolveWorktreeConflicts(
   wt: SessionWorktree,
   files: WorktreeResolvedFile[],
@@ -451,47 +507,73 @@ export async function resolveWorktreeConflicts(
   if (!wt.baseBranch) return { ok: false, message: '원본 브랜치 정보가 없어 충돌을 해결할 수 없습니다.' }
   if (files.length === 0) return { ok: false, message: '적용할 충돌 해결 파일이 없습니다.' }
 
-  try {
-    await gitWithError(wt.path, ['rebase', wt.baseBranch])
-    return {
-      ok: true,
-      message: '이미 충돌 없이 원본 변경을 반영했습니다.',
-      status: await worktreeStatus({ ...wt, baseHead: await git(wt.origin, ['rev-parse', wt.baseBranch]).then((out) => out.trim()) }),
-    }
-  } catch {
+  let currentConflicts = await unmergedFiles(wt.path)
+  if (currentConflicts.length === 0) {
     try {
-      for (const file of files) {
-        const full = safeWorktreePath(wt.path, file.path)
-        await mkdir(dirname(full), { recursive: true })
-        await writeFile(full, file.content)
-      }
-      await gitWithError(wt.path, ['add', '--', ...files.map((file) => file.path)])
-      await gitWithError(wt.path, ['rebase', '--continue'])
+      await gitWithError(wt.path, ['rebase', wt.baseBranch])
       const baseHead = await git(wt.origin, ['rev-parse', wt.baseBranch]).then((out) => out.trim())
-      const nextWt = { ...wt, baseHead }
       return {
         ok: true,
-        message: '선택한 내용으로 충돌을 해결하고 원본 변경을 반영했습니다.',
-        status: await worktreeStatus(nextWt),
+        message: '이미 충돌 없이 원본 변경을 반영했습니다.',
+        status: await worktreeStatus({ ...wt, baseHead }),
       }
     } catch (error) {
-      const conflictFiles = await git(wt.path, ['diff', '--name-only', '--diff-filter=U'])
-        .then((out) =>
-          out
-            .split('\n')
-            .map((line) => line.trim())
-            .filter(Boolean),
-        )
-        .catch(() => [])
-      await gitWithError(wt.path, ['rebase', '--abort']).catch(() => undefined)
-      return {
-        ok: false,
-        message: error instanceof Error ? error.message : '충돌 해결 적용에 실패했습니다.',
-        conflictFiles,
-        status: await worktreeStatus(wt),
+      currentConflicts = await unmergedFiles(wt.path)
+      if (currentConflicts.length === 0) {
+        await gitWithError(wt.path, ['rebase', '--abort']).catch(() => undefined)
+        return {
+          ok: false,
+          message: error instanceof Error ? error.message : '충돌 해결을 위한 rebase를 시작하지 못했습니다.',
+          status: await worktreeStatus(wt),
+        }
       }
     }
   }
+
+  const requested = [...new Set(files.map((file) => file.path))].sort()
+  const expected = [...currentConflicts].sort()
+  if (requested.length !== expected.length || requested.some((path, index) => path !== expected[index])) {
+    return {
+      ok: false,
+      message: '충돌 단계가 변경되었습니다. 현재 충돌 파일을 다시 확인해 주세요.',
+      conflictFiles: currentConflicts,
+    }
+  }
+
+  try {
+    for (const file of files) await writeResolvedFile(wt.path, file)
+    await gitWithError(wt.path, ['add', '-A', '--', ...currentConflicts])
+    await gitWithError(wt.path, ['rebase', '--continue'])
+    const baseHead = await git(wt.origin, ['rev-parse', wt.baseBranch]).then((out) => out.trim())
+    const nextWt = { ...wt, baseHead }
+    return {
+      ok: true,
+      message: '선택한 내용으로 모든 충돌을 해결하고 원본 변경을 반영했습니다.',
+      status: await worktreeStatus(nextWt),
+    }
+  } catch (error) {
+    const conflictFiles = await unmergedFiles(wt.path)
+    if (conflictFiles.length > 0) {
+      return {
+        ok: false,
+        message: '다음 커밋에서 추가 충돌이 발생했습니다. 이어서 해결해 주세요.',
+        conflictFiles,
+      }
+    }
+    await gitWithError(wt.path, ['rebase', '--abort']).catch(() => undefined)
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : '충돌 해결 적용에 실패했습니다.',
+      status: await worktreeStatus(wt),
+    }
+  }
+}
+
+/** 충돌 해결 창을 닫았을 때 진행 중인 rebase를 원래 상태로 되돌린다. */
+export async function abortWorktreeRebase(wt: SessionWorktree): Promise<boolean> {
+  if ((await unmergedFiles(wt.path)).length === 0) return false
+  await gitWithError(wt.path, ['rebase', '--abort']).catch(() => undefined)
+  return true
 }
 
 /** 충돌 상태를 남기지 않는 fast-forward 병합만 수행한다. */

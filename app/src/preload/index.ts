@@ -15,6 +15,7 @@ import type {
   CheckpointDraft,
   RunningSession,
   SessionEvent,
+  SessionDeleteResult,
   StoredEvent,
   StoredProject,
   StoredSession,
@@ -117,6 +118,16 @@ const api = {
     files: WorktreeResolvedFile[],
   ): Promise<WorktreeRebaseResult> =>
     ipcRenderer.invoke('session:resolveWorktreeConflicts', sessionId, files),
+  onWorktreeResolved: (cb: (sessionId: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, sessionId: string): void => cb(sessionId)
+    ipcRenderer.on('worktree:resolved', listener)
+    return () => ipcRenderer.off('worktree:resolved', listener)
+  },
+  onWorktreeRebaseAborted: (cb: (sessionId: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, sessionId: string): void => cb(sessionId)
+    ipcRenderer.on('worktree:rebaseAborted', listener)
+    return () => ipcRenderer.off('worktree:rebaseAborted', listener)
+  },
   commitWorktree: (sessionId: string, message: string): Promise<WorktreeCommitResult> =>
     ipcRenderer.invoke('session:commitWorktree', sessionId, message),
   rebaseWorktree: (
@@ -152,7 +163,7 @@ const api = {
     ipcRenderer.invoke('session:start', args),
 
   stopSession: (id: string): Promise<void> => ipcRenderer.invoke('session:stop', id),
-  deleteSession: (id: string): Promise<void> => ipcRenderer.invoke('session:delete', id),
+  deleteSession: (id: string): Promise<SessionDeleteResult> => ipcRenderer.invoke('session:delete', id),
 
   resolveApproval: (id: string, decision: ApprovalDecision, reason?: string): Promise<void> =>
     ipcRenderer.invoke('approval:resolve', id, decision, reason),

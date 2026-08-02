@@ -43,18 +43,20 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const [diffLoading, setDiffLoading] = useState(false)
   const [copied, setCopied] = useState(false)
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (): Promise<WorktreeStatus | undefined> => {
     setLoading(true)
     try {
       const next = await window.api.worktreeStatus(sessionId)
       setStatus(next)
-      setConflictFiles([])
+      setConflictFiles(next?.conflictFiles ?? [])
       if (!next) setMessage({ ok: false, text: '연결된 worktree 정보를 찾지 못했습니다.' })
+      return next
     } catch (error) {
       setMessage({
         ok: false,
         text: error instanceof Error ? error.message : 'worktree 상태를 읽지 못했습니다.',
       })
+      return undefined
     } finally {
       setLoading(false)
     }
@@ -63,6 +65,34 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   useEffect(() => {
     void reload()
   }, [reload])
+
+  useEffect(() => {
+    return window.api.onWorktreeResolved((resolvedSessionId) => {
+      if (resolvedSessionId !== sessionId) return
+      void (async () => {
+        const next = await reload()
+        if (!next) return
+        setMessage({
+          ok: true,
+          text: next.canMerge
+            ? '충돌 해결이 완료되었습니다. 이제 원본 브랜치에 병합할 수 있습니다.'
+            : '충돌 해결이 완료되어 worktree 상태를 갱신했습니다.',
+        })
+        await onChanged()
+        if (diff !== undefined) setDiff(await window.api.worktreeDiff(sessionId))
+      })()
+    })
+  }, [diff, onChanged, reload, sessionId])
+
+  useEffect(() => {
+    return window.api.onWorktreeRebaseAborted((abortedSessionId) => {
+      if (abortedSessionId !== sessionId) return
+      void (async () => {
+        await reload()
+        setMessage({ ok: false, text: '충돌 해결을 취소해 worktree를 이전 상태로 되돌렸습니다.' })
+      })()
+    })
+  }, [reload, sessionId])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -187,9 +217,12 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const hasCommits = Boolean(status?.hasCommits)
   const merged = Boolean(status?.merged)
   const hasDirtyWork = Boolean(status?.dirty)
+  const hasConflict = conflictFiles.length > 0
   const running = status?.reason?.startsWith('세션이 실행 중') ?? false
-  const canCommit = Boolean(status && hasDirtyWork && !running && commitMessage.trim())
-  const canRebase = Boolean(status && status.behind > 0 && hasCommits && !hasDirtyWork && !status.originDirty && !running)
+  const canCommit = Boolean(status && hasDirtyWork && !hasConflict && !running && commitMessage.trim())
+  const canRebase = Boolean(
+    status && status.behind > 0 && hasCommits && !hasConflict && !hasDirtyWork && !status.originDirty && !running,
+  )
   const canDrop = Boolean(status && !hasDirtyWork && (merged || !hasCommits))
   const busy = committing || rebasing || merging || dropping
   const commitLabel = loading
@@ -334,37 +367,38 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
                   반영
                 </button>
               </div>
-              {conflictFiles.length > 0 && (
-                <div className="mt-3 rounded-md border border-yellow/20 bg-yellow/5 p-2.5">
-                  <div className="mb-2 flex items-center gap-2">
-                    <div className="text-[11px] font-semibold text-yellow">충돌 파일</div>
-                    <span className="rounded bg-yellow/10 px-1.5 py-0.5 text-[10px] text-yellow">
-                      {conflictFiles.length}개
-                    </span>
-                  </div>
-                  <div className="mb-2 flex flex-wrap gap-1.5">
-                    {conflictFiles.map((file) => (
-                      <span
-                        key={file}
-                        className="rounded bg-surface0 px-1.5 py-0.5 font-mono text-[11px] text-subtext1"
-                      >
-                        {file}
-                      </span>
-                    ))}
-                  </div>
-                  <button
-                    onClick={() => void openConflictResolver()}
-                    className="flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md bg-yellow/15 px-3 py-1.5 text-[12px] font-semibold text-yellow hover:bg-yellow/25"
-                  >
-                    <GitPullRequestArrow className="h-3.5 w-3.5" />
-                    충돌 해결 창 열기
-                  </button>
-                </div>
-              )}
             </div>
           )}
 
-          {!loading && hasDirtyWork && (
+          {!loading && conflictFiles.length > 0 && (
+            <div className="rounded-md border border-yellow/20 bg-yellow/5 p-2.5">
+              <div className="mb-2 flex items-center gap-2">
+                <div className="text-[11px] font-semibold text-yellow">충돌 파일</div>
+                <span className="rounded bg-yellow/10 px-1.5 py-0.5 text-[10px] text-yellow">
+                  {conflictFiles.length}개
+                </span>
+              </div>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {conflictFiles.map((path) => (
+                  <span
+                    key={path}
+                    className="rounded bg-surface0 px-1.5 py-0.5 font-mono text-[11px] text-subtext1"
+                  >
+                    {path}
+                  </span>
+                ))}
+              </div>
+              <button
+                onClick={() => void openConflictResolver()}
+                className="flex min-h-8 w-full items-center justify-center gap-1.5 rounded-md bg-yellow/15 px-3 py-1.5 text-[12px] font-semibold text-yellow hover:bg-yellow/25"
+              >
+                <GitPullRequestArrow className="h-3.5 w-3.5" />
+                충돌 해결 창 열기
+              </button>
+            </div>
+          )}
+
+          {!loading && hasDirtyWork && !hasConflict && (
             <div className="-mx-5 border-y border-surface0 bg-base/35 px-5 py-3">
               <div className="mb-2 flex items-center gap-2">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue/15 text-blue">
@@ -413,13 +447,18 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
 
           {message && (
             <div
-              className={`rounded-md border px-3 py-2.5 text-[12px] ${
+              className={`flex gap-2 rounded-md border px-3 py-2.5 text-[12px] ${
                 message.ok
                   ? 'border-green/30 bg-green/5 text-green'
                   : 'border-red/30 bg-red/5 text-red'
               }`}
             >
-              {message.text}
+              {message.ok ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <span className="leading-relaxed">{message.text}</span>
             </div>
           )}
         </div>

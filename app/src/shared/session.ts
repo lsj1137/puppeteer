@@ -335,6 +335,8 @@ export interface WorktreeStatus {
   behind: number
   merged: boolean
   canMerge: boolean
+  /** 중단된 rebase에서 아직 해결해야 하는 파일 */
+  conflictFiles?: string[]
   reason?: string
 }
 
@@ -370,6 +372,8 @@ export interface WorktreeConflictFile {
   worktreeContent: string
   originMissing: boolean
   worktreeMissing: boolean
+  /** 텍스트 병합 대신 파일 전체를 한쪽에서 골라야 하는 파일 */
+  binary: boolean
   language?: string
 }
 
@@ -381,7 +385,17 @@ export interface WorktreeConflictResolverRequest {
 
 export interface WorktreeResolvedFile {
   path: string
-  content: string
+  /** 직접 조합한 텍스트. 전체 선택이나 삭제일 때는 생략한다. */
+  content?: string
+  /** 바이너리 등 파일 전체를 선택할 때 사용한다. */
+  side?: WorktreeRebaseStrategy
+  /** 선택한 쪽에 파일이 없어서 삭제해야 할 때 사용한다. */
+  deleted?: boolean
+}
+
+export interface SessionDeleteResult {
+  ok: boolean
+  message?: string
 }
 
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
