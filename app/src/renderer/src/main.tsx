@@ -1,14 +1,17 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import WorktreeConflictResolver from './components/WorktreeConflictResolver'
 import './index.css'
 import { initTheme } from './lib/theme'
 
 initTheme()
 
+const Root = window.location.hash.startsWith('#worktree-conflict') ? WorktreeConflictResolver : App
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <Root />
   </React.StrictMode>,
 )
 

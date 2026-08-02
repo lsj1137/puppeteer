@@ -17,14 +17,28 @@ import type {
   ApprovalDecision,
   DetectedRunner,
   FetchedAgent,
+  WorktreeConflictResolverRequest,
+  WorktreeResolvedFile,
   UpdateCheck,
 } from '@shared/session'
 
 let mainWindow: BrowserWindow | undefined
+const conflictResolvers = new Map<string, WorktreeConflictResolverRequest>()
+const conflictResolverWindows = new Map<string, { token: string; win: BrowserWindow }>()
 const smokeMode = process.env['AGENT_WORKSPACE_SMOKE'] === '1'
 const smokeUserData = process.env['AGENT_WORKSPACE_SMOKE_USER_DATA']
 
 if (smokeMode && smokeUserData) app.setPath('userData', smokeUserData)
+
+function loadRenderer(win: BrowserWindow, hash?: string): void {
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    const url = new URL(process.env['ELECTRON_RENDERER_URL'])
+    if (hash) url.hash = hash
+    win.loadURL(url.toString())
+  } else {
+    win.loadFile(join(__dirname, '../renderer/index.html'), hash ? { hash } : undefined)
+  }
+}
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -40,7 +54,6 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   })
-
   mainWindow = win
   if (!smokeMode) win.on('ready-to-show', () => win.show())
   win.on('closed', () => { mainWindow = undefined })
@@ -55,12 +68,45 @@ function createWindow(): BrowserWindow {
     return { action: 'deny' }
   })
 
-  if (process.env['ELECTRON_RENDERER_URL']) {
-    win.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'))
-  }
+  loadRenderer(win)
   return win
+}
+
+function createConflictResolverWindow(
+  request: WorktreeConflictResolverRequest,
+  onClosed: () => void | Promise<void>,
+): void {
+  conflictResolvers.set(request.token, request)
+  const win = new BrowserWindow({
+    width: 1500,
+    height: 920,
+    minWidth: 1180,
+    minHeight: 720,
+    show: false,
+    autoHideMenuBar: true,
+    backgroundColor: '#0b0d10',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+    },
+  })
+  conflictResolverWindows.set(request.sessionId, { token: request.token, win })
+  win.on('ready-to-show', () => win.show())
+  win.on('closed', () => {
+    conflictResolvers.delete(request.token)
+    if (conflictResolverWindows.get(request.sessionId)?.token === request.token) {
+      conflictResolverWindows.delete(request.sessionId)
+    }
+    void onClosed()
+  })
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith('http://localhost')) e.preventDefault()
+  })
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
+  loadRenderer(win, `worktree-conflict?token=${encodeURIComponent(request.token)}`)
 }
 
 app.whenReady().then(() => {
@@ -162,6 +208,47 @@ app.whenReady().then(() => {
   ipcMain.handle('session:dropWorktree', (_e, id: string, force: boolean) =>
     sessions.dropWorktree(id, force),
   )
+  ipcMain.handle('session:worktreeStatus', (_e, id: string) => sessions.worktreeStatus(id))
+  ipcMain.handle('session:worktreeDiff', (_e, id: string) => sessions.worktreeDiff(id))
+  ipcMain.handle('session:worktreeConflictFile', (_e, id: string, path: string) =>
+    sessions.worktreeConflictFile(id, path),
+  )
+  ipcMain.handle('session:openWorktreeConflictResolver', (_e, id: string, files: string[]) => {
+    const existing = conflictResolverWindows.get(id)
+    if (existing && !existing.win.isDestroyed()) {
+      existing.win.show()
+      existing.win.focus()
+      return existing.token
+    }
+    const token = randomUUID()
+    createConflictResolverWindow(
+      { token, sessionId: id, files },
+      async () => {
+        if (await sessions.abortWorktreeRebase(id)) {
+          mainWindow?.webContents.send('worktree:rebaseAborted', id)
+        }
+      },
+    )
+    return token
+  })
+  ipcMain.handle('session:conflictResolverRequest', (_e, token: string) =>
+    conflictResolvers.get(token),
+  )
+  ipcMain.handle(
+    'session:resolveWorktreeConflicts',
+    async (_e, id: string, files: WorktreeResolvedFile[]) => {
+      const result = await sessions.resolveWorktreeConflicts(id, files)
+      if (result.ok) mainWindow?.webContents.send('worktree:resolved', id)
+      return result
+    },
+  )
+  ipcMain.handle('session:commitWorktree', (_e, id: string, message: string) =>
+    sessions.commitWorktree(id, message),
+  )
+  ipcMain.handle('session:rebaseWorktree', (_e, id: string, strategy?: 'origin' | 'worktree') =>
+    sessions.rebaseWorktree(id, strategy),
+  )
+  ipcMain.handle('session:mergeWorktree', (_e, id: string) => sessions.mergeWorktree(id))
   ipcMain.handle(
     'approval:resolve',
     (_e, approvalId: string, decision: ApprovalDecision, reason?: string) =>

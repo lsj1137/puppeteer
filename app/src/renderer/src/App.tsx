@@ -45,6 +45,7 @@ import AgentImport from './components/AgentImport'
 import MemoryScreen from './components/MemoryScreen'
 import Settings from './components/Settings'
 import Checkpoint from './components/Checkpoint'
+import WorktreeDialog from './components/WorktreeDialog'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -69,6 +70,7 @@ import ArtifactPanel, { artifactTitle, lineCount } from './components/ArtifactPa
 import { splitFences, type Segment, type UiArtifact } from './lib/fences'
 import { toUiArtifactKind } from './lib/artifacts'
 import { runnerEnvironmentLabel } from '@shared/runner'
+import { approvalNavigationPath, sessionRunPath } from './lib/navigation'
 
 type Entry =
   | { kind: 'assistant'; id: string; segments: Segment[]; isError?: boolean }
@@ -321,8 +323,7 @@ export default function App() {
   const [importing, setImporting] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [checkpoint, setCheckpoint] = useState<CheckpointDraft>()
-  /** 새 세션을 전용 worktree 에서 격리 실행할지 */
-  const [isolate, setIsolate] = useState(false)
+  const [worktreeOpen, setWorktreeOpen] = useState<string>()
   /**
    * 다음 지시를 보낼 러너. 세션마다 다를 수 있어 프로젝트 기본값과 따로 둔다.
    * 열어둔 세션이 있으면 그 세션이 쓰던 러너를 기본으로 잡는다.
@@ -332,6 +333,7 @@ export default function App() {
   /** 탭바 가용 폭 — 창 크기·Artifact 폭에 따라 바뀌므로 관찰한다 */
   const [tabRoom, setTabRoom] = useState(0)
   const [confirmDelSession, setConfirmDelSession] = useState<StoredSession>()
+  const [sessionDeleteError, setSessionDeleteError] = useState<string>()
   const [editing, setEditing] = useState<{ agent: AgentDef; isNew: boolean }>()
   const [artifactsOpen, setArtifactsOpen] = useState(
     () => localStorage.getItem('ws.artifacts') !== 'closed',
@@ -388,6 +390,8 @@ export default function App() {
   const runnerLocked = !!selected
   /** 격리 실행 중인 세션 */
   const sessionWorktree = selected?.worktree ?? undefined
+  /** 격리 폴더는 정리됐고, 다음 지시에서 새 worktree를 만들 세션 */
+  const worktreeCleaned = Boolean(selected?.worktreeCleaned && !sessionWorktree)
   /** 세션을 돌릴 수 있는 러너 전체. provider 를 가리지 않는다. */
   const usableRunners = runners.filter((r) => r.available)
   /** 홈 라우터 전용 — 라우팅 프롬프트가 Claude CLI 인자로 짜여 있다 */
@@ -703,13 +707,14 @@ export default function App() {
   }
 
   /** 세션 열기. 이미 메모리에 있으면 그대로, 아니면 DB 에서 복원한다. */
-  async function openSession(id: string): Promise<void> {
+  async function openSession(id: string, candidates = sessions): Promise<void> {
+    const target = candidates.find((session) => session.id === id)
     setScreen('project')
     setPendingPick(undefined)
-    setNextRunnerId(sessions.find((x) => x.id === id)?.runnerId ?? undefined)
+    setNextRunnerId(target?.runnerId ?? undefined)
     setScrolled(false)
     setActiveSession(id)
-    setAgentName(sessions.find((x) => x.id === id)?.agentName ?? undefined)
+    setAgentName(target?.agentName ?? undefined)
     setSelectedArtifact(undefined)
     if (views[id]) return
     const stored = await window.api.listEvents(id)
@@ -720,16 +725,23 @@ export default function App() {
 
   /** 다른 프로젝트의 세션으로 이동 */
   async function jumpTo(sessionId: string, projectPath: string): Promise<void> {
+    let targetSessions = sessions
     if (projectPath !== active) {
       setActive(projectPath)
-      setSessions(await window.api.listSessions(projectPath))
+      targetSessions = await window.api.listSessions(projectPath)
+      setSessions(targetSessions)
     }
-    await openSession(sessionId)
+    await openSession(sessionId, targetSessions)
   }
 
   async function removeSession(id: string): Promise<void> {
+    setSessionDeleteError(undefined)
+    const result = await window.api.deleteSession(id)
+    if (!result.ok) {
+      setSessionDeleteError(result.message ?? '세션을 삭제하지 못했습니다.')
+      return
+    }
     setConfirmDelSession(undefined)
-    await window.api.deleteSession(id)
     setViews((vs) => {
       const next = { ...vs }
       delete next[id]
@@ -745,7 +757,6 @@ export default function App() {
   function newSession(): void {
     setScrolled(false)
     setPendingPick(undefined)
-    setIsolate(false)
     setActiveSession(undefined)
     setSelectedArtifact(undefined)
     taRef.current?.focus()
@@ -796,7 +807,7 @@ export default function App() {
 
   async function run(runnerId: string, text: string, cwd?: string): Promise<void> {
     const runner = runners.find((r) => r.id === runnerId)
-    const path = cwd ?? active
+    const path = sessionRunPath(cwd, selected?.projectPath, active)
     if (!runner || !path) return
 
     // 열어둔 세션이 있으면 그 CLI 세션을 이어간다.
@@ -820,7 +831,6 @@ export default function App() {
         continueSessionId,
         attachments: attachments.map((a) => a.path),
         agentName,
-        isolate: selected ? undefined : isolate,
       })
       setAttachments([])
       // 사용자 지시는 main 이 이벤트로 되돌려주므로 여기서 따로 넣지 않는다
@@ -893,7 +903,10 @@ export default function App() {
             label: '현재 세션 삭제',
             hint: selected.title ?? '',
             icon: Trash2,
-            run: () => setConfirmDelSession(selected),
+            run: () => {
+              setSessionDeleteError(undefined)
+              setConfirmDelSession(selected)
+            },
           },
         ]
       : []),
@@ -942,9 +955,9 @@ export default function App() {
       id: `ap:${a.id}`,
       group: '승인 대기',
       label: `${a.tool} 승인 요청`,
-      hint: baseName(a.cwd),
+      hint: baseName(approvalNavigationPath(a)),
       icon: ShieldAlert,
-      run: () => void jumpTo(a.sessionId, a.cwd),
+      run: () => void jumpTo(a.sessionId, approvalNavigationPath(a)),
     })),
     ...running.map((r) => ({
       id: `run:${r.id}`,
@@ -1038,11 +1051,13 @@ export default function App() {
             {approvals.map((a) => (
               <button
                 key={a.id}
-                onClick={() => void jumpTo(a.sessionId, a.cwd)}
+                onClick={() => void jumpTo(a.sessionId, approvalNavigationPath(a))}
                 className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] hover:bg-surface0"
               >
                 <span className="font-mono text-subtext1">{a.tool}</span>
-                <span className="flex-1 truncate text-overlay1">{baseName(a.cwd)}</span>
+                <span className="flex-1 truncate text-overlay1">
+                  {baseName(approvalNavigationPath(a))}
+                </span>
                 {a.sessionId === activeSession && (
                   <span className="shrink-0 text-[11px] text-peach">현재</span>
                 )}
@@ -1235,6 +1250,7 @@ export default function App() {
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
+                    setSessionDeleteError(undefined)
                     setConfirmDelSession(s)
                   }}
                   title="세션 삭제"
@@ -1371,29 +1387,26 @@ export default function App() {
               )}
             </div>
 
-            {sessionWorktree ? (
-              <span
+            {sessionWorktree && selected && (
+              <button
+                onClick={() => setWorktreeOpen(selected.id)}
                 title={`격리 실행 중\n브랜치 ${sessionWorktree.branch}\n${sessionWorktree.path}`}
-                className="flex items-center gap-1.5 rounded-md bg-teal/15 px-2 py-1 text-[11px] text-teal"
+                className="flex min-w-0 max-w-[220px] items-center gap-1.5 rounded-md bg-teal/15 px-2 py-1 text-[11px] text-teal hover:bg-teal/25"
               >
-                <GitBranch className="h-3.5 w-3.5" />
-                {sessionWorktree.branch}
+                <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{sessionWorktree.branch}</span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </button>
+            )}
+
+            {worktreeCleaned && (
+              <span
+                title="기존 worktree가 정리되었습니다. 이 세션에 다시 지시하면 현재 원본 기준으로 새 worktree를 자동 생성합니다."
+                className="flex min-w-0 max-w-[180px] items-center gap-1.5 rounded-md bg-surface0 px-2 py-1 text-[11px] text-subtext0"
+              >
+                <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Worktree 정리됨</span>
               </span>
-            ) : (
-              !selected && (
-                <button
-                  onClick={() => setIsolate((v) => !v)}
-                  title="전용 git worktree 를 만들어 다른 세션과 파일이 부딪히지 않게 합니다"
-                  className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
-                    isolate
-                      ? 'bg-teal/15 text-teal'
-                      : 'text-overlay1 hover:bg-surface0 hover:text-subtext1'
-                  }`}
-                >
-                  <GitBranch className="h-3.5 w-3.5" />
-                  격리 실행
-                </button>
-              )
             )}
 
             {selected && (
@@ -1951,11 +1964,14 @@ export default function App() {
           title="이 세션을 삭제할까요?"
           description={`대화 기록·승인 이력·변경 파일 기록이 모두 지워집니다. 되돌릴 수 없습니다.${
             running.some((r) => r.id === confirmDelSession.id) ? ' 실행 중이라 먼저 중지됩니다.' : ''
-          }`}
-          detail={confirmDelSession.title ?? ''}
+          }${sessionDeleteError ? `\n\n삭제 중단: ${sessionDeleteError}` : ''}`}
+          detail={confirmDelSession.worktree?.path ?? confirmDelSession.title ?? ''}
           confirmLabel="삭제"
           onConfirm={() => void removeSession(confirmDelSession.id)}
-          onCancel={() => setConfirmDelSession(undefined)}
+          onCancel={() => {
+            setSessionDeleteError(undefined)
+            setConfirmDelSession(undefined)
+          }}
         />
       )}
 
@@ -1966,6 +1982,15 @@ export default function App() {
           agents={agents}
           onClose={() => setCheckpoint(undefined)}
           onHandoff={(body, rid, ag) => void handoff(body, rid, ag)}
+        />
+      )}
+
+      {worktreeOpen && selected?.id === worktreeOpen && selected.worktree && (
+        <WorktreeDialog
+          sessionId={selected.id}
+          worktree={selected.worktree}
+          onChanged={() => refresh(active)}
+          onClose={() => setWorktreeOpen(undefined)}
         />
       )}
 

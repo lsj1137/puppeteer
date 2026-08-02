@@ -51,7 +51,9 @@ export default function ConfirmDialog({
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-text">{title}</div>
             {description && (
-              <div className="mt-1 text-[12px] leading-relaxed text-subtext0">{description}</div>
+              <div className="mt-1 whitespace-pre-line text-[12px] leading-relaxed text-subtext0">
+                {description}
+              </div>
             )}
           </div>
         </div>

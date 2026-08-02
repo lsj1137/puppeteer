@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 import { promisify } from 'node:util'
 import type { DetectedRunner, InstallMethod, ProviderId } from '@shared/session'
 
@@ -48,6 +48,8 @@ async function tryVersion(cmd: string, args: string[]): Promise<string | undefin
 /** Windows PATH 상의 실행 파일 탐지 */
 async function detectWindows(provider: ProviderId, bin: string): Promise<DetectedRunner[]> {
   if (process.platform !== 'win32') return []
+
+  let executable: string | undefined
   try {
     const { stdout } = await exec('where', [bin], { timeout: 10_000, windowsHide: true })
     // where 는 셸 래퍼(claude)와 .cmd 를 함께 반환한다. 실행 가능한 .cmd 를 우선한다.
@@ -55,22 +57,25 @@ async function detectWindows(provider: ProviderId, bin: string): Promise<Detecte
       .split(/\r?\n/)
       .map((s) => s.trim())
       .filter(Boolean)
-    const executable = paths.find((p) => p.toLowerCase().endsWith('.cmd')) ?? paths[0]
-    if (!executable) return []
-    return [
-      {
-        id: `win:${provider}`,
-        kind: 'windows-native',
-        provider,
-        executable,
-        version: await tryVersion(executable, ['--version']),
-        installMethod: guessInstallMethod(executable),
-        available: true,
-      },
-    ]
+    executable = paths.find((p) => p.toLowerCase().endsWith('.cmd')) ?? paths[0]
   } catch {
-    return []
+    // GUI 앱은 VS Code가 셸에 추가한 PATH를 물려받지 못할 수 있다.
   }
+
+  executable ??= windowsFallbackExecutables(provider, bin).find((path) => existsSync(path))
+  if (!executable) return []
+
+  return [
+    {
+      id: `win:${provider}`,
+      kind: 'windows-native',
+      provider,
+      executable,
+      version: await tryVersion(executable, ['--version']),
+      installMethod: guessInstallMethod(executable),
+      available: true,
+    },
+  ]
 }
 
 /** 설치된 WSL 배포판 목록. wsl.exe -l -q 는 UTF-16LE 로 출력한다. */
@@ -192,11 +197,11 @@ export function posixFallbackExecutables(
   arch = process.arch,
 ): string[] {
   const candidates = [
-    join(home, '.local', 'bin', bin),
-    join(home, '.npm-global', 'bin', bin),
-    join(home, '.bun', 'bin', bin),
-    join(home, '.cargo', 'bin', bin),
-    join(home, '.npm', 'bin', bin),
+    posix.join(home, '.local', 'bin', bin),
+    posix.join(home, '.npm-global', 'bin', bin),
+    posix.join(home, '.bun', 'bin', bin),
+    posix.join(home, '.cargo', 'bin', bin),
+    posix.join(home, '.npm', 'bin', bin),
     `/opt/homebrew/bin/${bin}`,
     `/usr/local/bin/${bin}`,
   ]
@@ -214,9 +219,30 @@ export function posixFallbackExecutables(
 }
 
 export function codexPlatformDir(platform: string, arch: string): string | undefined {
+  if (platform === 'win32') return arch === 'arm64' ? 'windows-aarch64' : 'windows-x86_64'
   if (platform === 'darwin') return arch === 'arm64' ? 'macos-aarch64' : 'macos-x64'
   if (platform === 'linux') return arch === 'arm64' ? 'linux-aarch64' : 'linux-x64'
   return undefined
+}
+
+/** GUI 프로세스 PATH에 잡히지 않는 Windows용 VS Code/Cursor 번들 Codex. */
+export function windowsFallbackExecutables(
+  provider: ProviderId,
+  bin: string,
+  home = homedir(),
+  arch = process.arch,
+  localAppData = process.env.LOCALAPPDATA,
+): string[] {
+  if (provider !== 'codex-cli') return []
+  const platformDir = codexPlatformDir('win32', arch)
+  if (!platformDir) return []
+
+  const extensionBinaries = extensionRoots(home).flatMap((root) =>
+    openAiExtensionDirs(root).map((dir) => join(dir, 'bin', platformDir, `${bin}.exe`)),
+  )
+  const desktopBinaries = codexDesktopAppBinDirs(localAppData).map((dir) => join(dir, `${bin}.exe`))
+
+  return [...new Set([...extensionBinaries, ...desktopBinaries])]
 }
 
 function extensionRoots(home: string): string[] {
@@ -233,6 +259,19 @@ function openAiExtensionDirs(root: string): string[] {
     return readdirSync(root)
       .filter((name) => name.startsWith('openai.chatgpt-'))
       .map((name) => join(root, name))
+      .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
+  } catch {
+    return []
+  }
+}
+
+function codexDesktopAppBinDirs(localAppData?: string): string[] {
+  if (!localAppData) return []
+  const root = join(localAppData, 'OpenAI', 'Codex', 'bin')
+  try {
+    return readdirSync(root)
+      .map((name) => join(root, name))
+      .filter((path) => statSync(path).isDirectory())
       .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)
   } catch {
     return []

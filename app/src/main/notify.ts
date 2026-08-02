@@ -1,4 +1,5 @@
 import { BrowserWindow, Notification, app } from 'electron'
+import { execFile } from 'node:child_process'
 import type { ApprovalRequest, SessionStatus } from '@shared/session'
 
 /**
@@ -27,7 +28,8 @@ export function setNotifyEnabled(v: boolean): void {
 
 /** 창이 보이고 포커스까지 있으면 굳이 알리지 않는다 */
 function shouldNotify(): boolean {
-  if (!enabled || !Notification.isSupported()) return false
+  if (!enabled) return false
+  if (process.platform !== 'darwin' && !Notification.isSupported()) return false
   const win = getWindow()
   return !win || !win.isFocused() || win.isMinimized()
 }
@@ -36,6 +38,9 @@ function show(title: string, body: string, jump?: { sessionId: string; cwd: stri
   if (!shouldNotify()) return
 
   const n = new Notification({ title, body, silent: false })
+  n.on('failed', () => {
+    if (process.platform === 'darwin') showMacFallback(title, body)
+  })
   n.on('click', () => {
     const win = getWindow()
     if (!win) return
@@ -47,11 +52,30 @@ function show(title: string, body: string, jump?: { sessionId: string; cwd: stri
   n.show()
 }
 
+const MAC_NOTIFICATION_SCRIPT = `
+on run argv
+  display notification (item 2 of argv) with title (item 1 of argv)
+end run
+`.trim()
+
+export function macNotificationArgs(title: string, body: string): string[] {
+  return ['-e', MAC_NOTIFICATION_SCRIPT, title, body]
+}
+
+function showMacFallback(title: string, body: string): void {
+  execFile(
+    'osascript',
+    macNotificationArgs(title, body),
+    { timeout: 5_000, windowsHide: true },
+    () => {},
+  )
+}
+
 export function notifyApproval(req: ApprovalRequest): void {
   const detail = summarize(req.input)
   show(`승인 대기 · ${req.tool}`, detail ? `${baseName(req.cwd)} — ${detail}` : baseName(req.cwd), {
     sessionId: req.sessionId,
-    cwd: req.cwd,
+    cwd: req.projectPath ?? req.cwd,
   })
 }
 

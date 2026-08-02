@@ -15,9 +15,18 @@ import type {
   CheckpointDraft,
   RunningSession,
   SessionEvent,
+  SessionDeleteResult,
   StoredEvent,
   StoredProject,
   StoredSession,
+  WorktreeCommitResult,
+  WorktreeConflictFile,
+  WorktreeConflictResolverRequest,
+  WorktreeMergeResult,
+  WorktreeRebaseResult,
+  WorktreeRebaseStrategy,
+  WorktreeResolvedFile,
+  WorktreeStatus,
 } from '@shared/session'
 
 export interface SessionEventEnvelope {
@@ -34,7 +43,7 @@ export interface StartSessionArgs {
   attachments?: string[]
   /** 적용할 Project Agent 이름 */
   agentName?: string
-  /** 전용 worktree 에서 격리 실행 */
+  /** 새 세션을 전용 worktree 에서 격리할지. 생략하면 기본으로 격리한다. */
   isolate?: boolean
   /** 이어서 지시하는 경우 기존 세션 id (새 세션을 만들지 않는다) */
   continueSessionId?: string
@@ -89,6 +98,44 @@ const api = {
   ): Promise<AgentDef | undefined> => ipcRenderer.invoke('agent:applyUpdate', name, opts),
   dropWorktree: (sessionId: string, force: boolean): Promise<boolean> =>
     ipcRenderer.invoke('session:dropWorktree', sessionId, force),
+  worktreeStatus: (sessionId: string): Promise<WorktreeStatus | undefined> =>
+    ipcRenderer.invoke('session:worktreeStatus', sessionId),
+  worktreeDiff: (sessionId: string): Promise<string> =>
+    ipcRenderer.invoke('session:worktreeDiff', sessionId),
+  worktreeConflictFile: (
+    sessionId: string,
+    path: string,
+  ): Promise<WorktreeConflictFile | undefined> =>
+    ipcRenderer.invoke('session:worktreeConflictFile', sessionId, path),
+  openWorktreeConflictResolver: (sessionId: string, files: string[]): Promise<string> =>
+    ipcRenderer.invoke('session:openWorktreeConflictResolver', sessionId, files),
+  conflictResolverRequest: (
+    token: string,
+  ): Promise<WorktreeConflictResolverRequest | undefined> =>
+    ipcRenderer.invoke('session:conflictResolverRequest', token),
+  resolveWorktreeConflicts: (
+    sessionId: string,
+    files: WorktreeResolvedFile[],
+  ): Promise<WorktreeRebaseResult> =>
+    ipcRenderer.invoke('session:resolveWorktreeConflicts', sessionId, files),
+  onWorktreeResolved: (cb: (sessionId: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, sessionId: string): void => cb(sessionId)
+    ipcRenderer.on('worktree:resolved', listener)
+    return () => ipcRenderer.off('worktree:resolved', listener)
+  },
+  onWorktreeRebaseAborted: (cb: (sessionId: string) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, sessionId: string): void => cb(sessionId)
+    ipcRenderer.on('worktree:rebaseAborted', listener)
+    return () => ipcRenderer.off('worktree:rebaseAborted', listener)
+  },
+  commitWorktree: (sessionId: string, message: string): Promise<WorktreeCommitResult> =>
+    ipcRenderer.invoke('session:commitWorktree', sessionId, message),
+  rebaseWorktree: (
+    sessionId: string,
+    strategy?: WorktreeRebaseStrategy,
+  ): Promise<WorktreeRebaseResult> => ipcRenderer.invoke('session:rebaseWorktree', sessionId, strategy),
+  mergeWorktree: (sessionId: string): Promise<WorktreeMergeResult> =>
+    ipcRenderer.invoke('session:mergeWorktree', sessionId),
   buildCheckpoint: (sessionId: string): Promise<CheckpointDraft | undefined> =>
     ipcRenderer.invoke('checkpoint:build', sessionId),
   listMemories: (): Promise<MemoryEntry[]> => ipcRenderer.invoke('memory:list'),
@@ -116,7 +163,7 @@ const api = {
     ipcRenderer.invoke('session:start', args),
 
   stopSession: (id: string): Promise<void> => ipcRenderer.invoke('session:stop', id),
-  deleteSession: (id: string): Promise<void> => ipcRenderer.invoke('session:delete', id),
+  deleteSession: (id: string): Promise<SessionDeleteResult> => ipcRenderer.invoke('session:delete', id),
 
   resolveApproval: (id: string, decision: ApprovalDecision, reason?: string): Promise<void> =>
     ipcRenderer.invoke('approval:resolve', id, decision, reason),

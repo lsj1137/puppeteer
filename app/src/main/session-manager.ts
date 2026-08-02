@@ -9,8 +9,16 @@ import type {
   GitSnapshot,
   RunningSession,
   SessionEvent,
+  SessionDeleteResult,
   SessionStatus,
   SessionWorktree,
+  WorktreeCommitResult,
+  WorktreeConflictFile,
+  WorktreeMergeResult,
+  WorktreeRebaseResult,
+  WorktreeRebaseStrategy,
+  WorktreeResolvedFile,
+  WorktreeStatus,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
@@ -20,13 +28,26 @@ import * as library from './agent-library'
 import * as db from './db'
 import {
   addWorktree,
+  abortWorktreeRebase as abortGitWorktreeRebase,
   changedSince,
+  commitWorktree as commitGitWorktree,
   diffFile,
+  mergeWorktree as mergeGitWorktree,
+  rebaseWorktree as rebaseGitWorktree,
+  resolveWorktreeConflicts as resolveGitWorktreeConflicts,
   removeWorktree,
   snapshot,
+  worktreeDiff as readWorktreeDiff,
+  worktreeConflictFile as readWorktreeConflictFile,
   worktreeDirty,
+  worktreeStatus as inspectWorktree,
 } from './git'
 import { notifyApproval, notifyStatus } from './notify'
+import {
+  sessionDeletionBlockReason,
+  shouldCreateWorktree,
+  worktreeBranchName,
+} from './worktree-policy'
 
 export interface StartSessionInput {
   runner: DetectedRunner
@@ -38,7 +59,7 @@ export interface StartSessionInput {
   attachments?: string[]
   /** 적용할 Project Agent 이름 (.claude/agents/<name>.md) */
   agentName?: string
-  /** 전용 worktree 에서 격리 실행 */
+  /** 새 세션을 전용 worktree 에서 격리할지. 생략하면 기본으로 격리한다. */
   isolate?: boolean
   /**
    * 이어서 지시하는 경우 기존 세션 id.
@@ -96,14 +117,17 @@ export class SessionManager {
     // 사용자 지시도 이벤트로 남겨야 대화를 그대로 복원할 수 있다
     this.persistAndSend(id, { t: 'message', role: 'user', messageId: `u-${id}`, text: prompt })
 
-    /**
-     * 격리 실행. 이어가는 턴이면 이미 만들어 둔 worktree 를 그대로 쓴다.
-     * 만들지 못해도 세션은 진행한다 — 격리 실패로 작업 자체를 막을 이유는 없다.
-     */
+    /** 새 세션은 기본 격리한다. 정리한 격리 세션은 현재 원본 HEAD에서 다시 격리한다. */
     let worktree = (prev?.worktree ?? undefined) as SessionWorktree | undefined
-    if (!worktree && input.isolate) {
+    const recreateCleanedWorktree = Boolean(prev?.worktreeCleaned && !prev.worktree)
+    if (
+      !worktree &&
+      shouldCreateWorktree(input.isolate, Boolean(prev), recreateCleanedWorktree)
+    ) {
+      const originSnapshot = await snapshot(input.cwd)
       const dir = join(app.getPath('userData'), 'worktrees', id)
-      const made = await addWorktree(input.cwd, dir, `puppeteer/${id.slice(0, 8)}`)
+      const branch = worktreeBranchName(id, recreateCleanedWorktree ? Date.now() : undefined)
+      const made = await addWorktree(input.cwd, dir, branch)
       if (made) {
         worktree = { ...made, origin: input.cwd }
         db.setWorktree(id, worktree)
@@ -113,13 +137,32 @@ export class SessionManager {
           path: made.path,
           content: `격리 실행\n브랜치: ${made.branch}\n경로: ${made.path}`,
         })
+        if (recreateCleanedWorktree) {
+          this.persistAndSend(id, {
+            t: 'notice',
+            level: 'info',
+            title: '새 Worktree 생성',
+            text: '정리된 세션을 이어가기 위해 현재 원본 HEAD에서 새 worktree를 만들었습니다.',
+          })
+        }
+        const excluded =
+          (originSnapshot?.modified.length ?? 0) + (originSnapshot?.untracked.length ?? 0)
+        if (excluded > 0) {
+          this.persistAndSend(id, {
+            t: 'notice',
+            level: 'warning',
+            title: '원본 폴더의 변경은 제외됨',
+            text: `원본 프로젝트에 커밋되지 않은 파일 ${excluded}개가 있습니다. worktree는 현재 HEAD에서 만들어져 이 변경을 포함하지 않습니다.`,
+          })
+        }
       } else {
         this.persistAndSend(id, {
-          t: 'message',
-          role: 'assistant',
-          messageId: `wt-${id}`,
-          text: '격리 실행을 준비하지 못했습니다(git 저장소가 아니거나 worktree 생성 실패). 원래 폴더에서 진행합니다.',
-          isError: true,
+          t: 'notice',
+          level: 'warning',
+          title: 'Worktree 자동 분리 실패',
+          text: recreateCleanedWorktree
+            ? '정리된 세션의 새 worktree를 만들지 못해 현재 폴더에서 진행합니다. 원본 변경 여부를 확인해 주세요.'
+            : 'Git 저장소가 아니거나 worktree를 만들 수 없어 현재 폴더에서 진행합니다.',
         })
       }
     }
@@ -206,7 +249,7 @@ export class SessionManager {
   }
 
   /** 실행 중이면 중지한 뒤 기록까지 삭제한다 */
-  async remove(sessionId: string): Promise<void> {
+  async remove(sessionId: string): Promise<SessionDeleteResult> {
     const live = this.sessions.get(sessionId)
     if (live) {
       live.adapter.stop()
@@ -214,16 +257,22 @@ export class SessionManager {
       this.sessions.delete(sessionId)
     }
 
-    // worktree 는 비어 있을 때만 지운다. 커밋 안 된 작업이 남아 있으면 그대로 둔다 —
-    // 세션 기록을 지우는 것과 사람이 만든 코드를 지우는 것은 다른 일이다.
+    // 코드가 남은 worktree는 세션과 함께 추적돼야 한다. 미커밋/미병합 작업이 있으면
+    // 세션 삭제도 중단하고 Worktree 관리 화면에서 먼저 정리하게 한다.
     const stored = db.getSession(sessionId)
     const wt = stored?.worktree
     if (wt) {
       const dirty = await worktreeDirty(wt.path)
-      if (!dirty) await removeWorktree(wt.origin, wt.path)
+      const status = await inspectWorktree(wt)
+      const blocked = sessionDeletionBlockReason(dirty, status)
+      if (blocked) return { ok: false, message: blocked }
+      if (!(await removeWorktree(wt.origin, wt.path))) {
+        return { ok: false, message: 'worktree 폴더를 정리하지 못해 세션 삭제를 중단했습니다.' }
+      }
     }
 
     db.deleteSession(sessionId)
+    return { ok: true }
   }
 
   /** 격리 실행 중인 세션의 worktree 정보 */
@@ -238,6 +287,102 @@ export class SessionManager {
     const ok = await removeWorktree(wt.origin, wt.path, force)
     if (ok) db.setWorktree(sessionId, null)
     return ok
+  }
+
+  async worktreeStatus(sessionId: string): Promise<WorktreeStatus | undefined> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return undefined
+    const status = await inspectWorktree(wt)
+    if (this.sessions.has(sessionId)) {
+      return {
+        ...status,
+        canMerge: false,
+        reason: '세션이 실행 중입니다. 작업이 끝난 뒤 병합해 주세요.',
+      }
+    }
+    return status
+  }
+
+  async worktreeDiff(sessionId: string): Promise<string> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return '(이 세션에 연결된 worktree가 없습니다.)'
+    return readWorktreeDiff(wt)
+  }
+
+  async worktreeConflictFile(
+    sessionId: string,
+    path: string,
+  ): Promise<WorktreeConflictFile | undefined> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return undefined
+    return readWorktreeConflictFile(wt, path)
+  }
+
+  async commitWorktree(sessionId: string, message: string): Promise<WorktreeCommitResult> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
+    if (this.sessions.has(sessionId)) {
+      return {
+        ok: false,
+        message: '세션이 실행 중입니다. 작업이 끝난 뒤 커밋해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    return commitGitWorktree(wt, message)
+  }
+
+  async rebaseWorktree(
+    sessionId: string,
+    strategy?: WorktreeRebaseStrategy,
+  ): Promise<WorktreeRebaseResult> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
+    if (this.sessions.has(sessionId)) {
+      return {
+        ok: false,
+        message: '세션이 실행 중입니다. 작업이 끝난 뒤 원본 변경을 반영해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    const result = await rebaseGitWorktree(wt, strategy)
+    if (result.ok && result.status?.worktree) db.setWorktree(sessionId, result.status.worktree)
+    return result
+  }
+
+  async resolveWorktreeConflicts(
+    sessionId: string,
+    files: WorktreeResolvedFile[],
+  ): Promise<WorktreeRebaseResult> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
+    if (this.sessions.has(sessionId)) {
+      return {
+        ok: false,
+        message: '세션이 실행 중입니다. 작업이 끝난 뒤 충돌을 해결해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    const result = await resolveGitWorktreeConflicts(wt, files)
+    if (result.ok && result.status?.worktree) db.setWorktree(sessionId, result.status.worktree)
+    return result
+  }
+
+  async abortWorktreeRebase(sessionId: string): Promise<boolean> {
+    const wt = db.getSession(sessionId)?.worktree
+    return wt ? abortGitWorktreeRebase(wt) : false
+  }
+
+  async mergeWorktree(sessionId: string): Promise<WorktreeMergeResult> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
+    if (this.sessions.has(sessionId)) {
+      return {
+        ok: false,
+        message: '세션이 실행 중입니다. 작업이 끝난 뒤 병합해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    return mergeGitWorktree(wt)
   }
 
   /** 지금 살아 있는 세션 (프로젝트를 넘나들며 표시하기 위해) */
@@ -257,24 +402,26 @@ export class SessionManager {
   }
 
   private onApproval(req: ApprovalRequest): void {
-    db.recordApproval(req)
-    if (req.pending) {
-      db.decideApproval(req.id, 'deny')
-      this.getWindow()?.webContents.send('approval:cleared', req.id)
-      this.onEvent(req.sessionId, {
+    const projectPath = db.getSession(req.sessionId)?.projectPath
+    const routedReq = projectPath ? { ...req, projectPath } : req
+    db.recordApproval(routedReq)
+    if (routedReq.pending) {
+      db.decideApproval(routedReq.id, 'deny')
+      this.getWindow()?.webContents.send('approval:cleared', routedReq.id)
+      this.onEvent(routedReq.sessionId, {
         t: 'notice',
         level: 'warning',
         title: '승인 요청 시간 초과',
         text:
-          `${req.tool} 승인 요청이 응답 대기 시간을 넘겨 자동으로 닫혔습니다.\n` +
+          `${routedReq.tool} 승인 요청이 응답 대기 시간을 넘겨 자동으로 닫혔습니다.\n` +
           'CLI에는 해당 작업이 거절/보류되었다고 전달했습니다.\n\n' +
-          summarizeApproval(req.input),
+          summarizeApproval(routedReq.input),
       })
       return
     }
-    this.getWindow()?.webContents.send('approval:request', req)
-    notifyApproval(req)
-    this.onEvent(req.sessionId, { t: 'status', status: 'approval-required' })
+    this.getWindow()?.webContents.send('approval:request', routedReq)
+    notifyApproval(routedReq)
+    this.onEvent(routedReq.sessionId, { t: 'status', status: 'approval-required' })
   }
 
   private onEvent(sessionId: string, event: SessionEvent): void {

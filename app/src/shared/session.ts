@@ -76,6 +76,8 @@ export interface ApprovalRequest {
   /** 앱 내부 승인 ID */
   id: string
   sessionId: string
+  /** 세션이 속한 원본 프로젝트. cwd는 격리 worktree일 수 있다. */
+  projectPath?: string
   tool: string
   input: unknown
   cwd: string
@@ -131,6 +133,8 @@ export interface StoredProject {
 export interface StoredSession {
   /** 격리 실행 중이면 그 정보 */
   worktree?: SessionWorktree | null
+  /** 기존 worktree를 정리했으며, 다음 지시에서 새 worktree를 만들어야 하는지 */
+  worktreeCleaned?: boolean
   id: string
   projectPath: string
   cliSessionId: string | null
@@ -316,6 +320,86 @@ export interface SessionWorktree {
   branch: string
   /** worktree 를 만든 원래 프로젝트 경로 */
   origin: string
+  /** 생성 당시 원래 프로젝트에서 체크아웃되어 있던 브랜치 */
+  baseBranch?: string
+  /** worktree 가 갈라진 전체 커밋 해시 */
+  baseHead?: string
+}
+
+/** worktree 브랜치를 원래 프로젝트로 합칠 수 있는지 확인한 결과 */
+export interface WorktreeStatus {
+  worktree: SessionWorktree
+  currentBranch?: string
+  baseBranch?: string
+  dirty: boolean
+  originDirty: boolean
+  /** 생성 기준 커밋 이후 worktree 브랜치가 실제 커밋을 만든 적이 있는지 */
+  hasCommits: boolean
+  ahead: number
+  behind: number
+  merged: boolean
+  canMerge: boolean
+  /** 중단된 rebase에서 아직 해결해야 하는 파일 */
+  conflictFiles?: string[]
+  reason?: string
+}
+
+/** fast-forward 병합 시도 결과 */
+export interface WorktreeMergeResult {
+  ok: boolean
+  message: string
+  status?: WorktreeStatus
+}
+
+/** worktree 안의 미커밋 변경을 작업 브랜치에 커밋한 결과 */
+export interface WorktreeCommitResult {
+  ok: boolean
+  message: string
+  status?: WorktreeStatus
+}
+
+/** 원본 브랜치의 새 커밋 위로 worktree 브랜치를 재배치한 결과 */
+export interface WorktreeRebaseResult {
+  ok: boolean
+  message: string
+  conflictFiles?: string[]
+  status?: WorktreeStatus
+}
+
+export type WorktreeRebaseStrategy = 'origin' | 'worktree'
+
+export interface WorktreeConflictFile {
+  path: string
+  originLabel: string
+  worktreeLabel: string
+  originContent: string
+  worktreeContent: string
+  originMissing: boolean
+  worktreeMissing: boolean
+  /** 텍스트 병합 대신 파일 전체를 한쪽에서 골라야 하는 파일 */
+  binary: boolean
+  language?: string
+}
+
+export interface WorktreeConflictResolverRequest {
+  token: string
+  sessionId: string
+  files: string[]
+}
+
+export interface WorktreeResolvedFile {
+  path: string
+  /** 직접 조합한 텍스트. 전체 선택이나 삭제일 때는 생략한다. */
+  content?: string
+  /** 바이너리 등 파일 전체를 선택할 때 사용한다. */
+  side?: WorktreeRebaseStrategy
+  /** 선택한 쪽에 파일이 없어서 삭제해야 할 때 사용한다. */
+  deleted?: boolean
+}
+
+export interface SessionDeleteResult {
+  ok: boolean
+  message?: string
 }
 
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
