@@ -462,7 +462,7 @@ export default function App() {
   // 알림을 눌러 들어오면 그 세션을 연다
   useEffect(() => {
     return window.api.onNotifyJump(({ sessionId, cwd }) => void jumpTo(sessionId, cwd))
-  })
+  }, [active, sessions, views])
 
   useLayoutEffect(() => {
     const el = tabBarRef.current
@@ -533,7 +533,7 @@ export default function App() {
       window.removeEventListener('dragleave', onLeave)
       window.removeEventListener('drop', onDrop)
     }
-  })
+  }, [active])
 
   // 클립보드 이미지 붙여넣기
   useEffect(() => {
@@ -549,7 +549,7 @@ export default function App() {
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  })
+  }, [active])
 
   // Command Palette — Ctrl+Space
   useEffect(() => {
