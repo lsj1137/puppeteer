@@ -9,6 +9,7 @@ import {
   commitWorktree,
   mergeWorktree,
   rebaseWorktree,
+  resolveWorktreeConflicts,
   worktreeConflictFile,
   worktreeDiff,
   worktreeStatus,
@@ -220,6 +221,23 @@ describe('worktree merge', () => {
       behind: 0,
       merged: false,
     })
+  })
+
+  it('continues a conflicted rebase with custom resolved content', async () => {
+    const { origin, worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'shared.txt'), 'worktree\n')
+    await commit(worktreePath, 'worktree shared')
+
+    await writeFile(join(origin, 'shared.txt'), 'origin\n')
+    await commit(origin, 'origin shared')
+
+    const result = await resolveWorktreeConflicts(wt, [
+      { path: 'shared.txt', content: 'origin\nworktree\n' },
+    ])
+
+    expect(result.ok).toBe(true)
+    expect(await git(worktreePath, ['show', 'HEAD:shared.txt'])).toBe('origin\nworktree')
+    expect(result.status).toMatchObject({ canMerge: true, ahead: 1, behind: 0 })
   })
 
   it('blocks a merge when the original checkout is on another branch', async () => {

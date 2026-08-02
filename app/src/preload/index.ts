@@ -20,9 +20,11 @@ import type {
   StoredSession,
   WorktreeCommitResult,
   WorktreeConflictFile,
+  WorktreeConflictResolverRequest,
   WorktreeMergeResult,
   WorktreeRebaseResult,
   WorktreeRebaseStrategy,
+  WorktreeResolvedFile,
   WorktreeStatus,
 } from '@shared/session'
 
@@ -104,6 +106,17 @@ const api = {
     path: string,
   ): Promise<WorktreeConflictFile | undefined> =>
     ipcRenderer.invoke('session:worktreeConflictFile', sessionId, path),
+  openWorktreeConflictResolver: (sessionId: string, files: string[]): Promise<string> =>
+    ipcRenderer.invoke('session:openWorktreeConflictResolver', sessionId, files),
+  conflictResolverRequest: (
+    token: string,
+  ): Promise<WorktreeConflictResolverRequest | undefined> =>
+    ipcRenderer.invoke('session:conflictResolverRequest', token),
+  resolveWorktreeConflicts: (
+    sessionId: string,
+    files: WorktreeResolvedFile[],
+  ): Promise<WorktreeRebaseResult> =>
+    ipcRenderer.invoke('session:resolveWorktreeConflicts', sessionId, files),
   commitWorktree: (sessionId: string, message: string): Promise<WorktreeCommitResult> =>
     ipcRenderer.invoke('session:commitWorktree', sessionId, message),
   rebaseWorktree: (

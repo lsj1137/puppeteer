@@ -373,6 +373,17 @@ export interface WorktreeConflictFile {
   language?: string
 }
 
+export interface WorktreeConflictResolverRequest {
+  token: string
+  sessionId: string
+  files: string[]
+}
+
+export interface WorktreeResolvedFile {
+  path: string
+  content: string
+}
+
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
 export interface CheckpointDraft {
   sessionId: string
