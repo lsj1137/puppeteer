@@ -166,6 +166,7 @@ export async function worktreeStatus(wt: SessionWorktree): Promise<WorktreeStatu
     baseBranch: base,
     dirty: false,
     originDirty: false,
+    hasCommits: false,
     ahead: 0,
     behind: 0,
     merged: false,
@@ -204,11 +205,13 @@ export async function worktreeStatus(wt: SessionWorktree): Promise<WorktreeStatu
     const behind = Number(behindText.trim()) || 0
     const dirty = dirtyText.trim().length > 0
     const originDirty = originDirtyText.trim().length > 0
-    const merged = ahead === 0
+    const hasCommits = worktreeHead !== wt.baseHead
+    const merged = hasCommits && ahead === 0
     const common = {
       currentBranch,
       dirty,
       originDirty,
+      hasCommits,
       ahead,
       behind,
       merged,
@@ -226,6 +229,9 @@ export async function worktreeStatus(wt: SessionWorktree): Promise<WorktreeStatu
     if (originDirty) {
       return blocked('원본 프로젝트에 커밋되지 않은 변경이 있습니다. 먼저 정리해 주세요.', common)
     }
+    if (!hasCommits) {
+      return blocked('아직 원본에 반영할 worktree 커밋이 없습니다.', common)
+    }
     if (merged) {
       return blocked('작업 브랜치의 커밋이 이미 원본 브랜치에 반영되어 있습니다.', common)
     }
@@ -241,6 +247,34 @@ export async function worktreeStatus(wt: SessionWorktree): Promise<WorktreeStatu
     }
   } catch {
     return blocked('worktree 또는 원본 저장소의 Git 상태를 읽지 못했습니다.')
+  }
+}
+
+/** worktree 생성 기준부터 현재 worktree HEAD/작업 트리까지의 전체 diff */
+export async function worktreeDiff(wt: SessionWorktree): Promise<string> {
+  if (!wt.baseHead) return '(기준 커밋을 알 수 없어 diff 를 만들 수 없습니다.)'
+
+  try {
+    const [committed, working, untrackedText] = await Promise.all([
+      git(wt.path, ['diff', '--find-renames', `${wt.baseHead}..HEAD`]).catch(() => ''),
+      git(wt.path, ['diff', '--find-renames', 'HEAD']).catch(() => ''),
+      git(wt.path, ['ls-files', '--others', '--exclude-standard']).catch(() => ''),
+    ])
+    const untracked = untrackedText
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+
+    const parts: string[] = []
+    if (committed.trim()) parts.push(committed.trimEnd())
+    if (working.trim()) parts.push(`# 커밋되지 않은 tracked 변경\n${working.trimEnd()}`)
+    if (untracked.length > 0) {
+      parts.push(`# 새 파일 - 아직 git 에 추가되지 않음\n${untracked.map((p) => `+++ ${p}`).join('\n')}`)
+    }
+
+    return parts.join('\n\n') || '(변경 없음)'
+  } catch {
+    return '(worktree diff 를 읽지 못했습니다.)'
   }
 }
 

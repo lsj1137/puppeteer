@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { addWorktree, mergeWorktree, worktreeStatus } from './git'
+import { addWorktree, mergeWorktree, worktreeDiff, worktreeStatus } from './git'
 
 const exec = promisify(execFile)
 const roots: string[] = []
@@ -40,6 +40,20 @@ afterEach(async () => {
 })
 
 describe('worktree merge', () => {
+  it('distinguishes an untouched worktree from a merged one', async () => {
+    const { wt } = await fixture()
+
+    const status = await worktreeStatus(wt)
+
+    expect(status).toMatchObject({
+      canMerge: false,
+      hasCommits: false,
+      merged: false,
+      ahead: 0,
+    })
+    expect(status.reason).toContain('반영할 worktree 커밋')
+  })
+
   it('records the source branch and fast-forwards committed work', async () => {
     const { origin, worktreePath, wt } = await fixture()
     expect(wt.baseBranch).toBe('main')
@@ -51,12 +65,20 @@ describe('worktree merge', () => {
     await commit(worktreePath, 'feature')
 
     const before = await worktreeStatus(wt)
-    expect(before).toMatchObject({ canMerge: true, ahead: 1, behind: 0, merged: false })
+    expect(before).toMatchObject({
+      canMerge: true,
+      hasCommits: true,
+      ahead: 1,
+      behind: 0,
+      merged: false,
+    })
+    expect(await worktreeDiff(wt)).toContain('feature.txt')
 
     const result = await mergeWorktree(wt)
     expect(result.ok).toBe(true)
     expect(await git(origin, ['rev-parse', 'main'])).toBe(await git(origin, ['rev-parse', wt.branch]))
-    expect(result.status).toMatchObject({ canMerge: false, merged: true, ahead: 0 })
+    expect(result.status).toMatchObject({ canMerge: false, hasCommits: true, merged: true, ahead: 0 })
+    expect(await worktreeDiff(wt)).toContain('feature.txt')
   })
 
   it('blocks a merge while the worktree has uncommitted changes', async () => {

@@ -27,6 +27,7 @@ import {
   mergeWorktree as mergeGitWorktree,
   removeWorktree,
   snapshot,
+  worktreeDiff as readWorktreeDiff,
   worktreeDirty,
   worktreeStatus as inspectWorktree,
 } from './git'
@@ -267,6 +268,12 @@ export class SessionManager {
       }
     }
     return status
+  }
+
+  async worktreeDiff(sessionId: string): Promise<string> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return '(이 세션에 연결된 worktree가 없습니다.)'
+    return readWorktreeDiff(wt)
   }
 
   async mergeWorktree(sessionId: string): Promise<WorktreeMergeResult> {

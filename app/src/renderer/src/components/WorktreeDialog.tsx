@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  Check,
   CheckCircle2,
+  Copy,
+  FileDiff,
   FolderOpen,
   GitBranch,
   GitMerge,
@@ -11,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 import type { SessionWorktree, WorktreeStatus } from '@shared/session'
+import Code from './Code'
 
 interface Props {
   sessionId: string
@@ -25,6 +29,9 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const [merging, setMerging] = useState(false)
   const [dropping, setDropping] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string }>()
+  const [diff, setDiff] = useState<string>()
+  const [diffLoading, setDiffLoading] = useState(false)
+  const [copied, setCopied] = useState(false)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -97,9 +104,33 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
     }
   }
 
+  async function openDiff(): Promise<void> {
+    setDiffLoading(true)
+    setCopied(false)
+    try {
+      setDiff(await window.api.worktreeDiff(sessionId))
+    } catch (error) {
+      setDiff(error instanceof Error ? error.message : 'worktree diff 를 읽지 못했습니다.')
+    } finally {
+      setDiffLoading(false)
+    }
+  }
+
   const baseBranch = status?.baseBranch ?? worktree.baseBranch
+  const hasCommits = Boolean(status?.hasCommits)
   const merged = Boolean(status?.merged)
+  const hasDirtyWork = Boolean(status?.dirty)
+  const canDrop = Boolean(status && !hasDirtyWork && (merged || !hasCommits))
   const busy = merging || dropping
+  const commitLabel = loading
+    ? '확인 중...'
+    : hasDirtyWork
+      ? '커밋되지 않은 변경 있음'
+      : merged
+        ? '원본에 반영됨'
+        : !hasCommits
+          ? '반영할 커밋 없음'
+          : `원본보다 ${status?.ahead ?? 0}개 앞섬`
 
   return (
     <div
@@ -141,16 +172,22 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
               {loading ? '확인 중...' : (status?.currentBranch ?? '확인 불가')}
             </span>
             <span className="text-overlay1">커밋 상태</span>
-            <span className="text-subtext1">
-              {loading
-                ? '확인 중...'
-                : merged
-                  ? '원본에 반영됨'
-                  : `원본보다 ${status?.ahead ?? 0}개 앞섬`}
-            </span>
+            <span className="text-subtext1">{commitLabel}</span>
           </div>
 
           <div className="flex gap-2">
+            <button
+              onClick={() => void openDiff()}
+              disabled={diffLoading}
+              className="flex items-center gap-1.5 rounded-md border border-peach/30 bg-peach/10 px-2.5 py-1.5 text-[12px] font-medium text-peach hover:bg-peach/20 disabled:opacity-40"
+            >
+              {diffLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <FileDiff className="h-3.5 w-3.5" />
+              )}
+              Diff 보기
+            </button>
             <button
               onClick={() => void window.api.revealProject(worktree.origin)}
               className="flex items-center gap-1.5 rounded-md border border-surface1 px-2.5 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
@@ -186,7 +223,14 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
             </div>
           )}
 
-          {!loading && status?.reason && !merged && (
+          {!loading && status && !hasDirtyWork && !hasCommits && (
+            <div className="flex gap-2 rounded-md border border-surface1 bg-surface0/40 px-3 py-2.5 text-[12px] text-subtext1">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-overlay1" />
+              <span className="leading-relaxed">아직 이 worktree에서 커밋된 변경이 없습니다.</span>
+            </div>
+          )}
+
+          {!loading && status?.reason && !merged && (hasCommits || hasDirtyWork || status.originDirty) && (
             <div className="flex gap-2 rounded-md border border-yellow/30 bg-yellow/5 px-3 py-2.5 text-[12px] text-yellow">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span className="leading-relaxed">{status.reason}</span>
@@ -210,9 +254,11 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           <span className="text-[11px] text-overlay1">
             {merged
               ? 'worktree 폴더 정리는 세션 기록을 보존합니다.'
+              : !hasCommits
+                ? '반영할 커밋이 없으면 worktree만 정리할 수 있습니다.'
               : '병합 후에도 worktree와 작업 브랜치는 유지됩니다.'}
           </span>
-          {merged ? (
+          {canDrop ? (
             <button
               onClick={() => void drop()}
               disabled={loading || dropping || status?.dirty}
@@ -241,6 +287,40 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           )}
         </div>
       </div>
+
+      {diff !== undefined && (
+        <div className="fixed inset-6 z-[60] flex min-h-0 flex-col rounded-lg border border-surface1 bg-mantle shadow-2xl">
+          <div className="flex items-center gap-2 border-b border-surface0 px-4 py-3">
+            <FileDiff className="h-4 w-4 shrink-0 text-peach" />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-text">Worktree diff</div>
+              <div className="truncate font-mono text-[11px] text-subtext0">
+                {worktree.baseHead?.slice(0, 12) ?? 'base'}..{worktree.branch}
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                void navigator.clipboard.writeText(diff)
+                setCopied(true)
+              }}
+              title="복사"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-overlay1 hover:bg-surface0 hover:text-text"
+            >
+              {copied ? <Check className="h-4 w-4 text-green" /> : <Copy className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={() => setDiff(undefined)}
+              title="닫기"
+              className="flex h-8 w-8 items-center justify-center rounded-md text-overlay1 hover:bg-surface0 hover:text-text"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto p-3">
+            <Code code={diff} language="diff" lineNumbers />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

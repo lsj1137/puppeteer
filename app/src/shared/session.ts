@@ -329,6 +329,8 @@ export interface WorktreeStatus {
   baseBranch?: string
   dirty: boolean
   originDirty: boolean
+  /** 생성 기준 커밋 이후 worktree 브랜치가 실제 커밋을 만든 적이 있는지 */
+  hasCommits: boolean
   ahead: number
   behind: number
   merged: boolean

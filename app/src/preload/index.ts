@@ -93,6 +93,8 @@ const api = {
     ipcRenderer.invoke('session:dropWorktree', sessionId, force),
   worktreeStatus: (sessionId: string): Promise<WorktreeStatus | undefined> =>
     ipcRenderer.invoke('session:worktreeStatus', sessionId),
+  worktreeDiff: (sessionId: string): Promise<string> =>
+    ipcRenderer.invoke('session:worktreeDiff', sessionId),
   mergeWorktree: (sessionId: string): Promise<WorktreeMergeResult> =>
     ipcRenderer.invoke('session:mergeWorktree', sessionId),
   buildCheckpoint: (sessionId: string): Promise<CheckpointDraft | undefined> =>
