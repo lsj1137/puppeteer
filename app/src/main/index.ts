@@ -164,6 +164,9 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('session:worktreeStatus', (_e, id: string) => sessions.worktreeStatus(id))
   ipcMain.handle('session:worktreeDiff', (_e, id: string) => sessions.worktreeDiff(id))
+  ipcMain.handle('session:commitWorktree', (_e, id: string, message: string) =>
+    sessions.commitWorktree(id, message),
+  )
   ipcMain.handle('session:mergeWorktree', (_e, id: string) => sessions.mergeWorktree(id))
   ipcMain.handle(
     'approval:resolve',

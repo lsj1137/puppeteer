@@ -11,6 +11,7 @@ import type {
   SessionEvent,
   SessionStatus,
   SessionWorktree,
+  WorktreeCommitResult,
   WorktreeMergeResult,
   WorktreeStatus,
 } from '@shared/session'
@@ -23,6 +24,7 @@ import * as db from './db'
 import {
   addWorktree,
   changedSince,
+  commitWorktree as commitGitWorktree,
   diffFile,
   mergeWorktree as mergeGitWorktree,
   removeWorktree,
@@ -274,6 +276,19 @@ export class SessionManager {
     const wt = db.getSession(sessionId)?.worktree
     if (!wt) return '(이 세션에 연결된 worktree가 없습니다.)'
     return readWorktreeDiff(wt)
+  }
+
+  async commitWorktree(sessionId: string, message: string): Promise<WorktreeCommitResult> {
+    const wt = db.getSession(sessionId)?.worktree
+    if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
+    if (this.sessions.has(sessionId)) {
+      return {
+        ok: false,
+        message: '세션이 실행 중입니다. 작업이 끝난 뒤 커밋해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    return commitGitWorktree(wt, message)
   }
 
   async mergeWorktree(sessionId: string): Promise<WorktreeMergeResult> {

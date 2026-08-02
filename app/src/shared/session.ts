@@ -345,6 +345,13 @@ export interface WorktreeMergeResult {
   status?: WorktreeStatus
 }
 
+/** worktree 안의 미커밋 변경을 작업 브랜치에 커밋한 결과 */
+export interface WorktreeCommitResult {
+  ok: boolean
+  message: string
+  status?: WorktreeStatus
+}
+
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
 export interface CheckpointDraft {
   sessionId: string

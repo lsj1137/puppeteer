@@ -18,6 +18,7 @@ import type {
   StoredEvent,
   StoredProject,
   StoredSession,
+  WorktreeCommitResult,
   WorktreeMergeResult,
   WorktreeStatus,
 } from '@shared/session'
@@ -95,6 +96,8 @@ const api = {
     ipcRenderer.invoke('session:worktreeStatus', sessionId),
   worktreeDiff: (sessionId: string): Promise<string> =>
     ipcRenderer.invoke('session:worktreeDiff', sessionId),
+  commitWorktree: (sessionId: string, message: string): Promise<WorktreeCommitResult> =>
+    ipcRenderer.invoke('session:commitWorktree', sessionId, message),
   mergeWorktree: (sessionId: string): Promise<WorktreeMergeResult> =>
     ipcRenderer.invoke('session:mergeWorktree', sessionId),
   buildCheckpoint: (sessionId: string): Promise<CheckpointDraft | undefined> =>

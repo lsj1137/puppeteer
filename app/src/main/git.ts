@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import type {
   GitSnapshot,
+  WorktreeCommitResult,
   SessionWorktree,
   WorktreeMergeResult,
   WorktreeStatus,
@@ -22,6 +23,21 @@ async function git(cwd: string, args: string[]): Promise<string> {
     maxBuffer: 8 * 1024 * 1024,
   })
   return stdout
+}
+
+async function gitWithError(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await exec('git', args, {
+      cwd,
+      timeout: 20_000,
+      windowsHide: true,
+      maxBuffer: 8 * 1024 * 1024,
+    })
+    return { stdout, stderr }
+  } catch (error) {
+    const err = error as { stdout?: string; stderr?: string; message?: string }
+    throw new Error((err.stderr || err.stdout || err.message || 'git 명령 실행에 실패했습니다.').trim())
+  }
 }
 
 export async function isRepo(cwd: string): Promise<boolean> {
@@ -275,6 +291,40 @@ export async function worktreeDiff(wt: SessionWorktree): Promise<string> {
     return parts.join('\n\n') || '(변경 없음)'
   } catch {
     return '(worktree diff 를 읽지 못했습니다.)'
+  }
+}
+
+/** worktree 의 현재 변경을 모두 stage 해서 작업 브랜치에 커밋한다. */
+export async function commitWorktree(
+  wt: SessionWorktree,
+  message: string,
+): Promise<WorktreeCommitResult> {
+  const title = message.trim()
+  if (!title) return { ok: false, message: '커밋 메시지를 입력해 주세요.', status: await worktreeStatus(wt) }
+
+  const before = await worktreeStatus(wt)
+  if (!before.dirty) {
+    return { ok: false, message: '커밋할 worktree 변경이 없습니다.', status: before }
+  }
+
+  try {
+    await gitWithError(wt.path, ['add', '-A'])
+    const staged = await git(wt.path, ['diff', '--cached', '--name-only'])
+    if (!staged.trim()) {
+      return { ok: false, message: '커밋할 변경을 찾지 못했습니다.', status: await worktreeStatus(wt) }
+    }
+    await gitWithError(wt.path, ['commit', '-m', title])
+    return {
+      ok: true,
+      message: `worktree 변경을 커밋했습니다: ${title}`,
+      status: await worktreeStatus(wt),
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'worktree 커밋에 실패했습니다.',
+      status: await worktreeStatus(wt),
+    }
   }
 }
 

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { afterEach, describe, expect, it } from 'vitest'
-import { addWorktree, mergeWorktree, worktreeDiff, worktreeStatus } from './git'
+import { addWorktree, commitWorktree, mergeWorktree, worktreeDiff, worktreeStatus } from './git'
 
 const exec = promisify(execFile)
 const roots: string[] = []
@@ -89,6 +89,22 @@ describe('worktree merge', () => {
     expect(result.ok).toBe(false)
     expect(result.status).toMatchObject({ dirty: true, canMerge: false })
     expect(result.message).toContain('커밋되지 않은 변경')
+  })
+
+  it('commits dirty worktree changes before merge', async () => {
+    const { worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'draft.txt'), 'draft\n')
+
+    const result = await commitWorktree(wt, 'draft commit')
+
+    expect(result.ok).toBe(true)
+    expect(result.status).toMatchObject({
+      dirty: false,
+      hasCommits: true,
+      ahead: 1,
+      canMerge: true,
+    })
+    expect(await worktreeDiff(wt)).toContain('draft.txt')
   })
 
   it('blocks a merge while the original checkout has uncommitted changes', async () => {

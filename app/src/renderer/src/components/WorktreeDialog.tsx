@@ -26,9 +26,11 @@ interface Props {
 export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose }: Props) {
   const [status, setStatus] = useState<WorktreeStatus>()
   const [loading, setLoading] = useState(true)
+  const [committing, setCommitting] = useState(false)
   const [merging, setMerging] = useState(false)
   const [dropping, setDropping] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string }>()
+  const [commitMessage, setCommitMessage] = useState('작업 변경 반영')
   const [diff, setDiff] = useState<string>()
   const [diffLoading, setDiffLoading] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -55,11 +57,32 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape' && !merging && !dropping) onClose()
+      if (event.key === 'Escape' && !committing && !merging && !dropping) onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [dropping, merging, onClose])
+  }, [committing, dropping, merging, onClose])
+
+  async function commit(): Promise<void> {
+    setCommitting(true)
+    setMessage(undefined)
+    try {
+      const result = await window.api.commitWorktree(sessionId, commitMessage)
+      if (result.status) setStatus(result.status)
+      setMessage({ ok: result.ok, text: result.message })
+      if (result.ok) {
+        await onChanged()
+        if (diff !== undefined) setDiff(await window.api.worktreeDiff(sessionId))
+      }
+    } catch (error) {
+      setMessage({
+        ok: false,
+        text: error instanceof Error ? error.message : 'worktree 커밋 요청에 실패했습니다.',
+      })
+    } finally {
+      setCommitting(false)
+    }
+  }
 
   async function merge(): Promise<void> {
     setMerging(true)
@@ -120,8 +143,10 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const hasCommits = Boolean(status?.hasCommits)
   const merged = Boolean(status?.merged)
   const hasDirtyWork = Boolean(status?.dirty)
+  const running = status?.reason?.startsWith('세션이 실행 중') ?? false
+  const canCommit = Boolean(status && hasDirtyWork && !running && commitMessage.trim())
   const canDrop = Boolean(status && !hasDirtyWork && (merged || !hasCommits))
-  const busy = merging || dropping
+  const busy = committing || merging || dropping
   const commitLabel = loading
     ? '확인 중...'
     : hasDirtyWork
@@ -234,6 +259,33 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
             <div className="flex gap-2 rounded-md border border-yellow/30 bg-yellow/5 px-3 py-2.5 text-[12px] text-yellow">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span className="leading-relaxed">{status.reason}</span>
+            </div>
+          )}
+
+          {!loading && hasDirtyWork && (
+            <div className="rounded-md border border-surface1 bg-surface0/30 p-3">
+              <div className="mb-2 text-[12px] font-medium text-subtext1">Worktree 변경 커밋</div>
+              <div className="flex gap-2">
+                <input
+                  value={commitMessage}
+                  onChange={(event) => setCommitMessage(event.target.value)}
+                  disabled={busy || running}
+                  placeholder="커밋 메시지"
+                  className="min-w-0 flex-1 rounded-md border border-surface1 bg-mantle px-2.5 py-1.5 text-[12px] text-text outline-none placeholder:text-overlay0 focus:border-blue disabled:opacity-50"
+                />
+                <button
+                  onClick={() => void commit()}
+                  disabled={!canCommit || busy}
+                  className="flex min-w-[96px] items-center justify-center gap-1.5 rounded-md bg-blue/20 px-3 py-1.5 text-[12px] font-medium text-blue hover:bg-blue/30 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {committing ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  변경 커밋
+                </button>
+              </div>
             </div>
           )}
 
