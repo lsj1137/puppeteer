@@ -2,6 +2,7 @@
   "name": "agent-workspace",
   "version": "0.0.1",
   "description": "멀티프로젝트 AI 에이전트 워크스페이스",
+  "author": "lsj1137",
   "main": "./out/main/index.js",
   "private": true,
   "scripts": {
@@ -11,9 +12,75 @@
     "start": "node ./scripts/run-electron-vite.mjs preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "verify": "npm test && npm run smoke"
+    "verify": "npm test && npm run smoke",
+    "pack": "npm run build && electron-builder --dir",
+    "dist": "npm run verify && electron-builder",
+    "dist:win": "npm run verify && electron-builder --win nsis --x64",
+    "dist:mac": "npm run verify && electron-builder --mac dmg zip --universal",
+    "publish:win": "npm run verify && electron-builder --win nsis --x64 --publish always",
+    "publish:mac": "npm run verify && electron-builder --mac dmg zip --universal --publish always"
+  },
+  "build": {
+    "appId": "com.lsj1137.puppeteer",
+    "productName": "Puppeteer",
+    "directories": {
+      "buildResources": "resources",
+      "output": "dist_electron"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "resources/hooks",
+        "to": "hooks",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "asar": true,
+    "win": {
+      "icon": "icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Puppeteer-${version}-Setup-${arch}.${ext}"
+    },
+    "mac": {
+      "forceCodeSigning": true,
+      "icon": "icon.png",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "artifactName": "Puppeteer-${version}-mac-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Puppeteer"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "lsj1137",
+        "repo": "puppeteer",
+        "releaseType": "release"
+      }
+    ]
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "konva": "^10.3.0",
     "lucide-react": "^1.27.0",
     "react": "^19.2.8",
@@ -31,6 +98,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",

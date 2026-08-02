@@ -11,6 +11,7 @@ import * as memory from './memory'
 import { build as buildCheckpoint } from './checkpoint'
 import { initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
+import { AppUpdateManager } from './app-update'
 import type { StartSessionInput } from './session-manager'
 import type {
   AgentDef,
@@ -113,6 +114,12 @@ app.whenReady().then(() => {
   db.openDb()
   initNotifications(() => mainWindow)
   const sessions = new SessionManager(() => mainWindow)
+  const appUpdates = new AppUpdateManager()
+
+  ipcMain.handle('app-update:state', () => appUpdates.getState())
+  ipcMain.handle('app-update:check', () => appUpdates.check())
+  ipcMain.handle('app-update:download', () => appUpdates.download())
+  ipcMain.handle('app-update:install', () => appUpdates.install())
 
   // 실행 환경 탐지 — 사용자마다 CLI 설치 위치/방식이 다르므로 강제하지 않는다
   ipcMain.handle('runner:detect', () => detectRunners())
@@ -256,6 +263,9 @@ app.whenReady().then(() => {
   )
 
   const win = createWindow()
+  if (!smokeMode && app.isPackaged) {
+    setTimeout(() => void appUpdates.check(), 10_000)
+  }
   if (smokeMode) void runSmoke(win)
 
   app.on('activate', () => {

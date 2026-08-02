@@ -71,6 +71,9 @@ import { splitFences, type Segment, type UiArtifact } from './lib/fences'
 import { toUiArtifactKind } from './lib/artifacts'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import { approvalNavigationPath, sessionRunPath } from './lib/navigation'
+import type { AppUpdateState } from '@shared/app-update'
+import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
+import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
 
 type Entry =
   | { kind: 'assistant'; id: string; segments: Segment[]; isError?: boolean }
@@ -322,6 +325,7 @@ export default function App() {
   const [tabMenu, setTabMenu] = useState(false)
   const [importing, setImporting] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [appUpdate, setAppUpdate] = useState<AppUpdateState>()
   const [checkpoint, setCheckpoint] = useState<CheckpointDraft>()
   const [worktreeOpen, setWorktreeOpen] = useState<string>()
   /**
@@ -439,6 +443,11 @@ export default function App() {
       if (ps[0]) setActive(ps[0].path)
     })
     void window.api.listOpenApprovals().then(setApprovals)
+  }, [])
+
+  useEffect(() => {
+    void window.api.appUpdateState().then(setAppUpdate)
+    return window.api.onAppUpdateState(setAppUpdate)
   }, [])
 
   const refresh = useCallback(async (projectPath?: string) => {
@@ -993,16 +1002,21 @@ export default function App() {
       {/* ── Rail ─────────────────────────────────── */}
       <aside className="col-start-1 row-start-1 row-end-4 flex flex-col gap-3.5 overflow-auto border-r border-surface0 bg-mantle p-2.5">
         <div className="flex items-center gap-2 px-1 pt-1">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-mauve/20">
-            <Terminal className="h-3.5 w-3.5 text-mauve" />
-          </div>
+          <img
+            src={theme === 'light' ? puppeteerLightIcon : puppeteerDarkIcon}
+            alt=""
+            className="h-6 w-6 rounded-md"
+          />
           <span className="flex-1 text-sm font-semibold">Puppeteer</span>
           <button
             onClick={() => setSettingsOpen(true)}
             title="설정"
-            className="rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-text"
+            className="relative rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-text"
           >
             <Settings2 className="h-4 w-4" />
+            {(appUpdate?.phase === 'available' || appUpdate?.phase === 'downloaded') && (
+              <span className="absolute right-0 top-0 h-1.5 w-1.5 rounded-full bg-mauve ring-2 ring-mantle" />
+            )}
           </button>
         </div>
 
@@ -2001,6 +2015,8 @@ export default function App() {
           notify={notify}
           onToggleNotify={setNotify}
           runners={usableRunners}
+          appUpdate={appUpdate}
+          hasRunningSessions={running.length > 0}
           onClose={() => setSettingsOpen(false)}
         />
       )}

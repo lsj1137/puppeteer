@@ -1,6 +1,7 @@
-import { Bell, HelpCircle, Moon, Settings2, Sun, X } from 'lucide-react'
+import { Bell, Download, HelpCircle, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
 import type { DetectedRunner } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
+import type { AppUpdateState } from '@shared/app-update'
 
 /** 라벨 옆 물음표. 설명은 평소엔 숨고 필요할 때만 나온다. */
 function Hint({ text }: { text: string }): React.ReactElement {
@@ -36,6 +37,8 @@ export default function Settings({
   notify,
   onToggleNotify,
   runners,
+  appUpdate,
+  hasRunningSessions,
   onClose,
 }: {
   theme: 'dark' | 'light'
@@ -43,6 +46,8 @@ export default function Settings({
   notify: boolean
   onToggleNotify: (v: boolean) => void
   runners: DetectedRunner[]
+  appUpdate?: AppUpdateState
+  hasRunningSessions: boolean
   onClose: () => void
 }) {
   const Row = ({
@@ -162,6 +167,89 @@ export default function Settings({
                 ))}
               </div>
             )}
+          </Row>
+
+          <Row
+            label="업데이트"
+            hint="패키징된 앱은 시작 후 새 버전을 확인합니다. 다운로드와 설치는 사용자가 직접 결정합니다."
+          >
+            <div className="rounded-md bg-base px-2.5 py-2 text-[12px]">
+              <div className="flex items-center gap-2">
+                <span className="text-subtext1">현재 {appUpdate?.currentVersion ?? '확인 중'}</span>
+                {appUpdate?.availableVersion && (
+                  <span className="text-mauve">새 버전 {appUpdate.availableVersion}</span>
+                )}
+                <div className="ml-auto">
+                  {!appUpdate?.packaged ? (
+                    <span className="text-[11px] text-overlay1">개발 실행</span>
+                  ) : appUpdate.phase === 'available' ? (
+                    <button
+                      onClick={() => void window.api.downloadAppUpdate()}
+                      className="flex items-center gap-1 rounded-md bg-mauve/20 px-2 py-1 text-mauve hover:bg-mauve/30"
+                    >
+                      <Download className="h-3.5 w-3.5" /> 다운로드
+                    </button>
+                  ) : appUpdate.phase === 'downloaded' ? (
+                    <button
+                      disabled={hasRunningSessions}
+                      onClick={() => void window.api.installAppUpdate()}
+                      className="flex items-center gap-1 rounded-md bg-green/20 px-2 py-1 text-green hover:bg-green/30 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> 재시작해 설치
+                    </button>
+                  ) : (
+                    <button
+                      disabled={appUpdate.phase === 'checking' || appUpdate.phase === 'downloading'}
+                      onClick={() => void window.api.checkAppUpdate()}
+                      className="flex items-center gap-1 rounded-md bg-surface0 px-2 py-1 text-subtext0 hover:text-text disabled:cursor-wait disabled:opacity-60"
+                    >
+                      <RefreshCw
+                        className={`h-3.5 w-3.5 ${appUpdate.phase === 'checking' ? 'animate-spin' : ''}`}
+                      />
+                      {appUpdate.phase === 'checking' ? '확인 중' : '업데이트 확인'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {!appUpdate?.packaged && (
+                <div className="mt-1.5 text-[11px] leading-relaxed text-overlay1">
+                  설치본에서 업데이트를 확인할 수 있습니다.
+                </div>
+              )}
+              {appUpdate?.phase === 'up-to-date' && (
+                <div className="mt-1.5 text-[11px] text-green">최신 버전입니다.</div>
+              )}
+              {appUpdate?.phase === 'downloading' && (
+                <div className="mt-2">
+                  <div className="mb-1 flex justify-between text-[11px] text-overlay1">
+                    <span>다운로드 중</span>
+                    <span>{appUpdate.percent ?? 0}%</span>
+                  </div>
+                  <div className="h-1 overflow-hidden rounded-full bg-surface0">
+                    <div
+                      className="h-full rounded-full bg-mauve transition-[width]"
+                      style={{ width: `${appUpdate.percent ?? 0}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+              {appUpdate?.phase === 'downloaded' && hasRunningSessions && (
+                <div className="mt-1.5 text-[11px] leading-relaxed text-yellow">
+                  실행 중인 세션을 모두 마치거나 중지한 뒤 설치할 수 있습니다.
+                </div>
+              )}
+              {appUpdate?.phase === 'error' && (
+                <div className="mt-1.5 break-words text-[11px] leading-relaxed text-red">
+                  업데이트 확인 실패: {appUpdate.error}
+                </div>
+              )}
+              {appUpdate?.releaseNotes && (
+                <div className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap border-t border-surface0 pt-2 text-[11px] leading-relaxed text-overlay1">
+                  {appUpdate.releaseNotes}
+                </div>
+              )}
+            </div>
           </Row>
         </div>
 

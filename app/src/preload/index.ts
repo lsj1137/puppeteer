@@ -28,6 +28,7 @@ import type {
   WorktreeResolvedFile,
   WorktreeStatus,
 } from '@shared/session'
+import type { AppUpdateState } from '@shared/app-update'
 
 export interface SessionEventEnvelope {
   sessionId: string
@@ -50,6 +51,16 @@ export interface StartSessionArgs {
 }
 
 const api = {
+  appUpdateState: (): Promise<AppUpdateState> => ipcRenderer.invoke('app-update:state'),
+  checkAppUpdate: (): Promise<AppUpdateState> => ipcRenderer.invoke('app-update:check'),
+  downloadAppUpdate: (): Promise<AppUpdateState> => ipcRenderer.invoke('app-update:download'),
+  installAppUpdate: (): Promise<void> => ipcRenderer.invoke('app-update:install'),
+  onAppUpdateState: (cb: (state: AppUpdateState) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, state: AppUpdateState): void => cb(state)
+    ipcRenderer.on('app-update:state', listener)
+    return () => ipcRenderer.off('app-update:state', listener)
+  },
+
   detectRunners: (): Promise<DetectedRunner[]> => ipcRenderer.invoke('runner:detect'),
 
   pickProject: (): Promise<string | undefined> => ipcRenderer.invoke('project:pick'),
