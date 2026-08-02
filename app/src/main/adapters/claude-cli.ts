@@ -54,41 +54,7 @@ export class ClaudeCliAdapter {
   constructor(private readonly emit: (e: SessionEvent) => void) {}
 
   start(opts: StartOptions): void {
-    const cliArgs = [
-      '-p',
-      opts.prompt,
-      '--output-format',
-      'stream-json',
-      '--verbose',
-    ]
-    if (opts.resumeSessionId) cliArgs.push('--resume', opts.resumeSessionId)
-
-    // 에이전트는 앱 라이브러리에서 관리하므로 정의를 인라인으로 넘긴다.
-    // 파일을 러너 홈(.claude/agents)에 배치할 필요가 없다 — WSL/Windows 홈이 다르다.
-    if (opts.agentsJson) cliArgs.push('--agents', opts.agentsJson)
-    if (opts.agentName) cliArgs.push('--agent', opts.agentName)
-    if (opts.allowedTools?.length) cliArgs.push('--allowedTools', opts.allowedTools.join(' '))
-    if (opts.disallowedTools?.length)
-      cliArgs.push('--disallowedTools', opts.disallowedTools.join(' '))
-
-    // 사용자의 settings.json 은 절대 건드리지 않는다. 세션 단위로만 주입한다.
-    // (실제 환경에 다른 도구가 hook 을 등록해 둔 사례를 확인했다 — spike/REPORT.md)
-    if (opts.hookCommand) {
-      cliArgs.push(
-        '--settings',
-        JSON.stringify({
-          hooks: {
-            PreToolUse: [
-              {
-                matcher: GATED_TOOLS,
-                hooks: [{ type: 'command', command: opts.hookCommand, timeout: 300 }],
-              },
-            ],
-          },
-        }),
-      )
-    }
-
+    const cliArgs = buildClaudeArgs(opts)
     const { command, args } = this.buildCommand(opts, cliArgs)
 
     this.emit({ t: 'status', status: 'starting' })
@@ -385,6 +351,7 @@ export function buildRunnerCommand(
   runner: DetectedRunner,
   cwd: string,
   cliArgs: string[],
+  hostPlatform = process.platform,
 ): { command: string; args: string[] } {
   const opts = { runner, cwd }
   if (opts.runner.kind === 'wsl') {
@@ -408,9 +375,59 @@ export function buildRunnerCommand(
   // Windows: .cmd / .bat 는 직접 spawn 할 수 없다 (Node 보안 수정 이후 EINVAL).
   // shell:true 는 인용 처리가 위험하므로 cmd.exe /c 로 감싸고 인자는 배열로 넘긴다.
   const exe = opts.runner.executable
-  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(exe)) {
+  if (hostPlatform === 'win32' && /\.(cmd|bat)$/i.test(exe)) {
     return { command: 'cmd.exe', args: ['/c', exe, ...cliArgs] }
   }
 
   return { command: exe, args: cliArgs }
+}
+
+export function buildClaudeArgs(
+  opts: Pick<
+    StartOptions,
+    | 'agentName'
+    | 'agentsJson'
+    | 'allowedTools'
+    | 'disallowedTools'
+    | 'hookCommand'
+    | 'prompt'
+    | 'resumeSessionId'
+  >,
+): string[] {
+  const cliArgs = [
+    '-p',
+    opts.prompt,
+    '--output-format',
+    'stream-json',
+    '--verbose',
+  ]
+  if (opts.resumeSessionId) cliArgs.push('--resume', opts.resumeSessionId)
+
+  // 에이전트는 앱 라이브러리에서 관리하므로 정의를 인라인으로 넘긴다.
+  // 파일을 러너 홈(.claude/agents)에 배치할 필요가 없다 — WSL/Windows 홈이 다르다.
+  if (opts.agentsJson) cliArgs.push('--agents', opts.agentsJson)
+  if (opts.agentName) cliArgs.push('--agent', opts.agentName)
+  if (opts.allowedTools?.length) cliArgs.push('--allowedTools', opts.allowedTools.join(' '))
+  if (opts.disallowedTools?.length)
+    cliArgs.push('--disallowedTools', opts.disallowedTools.join(' '))
+
+  // 사용자의 settings.json 은 절대 건드리지 않는다. 세션 단위로만 주입한다.
+  // (실제 환경에 다른 도구가 hook 을 등록해 둔 사례를 확인했다 — spike/REPORT.md)
+  if (opts.hookCommand) {
+    cliArgs.push(
+      '--settings',
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: GATED_TOOLS,
+              hooks: [{ type: 'command', command: opts.hookCommand, timeout: 300 }],
+            },
+          ],
+        },
+      }),
+    )
+  }
+
+  return cliArgs
 }
