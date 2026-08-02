@@ -21,8 +21,12 @@ import type {
 } from '@shared/session'
 
 let mainWindow: BrowserWindow | undefined
+const smokeMode = process.env['AGENT_WORKSPACE_SMOKE'] === '1'
+const smokeUserData = process.env['AGENT_WORKSPACE_SMOKE_USER_DATA']
 
-function createWindow(): void {
+if (smokeMode && smokeUserData) app.setPath('userData', smokeUserData)
+
+function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -38,7 +42,7 @@ function createWindow(): void {
   })
 
   mainWindow = win
-  win.on('ready-to-show', () => win.show())
+  if (!smokeMode) win.on('ready-to-show', () => win.show())
   win.on('closed', () => { mainWindow = undefined })
 
   // 파일 드롭이 렌더러에서 처리되지 않았을 때 창이 그 파일로 이동하는 것을 막는다
@@ -56,6 +60,7 @@ function createWindow(): void {
   } else {
     win.loadFile(join(__dirname, '../renderer/index.html'))
   }
+  return win
 }
 
 app.whenReady().then(() => {
@@ -163,7 +168,8 @@ app.whenReady().then(() => {
       sessions.resolveApproval(approvalId, decision, reason),
   )
 
-  createWindow()
+  const win = createWindow()
+  if (smokeMode) void runSmoke(win)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -173,3 +179,40 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
+
+async function runSmoke(win: BrowserWindow): Promise<void> {
+  try {
+    await waitForRenderer(win)
+    const runners = await detectRunners()
+    console.log(
+      `AGENT_WORKSPACE_SMOKE ${JSON.stringify({
+        ok: true,
+        runners: runners.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          provider: r.provider,
+          available: r.available,
+        })),
+      })}`,
+    )
+    app.quit()
+  } catch (err) {
+    console.error(
+      `AGENT_WORKSPACE_SMOKE ${JSON.stringify({
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      })}`,
+    )
+    app.exit(1)
+  }
+}
+
+function waitForRenderer(win: BrowserWindow): Promise<void> {
+  if (!win.webContents.isLoading() && win.webContents.getURL()) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    win.webContents.once('did-finish-load', () => resolve())
+    win.webContents.once('did-fail-load', (_event, code, description) => {
+      reject(new Error(`renderer load failed (${code}): ${description}`))
+    })
+  })
+}

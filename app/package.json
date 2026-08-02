@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "node ./scripts/run-electron-vite.mjs dev",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
+    "smoke": "npm run build && node ./scripts/smoke-electron.mjs",
     "start": "node ./scripts/run-electron-vite.mjs preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
