@@ -362,8 +362,11 @@ export function listOpenApprovals(): ApprovalRequest[] {
   expireStaleApprovals()
   const rows = db
     .prepare(
-      `SELECT id, session_id AS sessionId, tool, input, cwd, risk
-       FROM approval WHERE decision IS NULL ORDER BY created_at`,
+      `SELECT a.id, a.session_id AS sessionId, s.project_path AS projectPath,
+              a.tool, a.input, a.cwd, a.risk
+       FROM approval a
+       LEFT JOIN session s ON s.id = a.session_id
+       WHERE a.decision IS NULL ORDER BY a.created_at`,
     )
     .all() as unknown as Array<Omit<ApprovalRequest, 'input' | 'pending'> & { input: string }>
   return rows.map((r) => ({ ...r, input: JSON.parse(r.input) as unknown, pending: true }))

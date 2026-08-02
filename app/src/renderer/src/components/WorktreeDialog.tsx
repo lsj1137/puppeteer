@@ -21,6 +21,7 @@ import type {
   WorktreeStatus,
 } from '@shared/session'
 import Code from './Code'
+import { shouldShowWorktreeRebase } from '../lib/worktree'
 
 interface Props {
   sessionId: string
@@ -220,9 +221,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const hasConflict = conflictFiles.length > 0
   const running = status?.reason?.startsWith('세션이 실행 중') ?? false
   const canCommit = Boolean(status && hasDirtyWork && !hasConflict && !running && commitMessage.trim())
-  const canRebase = Boolean(
-    status && status.behind > 0 && hasCommits && !hasConflict && !hasDirtyWork && !status.originDirty && !running,
-  )
+  const canRebase = shouldShowWorktreeRebase(status, hasConflict, running)
   const canDrop = Boolean(status && !hasDirtyWork && (merged || !hasCommits))
   const busy = committing || rebasing || merging || dropping
   const commitLabel = loading

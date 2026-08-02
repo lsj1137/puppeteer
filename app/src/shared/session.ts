@@ -76,6 +76,8 @@ export interface ApprovalRequest {
   /** 앱 내부 승인 ID */
   id: string
   sessionId: string
+  /** 세션이 속한 원본 프로젝트. cwd는 격리 worktree일 수 있다. */
+  projectPath?: string
   tool: string
   input: unknown
   cwd: string

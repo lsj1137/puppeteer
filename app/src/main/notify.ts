@@ -75,7 +75,7 @@ export function notifyApproval(req: ApprovalRequest): void {
   const detail = summarize(req.input)
   show(`승인 대기 · ${req.tool}`, detail ? `${baseName(req.cwd)} — ${detail}` : baseName(req.cwd), {
     sessionId: req.sessionId,
-    cwd: req.cwd,
+    cwd: req.projectPath ?? req.cwd,
   })
 }
 

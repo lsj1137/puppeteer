@@ -8,6 +8,7 @@ import type {
   SessionStatus,
   StoredSession,
 } from '@shared/session'
+import { approvalNavigationPath } from '../lib/navigation'
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
@@ -96,7 +97,7 @@ export default function Overview({
             {approvals.map((a) => (
               <button
                 key={a.id}
-                onClick={() => onOpenSession(a.sessionId, a.cwd)}
+                onClick={() => onOpenSession(a.sessionId, approvalNavigationPath(a))}
                 className="flex w-full items-center gap-2 rounded-md bg-peach/10 px-3 py-2 text-left text-[13px] hover:bg-peach/15"
               >
                 <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-peach" />

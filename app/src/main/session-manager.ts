@@ -402,24 +402,26 @@ export class SessionManager {
   }
 
   private onApproval(req: ApprovalRequest): void {
-    db.recordApproval(req)
-    if (req.pending) {
-      db.decideApproval(req.id, 'deny')
-      this.getWindow()?.webContents.send('approval:cleared', req.id)
-      this.onEvent(req.sessionId, {
+    const projectPath = db.getSession(req.sessionId)?.projectPath
+    const routedReq = projectPath ? { ...req, projectPath } : req
+    db.recordApproval(routedReq)
+    if (routedReq.pending) {
+      db.decideApproval(routedReq.id, 'deny')
+      this.getWindow()?.webContents.send('approval:cleared', routedReq.id)
+      this.onEvent(routedReq.sessionId, {
         t: 'notice',
         level: 'warning',
         title: '승인 요청 시간 초과',
         text:
-          `${req.tool} 승인 요청이 응답 대기 시간을 넘겨 자동으로 닫혔습니다.\n` +
+          `${routedReq.tool} 승인 요청이 응답 대기 시간을 넘겨 자동으로 닫혔습니다.\n` +
           'CLI에는 해당 작업이 거절/보류되었다고 전달했습니다.\n\n' +
-          summarizeApproval(req.input),
+          summarizeApproval(routedReq.input),
       })
       return
     }
-    this.getWindow()?.webContents.send('approval:request', req)
-    notifyApproval(req)
-    this.onEvent(req.sessionId, { t: 'status', status: 'approval-required' })
+    this.getWindow()?.webContents.send('approval:request', routedReq)
+    notifyApproval(routedReq)
+    this.onEvent(routedReq.sessionId, { t: 'status', status: 'approval-required' })
   }
 
   private onEvent(sessionId: string, event: SessionEvent): void {

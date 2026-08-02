@@ -70,6 +70,7 @@ import ArtifactPanel, { artifactTitle, lineCount } from './components/ArtifactPa
 import { splitFences, type Segment, type UiArtifact } from './lib/fences'
 import { toUiArtifactKind } from './lib/artifacts'
 import { runnerEnvironmentLabel } from '@shared/runner'
+import { approvalNavigationPath, sessionRunPath } from './lib/navigation'
 
 type Entry =
   | { kind: 'assistant'; id: string; segments: Segment[]; isError?: boolean }
@@ -706,13 +707,14 @@ export default function App() {
   }
 
   /** 세션 열기. 이미 메모리에 있으면 그대로, 아니면 DB 에서 복원한다. */
-  async function openSession(id: string): Promise<void> {
+  async function openSession(id: string, candidates = sessions): Promise<void> {
+    const target = candidates.find((session) => session.id === id)
     setScreen('project')
     setPendingPick(undefined)
-    setNextRunnerId(sessions.find((x) => x.id === id)?.runnerId ?? undefined)
+    setNextRunnerId(target?.runnerId ?? undefined)
     setScrolled(false)
     setActiveSession(id)
-    setAgentName(sessions.find((x) => x.id === id)?.agentName ?? undefined)
+    setAgentName(target?.agentName ?? undefined)
     setSelectedArtifact(undefined)
     if (views[id]) return
     const stored = await window.api.listEvents(id)
@@ -723,11 +725,13 @@ export default function App() {
 
   /** 다른 프로젝트의 세션으로 이동 */
   async function jumpTo(sessionId: string, projectPath: string): Promise<void> {
+    let targetSessions = sessions
     if (projectPath !== active) {
       setActive(projectPath)
-      setSessions(await window.api.listSessions(projectPath))
+      targetSessions = await window.api.listSessions(projectPath)
+      setSessions(targetSessions)
     }
-    await openSession(sessionId)
+    await openSession(sessionId, targetSessions)
   }
 
   async function removeSession(id: string): Promise<void> {
@@ -803,7 +807,7 @@ export default function App() {
 
   async function run(runnerId: string, text: string, cwd?: string): Promise<void> {
     const runner = runners.find((r) => r.id === runnerId)
-    const path = cwd ?? active
+    const path = sessionRunPath(cwd, selected?.projectPath, active)
     if (!runner || !path) return
 
     // 열어둔 세션이 있으면 그 CLI 세션을 이어간다.
@@ -951,9 +955,9 @@ export default function App() {
       id: `ap:${a.id}`,
       group: '승인 대기',
       label: `${a.tool} 승인 요청`,
-      hint: baseName(a.cwd),
+      hint: baseName(approvalNavigationPath(a)),
       icon: ShieldAlert,
-      run: () => void jumpTo(a.sessionId, a.cwd),
+      run: () => void jumpTo(a.sessionId, approvalNavigationPath(a)),
     })),
     ...running.map((r) => ({
       id: `run:${r.id}`,
@@ -1047,11 +1051,13 @@ export default function App() {
             {approvals.map((a) => (
               <button
                 key={a.id}
-                onClick={() => void jumpTo(a.sessionId, a.cwd)}
+                onClick={() => void jumpTo(a.sessionId, approvalNavigationPath(a))}
                 className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] hover:bg-surface0"
               >
                 <span className="font-mono text-subtext1">{a.tool}</span>
-                <span className="flex-1 truncate text-overlay1">{baseName(a.cwd)}</span>
+                <span className="flex-1 truncate text-overlay1">
+                  {baseName(approvalNavigationPath(a))}
+                </span>
                 {a.sessionId === activeSession && (
                   <span className="shrink-0 text-[11px] text-peach">현재</span>
                 )}
