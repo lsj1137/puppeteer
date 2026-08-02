@@ -97,6 +97,22 @@ function migrate(): void {
   addColumn('session', 'snapshot', 'TEXT')
   addColumn('session', 'agent_name', 'TEXT')
   addColumn('session', 'worktree', 'TEXT')
+  addColumn('session', 'worktree_cleaned', 'INTEGER NOT NULL DEFAULT 0')
+
+  // 이전 버전에서 worktree를 정리하면 흔적이 모두 사라졌다. 생성 로그가 남은
+  // 세션만 정리된 상태로 복구해, 재개 시 원본 폴더로 조용히 돌아가지 않게 한다.
+  db.prepare(
+    `UPDATE session
+     SET worktree_cleaned = 1
+     WHERE worktree IS NULL
+       AND worktree_cleaned = 0
+       AND EXISTS (
+         SELECT 1 FROM event
+         WHERE event.session_id = session.id
+           AND event.t = 'artifact'
+           AND event.payload LIKE '%격리 실행%'
+       )`,
+  ).run()
 }
 
 /** SQLite 는 ADD COLUMN IF NOT EXISTS 가 없어 직접 확인한다 */
@@ -174,7 +190,8 @@ export function listSessions(projectPath: string, limit = 50): StoredSession[] {
     .prepare(
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
-              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree
+              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
+              worktree_cleaned AS worktreeCleaned
        FROM session WHERE project_path = ? ORDER BY started_at DESC LIMIT ?`,
     )
     .all(projectPath, limit)
@@ -186,7 +203,8 @@ export function getSession(id: string): StoredSession | undefined {
     .prepare(
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
-              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree
+              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
+              worktree_cleaned AS worktreeCleaned
        FROM session WHERE id = ?`,
     )
     .get(id) as unknown as StoredSession | undefined
@@ -203,12 +221,14 @@ function hydrate(row: unknown): unknown {
       r.worktree = null
     }
   }
+  r.worktreeCleaned = Boolean(r.worktreeCleaned)
   return r
 }
 
 export function setWorktree(id: string, wt: SessionWorktree | null): void {
-  db.prepare('UPDATE session SET worktree = ? WHERE id = ?').run(
+  db.prepare('UPDATE session SET worktree = ?, worktree_cleaned = ? WHERE id = ?').run(
     wt ? JSON.stringify(wt) : null,
+    wt ? 0 : 1,
     id,
   )
 }
@@ -236,11 +256,13 @@ export function recentSessions(limit = 20): StoredSession[] {
   return db
     .prepare(
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
-              runner_id AS runnerId, title, status, cost_usd AS costUsd,
-              started_at AS startedAt, ended_at AS endedAt
+              runner_id AS runnerId, title, agent_name AS agentName, status,
+              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt,
+              worktree, worktree_cleaned AS worktreeCleaned
        FROM session ORDER BY started_at DESC LIMIT ?`,
     )
-    .all(limit) as unknown as StoredSession[]
+    .all(limit)
+    .map(hydrate) as unknown as StoredSession[]
 }
 
 /** 오늘 / 이번 달 비용 */

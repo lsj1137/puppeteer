@@ -1,6 +1,16 @@
-/** 새 세션은 기본 격리하되, 기존 대화의 작업 위치는 중간에 바꾸지 않는다. */
-export function shouldCreateWorktree(requested: boolean | undefined, isContinuation: boolean): boolean {
-  return !isContinuation && requested !== false
+/** 새 세션은 기본 격리하고, 정리된 격리 세션은 재개할 때 새 worktree를 만든다. */
+export function shouldCreateWorktree(
+  requested: boolean | undefined,
+  isContinuation: boolean,
+  worktreeCleaned = false,
+): boolean {
+  return worktreeCleaned || (!isContinuation && requested !== false)
+}
+
+/** 정리 후 재생성하는 브랜치는 이전에 남은 브랜치와 겹치지 않아야 한다. */
+export function worktreeBranchName(sessionId: string, recreatedAt?: number): string {
+  const base = `puppeteer/${sessionId.slice(0, 8)}`
+  return recreatedAt === undefined ? base : `${base}-${recreatedAt.toString(36)}`
 }
 
 export function sessionDeletionBlockReason(

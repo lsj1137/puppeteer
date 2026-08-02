@@ -131,6 +131,8 @@ export interface StoredProject {
 export interface StoredSession {
   /** 격리 실행 중이면 그 정보 */
   worktree?: SessionWorktree | null
+  /** 기존 worktree를 정리했으며, 다음 지시에서 새 worktree를 만들어야 하는지 */
+  worktreeCleaned?: boolean
   id: string
   projectPath: string
   cliSessionId: string | null

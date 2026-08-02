@@ -46,6 +46,7 @@ import { notifyApproval, notifyStatus } from './notify'
 import {
   sessionDeletionBlockReason,
   shouldCreateWorktree,
+  worktreeBranchName,
 } from './worktree-policy'
 
 export interface StartSessionInput {
@@ -116,15 +117,17 @@ export class SessionManager {
     // 사용자 지시도 이벤트로 남겨야 대화를 그대로 복원할 수 있다
     this.persistAndSend(id, { t: 'message', role: 'user', messageId: `u-${id}`, text: prompt })
 
-    /**
-     * 새 세션은 기본으로 격리한다. 이어가는 턴은 최초 작업 위치를 유지하고,
-     * 만들지 못해도 현재 폴더에서 진행한다.
-     */
+    /** 새 세션은 기본 격리한다. 정리한 격리 세션은 현재 원본 HEAD에서 다시 격리한다. */
     let worktree = (prev?.worktree ?? undefined) as SessionWorktree | undefined
-    if (!worktree && shouldCreateWorktree(input.isolate, Boolean(prev))) {
+    const recreateCleanedWorktree = Boolean(prev?.worktreeCleaned && !prev.worktree)
+    if (
+      !worktree &&
+      shouldCreateWorktree(input.isolate, Boolean(prev), recreateCleanedWorktree)
+    ) {
       const originSnapshot = await snapshot(input.cwd)
       const dir = join(app.getPath('userData'), 'worktrees', id)
-      const made = await addWorktree(input.cwd, dir, `puppeteer/${id.slice(0, 8)}`)
+      const branch = worktreeBranchName(id, recreateCleanedWorktree ? Date.now() : undefined)
+      const made = await addWorktree(input.cwd, dir, branch)
       if (made) {
         worktree = { ...made, origin: input.cwd }
         db.setWorktree(id, worktree)
@@ -134,6 +137,14 @@ export class SessionManager {
           path: made.path,
           content: `격리 실행\n브랜치: ${made.branch}\n경로: ${made.path}`,
         })
+        if (recreateCleanedWorktree) {
+          this.persistAndSend(id, {
+            t: 'notice',
+            level: 'info',
+            title: '새 Worktree 생성',
+            text: '정리된 세션을 이어가기 위해 현재 원본 HEAD에서 새 worktree를 만들었습니다.',
+          })
+        }
         const excluded =
           (originSnapshot?.modified.length ?? 0) + (originSnapshot?.untracked.length ?? 0)
         if (excluded > 0) {
@@ -149,7 +160,9 @@ export class SessionManager {
           t: 'notice',
           level: 'warning',
           title: 'Worktree 자동 분리 실패',
-          text: 'Git 저장소가 아니거나 worktree를 만들 수 없어 현재 폴더에서 진행합니다.',
+          text: recreateCleanedWorktree
+            ? '정리된 세션의 새 worktree를 만들지 못해 현재 폴더에서 진행합니다. 원본 변경 여부를 확인해 주세요.'
+            : 'Git 저장소가 아니거나 worktree를 만들 수 없어 현재 폴더에서 진행합니다.',
         })
       }
     }

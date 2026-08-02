@@ -389,6 +389,8 @@ export default function App() {
   const runnerLocked = !!selected
   /** 격리 실행 중인 세션 */
   const sessionWorktree = selected?.worktree ?? undefined
+  /** 격리 폴더는 정리됐고, 다음 지시에서 새 worktree를 만들 세션 */
+  const worktreeCleaned = Boolean(selected?.worktreeCleaned && !sessionWorktree)
   /** 세션을 돌릴 수 있는 러너 전체. provider 를 가리지 않는다. */
   const usableRunners = runners.filter((r) => r.available)
   /** 홈 라우터 전용 — 라우팅 프롬프트가 Claude CLI 인자로 짜여 있다 */
@@ -1389,6 +1391,16 @@ export default function App() {
                 <span className="truncate">{sessionWorktree.branch}</span>
                 <ChevronDown className="h-3 w-3 shrink-0" />
               </button>
+            )}
+
+            {worktreeCleaned && (
+              <span
+                title="기존 worktree가 정리되었습니다. 이 세션에 다시 지시하면 현재 원본 기준으로 새 worktree를 자동 생성합니다."
+                className="flex min-w-0 max-w-[180px] items-center gap-1.5 rounded-md bg-surface0 px-2 py-1 text-[11px] text-subtext0"
+              >
+                <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Worktree 정리됨</span>
+              </span>
             )}
 
             {selected && (

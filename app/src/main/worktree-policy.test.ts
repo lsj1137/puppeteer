@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   sessionDeletionBlockReason,
   shouldCreateWorktree,
+  worktreeBranchName,
 } from './worktree-policy'
 
 describe('worktree launch policy', () => {
@@ -22,6 +23,15 @@ describe('worktree launch policy', () => {
     expect(shouldCreateWorktree(true, true)).toBe(false)
   })
 
+  it('creates a fresh worktree when continuing a cleaned isolated session', () => {
+    expect(shouldCreateWorktree(undefined, true, true)).toBe(true)
+    expect(shouldCreateWorktree(false, true, true)).toBe(true)
+  })
+
+  it('uses a unique branch name when recreating a cleaned worktree', () => {
+    expect(worktreeBranchName('12345678-abcd')).toBe('puppeteer/12345678')
+    expect(worktreeBranchName('12345678-abcd', 123456)).toBe('puppeteer/12345678-2n9c')
+  })
 })
 
 describe('worktree session deletion policy', () => {
