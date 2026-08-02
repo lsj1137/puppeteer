@@ -360,6 +360,8 @@ export interface WorktreeRebaseResult {
   status?: WorktreeStatus
 }
 
+export type WorktreeRebaseStrategy = 'origin' | 'worktree'
+
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
 export interface CheckpointDraft {
   sessionId: string

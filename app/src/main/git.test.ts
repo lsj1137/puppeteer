@@ -176,6 +176,42 @@ describe('worktree merge', () => {
     expect(await git(worktreePath, ['status', '--porcelain'])).toBe('')
   })
 
+  it('resolves rebase conflicts by preferring worktree files', async () => {
+    const { origin, worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'shared.txt'), 'worktree\n')
+    await commit(worktreePath, 'worktree shared')
+
+    await writeFile(join(origin, 'shared.txt'), 'origin\n')
+    await commit(origin, 'origin shared')
+
+    const result = await rebaseWorktree(wt, 'worktree')
+
+    expect(result.ok).toBe(true)
+    expect(await git(worktreePath, ['show', 'HEAD:shared.txt'])).toBe('worktree')
+    expect(result.status).toMatchObject({ canMerge: true, ahead: 1, behind: 0 })
+  })
+
+  it('resolves rebase conflicts by preferring source branch files', async () => {
+    const { origin, worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'shared.txt'), 'worktree\n')
+    await commit(worktreePath, 'worktree shared')
+
+    await writeFile(join(origin, 'shared.txt'), 'origin\n')
+    await commit(origin, 'origin shared')
+
+    const result = await rebaseWorktree(wt, 'origin')
+
+    expect(result.ok).toBe(true)
+    expect(await git(worktreePath, ['show', 'HEAD:shared.txt'])).toBe('origin')
+    expect(result.status).toMatchObject({
+      canMerge: false,
+      hasCommits: false,
+      ahead: 0,
+      behind: 0,
+      merged: false,
+    })
+  })
+
   it('blocks a merge when the original checkout is on another branch', async () => {
     const { origin, worktreePath, wt } = await fixture()
     await git(worktreePath, ['config', 'user.name', 'Agent Workspace Test'])

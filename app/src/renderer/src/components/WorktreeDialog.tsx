@@ -15,7 +15,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import type { SessionWorktree, WorktreeStatus } from '@shared/session'
+import type { SessionWorktree, WorktreeRebaseStrategy, WorktreeStatus } from '@shared/session'
 import Code from './Code'
 
 interface Props {
@@ -34,6 +34,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const [dropping, setDropping] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string }>()
   const [commitMessage, setCommitMessage] = useState('작업 변경 반영')
+  const [conflictFiles, setConflictFiles] = useState<string[]>([])
   const [diff, setDiff] = useState<string>()
   const [diffLoading, setDiffLoading] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -43,6 +44,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
     try {
       const next = await window.api.worktreeStatus(sessionId)
       setStatus(next)
+      setConflictFiles([])
       if (!next) setMessage({ ok: false, text: '연결된 worktree 정보를 찾지 못했습니다.' })
     } catch (error) {
       setMessage({
@@ -74,6 +76,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       if (result.status) setStatus(result.status)
       setMessage({ ok: result.ok, text: result.message })
       if (result.ok) {
+        setConflictFiles([])
         await onChanged()
         if (diff !== undefined) setDiff(await window.api.worktreeDiff(sessionId))
       }
@@ -94,7 +97,10 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       const result = await window.api.mergeWorktree(sessionId)
       if (result.status) setStatus(result.status)
       setMessage({ ok: result.ok, text: result.message })
-      if (result.ok) await onChanged()
+      if (result.ok) {
+        setConflictFiles([])
+        await onChanged()
+      }
     } catch (error) {
       setMessage({
         ok: false,
@@ -105,14 +111,16 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
     }
   }
 
-  async function rebase(): Promise<void> {
+  async function rebase(strategy?: WorktreeRebaseStrategy): Promise<void> {
     setRebasing(true)
     setMessage(undefined)
     try {
-      const result = await window.api.rebaseWorktree(sessionId)
+      const result = await window.api.rebaseWorktree(sessionId, strategy)
       if (result.status) setStatus(result.status)
       setMessage({ ok: result.ok, text: result.message })
+      setConflictFiles(result.conflictFiles ?? [])
       if (result.ok) {
+        setConflictFiles([])
         await onChanged()
         if (diff !== undefined) setDiff(await window.api.worktreeDiff(sessionId))
       }
@@ -314,6 +322,37 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
                   반영
                 </button>
               </div>
+              {conflictFiles.length > 0 && (
+                <div className="mt-3 rounded-md border border-yellow/20 bg-yellow/5 p-2.5">
+                  <div className="mb-2 text-[11px] font-semibold text-yellow">충돌 파일</div>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {conflictFiles.map((file) => (
+                      <span
+                        key={file}
+                        className="rounded bg-surface0 px-1.5 py-0.5 font-mono text-[11px] text-subtext1"
+                      >
+                        {file}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      onClick={() => void rebase('origin')}
+                      disabled={!canRebase || busy}
+                      className="flex min-h-8 flex-1 items-center justify-center rounded-md border border-surface1 px-3 py-1.5 text-[12px] font-medium text-subtext1 hover:bg-surface0 hover:text-text disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      원본 사용
+                    </button>
+                    <button
+                      onClick={() => void rebase('worktree')}
+                      disabled={!canRebase || busy}
+                      className="flex min-h-8 flex-1 items-center justify-center rounded-md bg-mauve/20 px-3 py-1.5 text-[12px] font-medium text-mauve hover:bg-mauve/30 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      내 작업 사용
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

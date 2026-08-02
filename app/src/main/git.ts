@@ -6,6 +6,7 @@ import type {
   SessionWorktree,
   WorktreeMergeResult,
   WorktreeRebaseResult,
+  WorktreeRebaseStrategy,
   WorktreeStatus,
 } from '@shared/session'
 
@@ -330,7 +331,10 @@ export async function commitWorktree(
 }
 
 /** worktree 브랜치를 현재 원본 브랜치 위로 재배치한다. 충돌이 나면 즉시 abort 한다. */
-export async function rebaseWorktree(wt: SessionWorktree): Promise<WorktreeRebaseResult> {
+export async function rebaseWorktree(
+  wt: SessionWorktree,
+  strategy?: WorktreeRebaseStrategy,
+): Promise<WorktreeRebaseResult> {
   const before = await worktreeStatus(wt)
   if (before.dirty) {
     return { ok: false, message: 'worktree 변경을 먼저 커밋해 주세요.', status: before }
@@ -349,12 +353,19 @@ export async function rebaseWorktree(wt: SessionWorktree): Promise<WorktreeRebas
   }
 
   try {
-    await gitWithError(wt.path, ['rebase', wt.baseBranch])
+    const strategyArgs = strategy === 'origin' ? ['-X', 'ours'] : strategy === 'worktree' ? ['-X', 'theirs'] : []
+    await gitWithError(wt.path, ['rebase', ...strategyArgs, wt.baseBranch])
     const baseHead = await git(wt.origin, ['rev-parse', wt.baseBranch]).then((out) => out.trim())
     const nextWt = { ...wt, baseHead }
+    const suffix =
+      strategy === 'origin'
+        ? ' 원본 파일을 우선했습니다.'
+        : strategy === 'worktree'
+          ? ' 이 세션의 파일을 우선했습니다.'
+          : ''
     return {
       ok: true,
-      message: `${wt.branch}를 ${wt.baseBranch} 최신 커밋 위로 재배치했습니다.`,
+      message: `${wt.branch}를 ${wt.baseBranch} 최신 커밋 위로 재배치했습니다.${suffix}`,
       status: await worktreeStatus(nextWt),
     }
   } catch (error) {

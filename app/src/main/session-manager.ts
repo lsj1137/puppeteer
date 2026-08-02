@@ -14,6 +14,7 @@ import type {
   WorktreeCommitResult,
   WorktreeMergeResult,
   WorktreeRebaseResult,
+  WorktreeRebaseStrategy,
   WorktreeStatus,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
@@ -293,7 +294,10 @@ export class SessionManager {
     return commitGitWorktree(wt, message)
   }
 
-  async rebaseWorktree(sessionId: string): Promise<WorktreeRebaseResult> {
+  async rebaseWorktree(
+    sessionId: string,
+    strategy?: WorktreeRebaseStrategy,
+  ): Promise<WorktreeRebaseResult> {
     const wt = db.getSession(sessionId)?.worktree
     if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
     if (this.sessions.has(sessionId)) {
@@ -303,7 +307,7 @@ export class SessionManager {
         status: await this.worktreeStatus(sessionId),
       }
     }
-    const result = await rebaseGitWorktree(wt)
+    const result = await rebaseGitWorktree(wt, strategy)
     if (result.ok && result.status?.worktree) db.setWorktree(sessionId, result.status.worktree)
     return result
   }

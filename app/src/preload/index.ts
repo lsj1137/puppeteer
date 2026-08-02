@@ -21,6 +21,7 @@ import type {
   WorktreeCommitResult,
   WorktreeMergeResult,
   WorktreeRebaseResult,
+  WorktreeRebaseStrategy,
   WorktreeStatus,
 } from '@shared/session'
 
@@ -99,8 +100,10 @@ const api = {
     ipcRenderer.invoke('session:worktreeDiff', sessionId),
   commitWorktree: (sessionId: string, message: string): Promise<WorktreeCommitResult> =>
     ipcRenderer.invoke('session:commitWorktree', sessionId, message),
-  rebaseWorktree: (sessionId: string): Promise<WorktreeRebaseResult> =>
-    ipcRenderer.invoke('session:rebaseWorktree', sessionId),
+  rebaseWorktree: (
+    sessionId: string,
+    strategy?: WorktreeRebaseStrategy,
+  ): Promise<WorktreeRebaseResult> => ipcRenderer.invoke('session:rebaseWorktree', sessionId, strategy),
   mergeWorktree: (sessionId: string): Promise<WorktreeMergeResult> =>
     ipcRenderer.invoke('session:mergeWorktree', sessionId),
   buildCheckpoint: (sessionId: string): Promise<CheckpointDraft | undefined> =>
