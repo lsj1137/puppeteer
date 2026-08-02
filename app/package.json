@@ -10,7 +10,8 @@
     "smoke": "npm run build && node ./scripts/smoke-electron.mjs",
     "start": "node ./scripts/run-electron-vite.mjs preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json"
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "verify": "npm test && npm run smoke"
   },
   "dependencies": {
     "konva": "^10.3.0",
