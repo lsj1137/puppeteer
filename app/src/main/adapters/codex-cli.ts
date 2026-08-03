@@ -36,7 +36,7 @@ export class CodexCliAdapter {
     this.model = opts.model
     const cliArgs = buildCodexArgs(opts)
 
-    const { command, args } = buildRunnerCommand(opts.runner, opts.cwd, cliArgs)
+    const { command, args, windowsVerbatimArguments } = buildRunnerCommand(opts.runner, opts.cwd, cliArgs)
     this.emit({ t: 'status', status: 'starting' })
 
     try {
@@ -44,6 +44,7 @@ export class CodexCliAdapter {
         cwd: opts.runner.kind === 'wsl' ? undefined : opts.cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+        windowsVerbatimArguments,
         // TLS 검사 프록시 뒤에서는 rustls 가 시스템 CA 만 본다.
         // 러너 홈에 CA 를 등록해 두지 않은 환경을 위해 번들 경로를 넘길 수 있게 한다.
         env: opts.caBundle ? { ...process.env, SSL_CERT_FILE: opts.caBundle } : process.env,

@@ -51,15 +51,11 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   DetectedRunner,
-  RateLimitInfo,
   RunningSession,
-  SessionEvent,
-  SessionMeta,
   SessionStatus,
   AgentDef,
   ChangedFile,
   CostTotals,
-  GitSnapshot,
   CheckpointDraft,
   RouteCandidate,
   StoredProject,
@@ -67,35 +63,22 @@ import type {
 } from '@shared/session'
 import Markdown from './components/Markdown'
 import ArtifactPanel, { artifactTitle, lineCount } from './components/ArtifactPanel'
-import { splitFences, type Segment, type UiArtifact } from './lib/fences'
-import { toUiArtifactKind } from './lib/artifacts'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import { approvalNavigationPath, sessionRunPath } from './lib/navigation'
+import {
+  EMPTY_SESSION_VIEW,
+  baseName,
+  clampArtifactWidth,
+  formatTokens,
+  reduceSessionView,
+  splitSessionTabs,
+  timeLabel,
+  toolSummary,
+  type SessionView,
+} from './lib/session-view'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
-
-type Entry =
-  | { kind: 'assistant'; id: string; segments: Segment[]; isError?: boolean }
-  | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; title: string; text: string }
-  | { kind: 'tool'; id: string; toolUseId: string; name: string; input: unknown; result?: { ok: boolean; preview: string } }
-  | { kind: 'user'; id: string; text: string }
-
-interface View {
-  entries: Entry[]
-  artifacts: UiArtifact[]
-  cost: number
-  /** 비용을 안 주는 CLI(Codex)를 위해 토큰도 들고 있는다 */
-  tokens: number
-  status?: SessionStatus
-  statusReason?: string
-  meta?: SessionMeta
-  rateLimit?: RateLimitInfo
-  snapshot?: GitSnapshot
-  conflicts: { path: string; otherTitle: string }[]
-}
-
-const EMPTY: View = { entries: [], artifacts: [], cost: 0, tokens: 0, conflicts: [] }
 
 const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   starting: { label: '시작 중', color: 'text-sky' },
@@ -128,12 +111,6 @@ const runnerLabel = (r: DetectedRunner): string =>
 const RunnerIcon = ({ r, ...p }: { r: DetectedRunner; className?: string }) =>
   r.kind === 'wsl' ? <Terminal {...p} /> : <Monitor {...p} />
 
-const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
-
-/** 12345 → 12.3k */
-const fmtTokens = (n: number): string =>
-  n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
-
 /**
  * 큰 이미지는 `String.fromCharCode(...arr)` 로 한 번에 못 바꾼다.
  * 인자 개수 제한에 걸려 RangeError 가 난다(스크린샷 몇 MB면 바로 터짐).
@@ -148,145 +125,6 @@ async function toBase64(file: File): Promise<string> {
   return btoa(bin)
 }
 
-/** 도구 칩에 보여줄 인자 요약. JSON 통째로 뿌리면 읽기 어렵다. */
-function toolSummary(name: string, input: unknown): string {
-  const i = (input ?? {}) as Record<string, unknown>
-  const pick = (k: string): string | undefined =>
-    typeof i[k] === 'string' ? (i[k] as string) : undefined
-  return (
-    pick('command') ??
-    pick('file_path') ??
-    pick('notebook_path') ??
-    pick('pattern') ??
-    pick('url') ??
-    pick('query') ??
-    pick('description') ??
-    JSON.stringify(i).slice(0, 120)
-  )
-}
-
-const timeLabel = (ms: number): string =>
-  new Date(ms).toLocaleString('ko-KR', {
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-
-/** 이벤트 하나를 화면 상태에 반영. 실시간 수신과 DB 복원이 같은 경로를 탄다. */
-function reduce(v: View, e: SessionEvent, key: string): View {
-  switch (e.t) {
-    case 'status':
-      return { ...v, status: e.status, statusReason: e.reason }
-    case 'session-meta':
-      return { ...v, meta: e.meta }
-    case 'rate-limit':
-      return { ...v, rateLimit: e.info }
-    case 'message': {
-      if (e.role === 'user') {
-        return { ...v, entries: [...v.entries, { kind: 'user', id: key, text: e.text }] }
-      }
-      // API 오류는 대화 본문과 섞지 않는다
-      if (e.isError) {
-        return {
-          ...v,
-          entries: [...v.entries, { kind: 'assistant', id: key, segments: [], isError: true }],
-          artifacts: v.artifacts,
-          statusReason: e.text,
-        }
-      }
-      const { segments, artifacts } = splitFences(e.text, key)
-      return {
-        ...v,
-        entries: [...v.entries, { kind: 'assistant', id: key, segments }],
-        artifacts: [...v.artifacts, ...artifacts],
-      }
-    }
-    case 'notice':
-      return {
-        ...v,
-        entries: [
-          ...v.entries,
-          { kind: 'notice', id: key, level: e.level, title: e.title, text: e.text },
-        ],
-      }
-    case 'tool-use':
-      return {
-        ...v,
-        entries: [
-          ...v.entries,
-          { kind: 'tool', id: key, toolUseId: e.toolUseId, name: e.name, input: e.input },
-        ],
-      }
-    case 'tool-result':
-      return {
-        ...v,
-        entries: v.entries.map((en) =>
-          en.kind === 'tool' && en.toolUseId === e.toolUseId
-            ? { ...en, result: { ok: e.ok, preview: e.preview } }
-            : en,
-        ),
-      }
-    case 'artifact':
-      return {
-        ...v,
-        artifacts: [
-          ...v.artifacts,
-          {
-            id: `${key}-${e.kind}`,
-            kind: toUiArtifactKind(e.kind),
-            language: e.language,
-            path: e.path,
-            content: e.content,
-          },
-        ],
-      }
-    case 'snapshot':
-      return { ...v, snapshot: e.snapshot }
-    case 'conflict':
-      return v.conflicts.some((c) => c.path === e.path)
-        ? v
-        : { ...v, conflicts: [...v.conflicts, { path: e.path, otherTitle: e.otherTitle }] }
-    case 'usage':
-      return {
-        ...v,
-        cost: e.usage.totalCostUsd,
-        tokens: e.usage.inputTokens + e.usage.outputTokens,
-      }
-    default:
-      return v
-  }
-}
-
-/** Artifact 패널 폭. 너무 좁으면 코드가 안 읽히고, 너무 넓으면 대화가 눌린다. */
-const clampW = (w: number): number => Math.max(280, Math.min(760, Math.round(w)))
-
-/** 탭 하나가 제목을 알아볼 수 있는 최소 폭. 이보다 좁아지느니 목록으로 뺀다. */
-const MIN_TAB = 116
-/** 새 세션 버튼 자리 */
-const TAB_RESERVE = 44
-
-/**
- * 들어갈 수 있는 만큼만 탭으로 그리고 나머지는 넘침 목록으로 보낸다.
- * 활성 세션은 넘침에 있어도 반드시 탭으로 끌어올린다 — 지금 보는 게 안 보이면 안 된다.
- */
-function splitTabs(
-  sessions: StoredSession[],
-  activeId: string | undefined,
-  room: number,
-): { visible: StoredSession[]; overflow: StoredSession[] } {
-  const fit = Math.max(1, Math.floor((room - TAB_RESERVE) / MIN_TAB))
-  if (room === 0 || sessions.length <= fit) return { visible: sessions, overflow: [] }
-
-  let visible = sessions.slice(0, fit)
-  if (activeId && !visible.some((s) => s.id === activeId)) {
-    const active = sessions.find((s) => s.id === activeId)
-    if (active) visible = [...sessions.slice(0, fit - 1), active]
-  }
-  const shown = new Set(visible.map((s) => s.id))
-  return { visible, overflow: sessions.filter((s) => !shown.has(s.id)) }
-}
-
 export default function App() {
   const [runners, setRunners] = useState<DetectedRunner[]>([])
   const [projects, setProjects] = useState<StoredProject[]>([])
@@ -297,7 +135,7 @@ export default function App() {
   const [running, setRunning] = useState<RunningSession[]>([])
 
   /** 세션별 화면 상태. 여러 세션이 동시에 돌아도 각자 쌓인다. */
-  const [views, setViews] = useState<Record<string, View>>({})
+  const [views, setViews] = useState<Record<string, SessionView>>({})
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
   const [prompt, setPrompt] = useState('')
   const [pendingPick, setPendingPick] = useState<string>()
@@ -346,13 +184,14 @@ export default function App() {
     () => localStorage.getItem('ws.artifacts') !== 'closed',
   )
   const [artifactW, setArtifactW] = useState(
-    () => clampW(Number(localStorage.getItem('ws.artifactW')) || 380),
+    () => clampArtifactWidth(Number(localStorage.getItem('ws.artifactW')) || 380),
   )
 
   /** 패널 왼쪽 손잡이를 끌어 폭을 조절한다. 창 오른쪽 끝에서 마우스까지의 거리가 곧 폭이다. */
   function startResize(e: React.PointerEvent): void {
     e.preventDefault()
-    const move = (ev: PointerEvent): void => setArtifactW(clampW(window.innerWidth - ev.clientX))
+    const move = (ev: PointerEvent): void =>
+      setArtifactW(clampArtifactWidth(window.innerWidth - ev.clientX))
     const up = (): void => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
@@ -382,7 +221,7 @@ export default function App() {
   const taRef = useRef<HTMLTextAreaElement>(null)
   const seq = useRef(0)
 
-  const view = (activeSession && views[activeSession]) || EMPTY
+  const view = (activeSession && views[activeSession]) || EMPTY_SESSION_VIEW
   const activeProject = projects.find((p) => p.path === active)
   const selected = sessions.find((s) => s.id === activeSession)
   const selectedSessionRunnerId = selected?.runnerId
@@ -406,7 +245,11 @@ export default function App() {
   const claudeRunners = runners.filter((r) => r.provider === 'claude-cli')
   const routerRunner =
     activeRunner?.provider === 'claude-cli' ? activeRunner : claudeRunners[0]
-  const { visible: visibleTabs, overflow: overflowTabs } = splitTabs(sessions, activeSession, tabRoom)
+  const { visible: visibleTabs, overflow: overflowTabs } = splitSessionTabs(
+    sessions,
+    activeSession,
+    tabRoom,
+  )
   /** 적용 대상·실행 환경이 모두 맞는 것만 */
   const usableAgents = agents.filter((a) => {
     const inScope =
@@ -518,7 +361,11 @@ export default function App() {
     return window.api.onSessionEvent(({ sessionId, event }) => {
       setViews((vs) => ({
         ...vs,
-        [sessionId]: reduce(vs[sessionId] ?? EMPTY, event, `e${seq.current++}`),
+        [sessionId]: reduceSessionView(
+          vs[sessionId] ?? EMPTY_SESSION_VIEW,
+          event,
+          `e${seq.current++}`,
+        ),
       }))
       if (event.t === 'status') void refresh(active)
     })
@@ -655,7 +502,7 @@ export default function App() {
     const content = await window.api.fileDiff(activeSession, path)
     const id = `diff:${path}`
     setViews((vs) => {
-      const v = vs[activeSession] ?? EMPTY
+      const v = vs[activeSession] ?? EMPTY_SESSION_VIEW
       if (v.artifacts.some((a) => a.id === id)) return vs
       return {
         ...vs,
@@ -728,7 +575,11 @@ export default function App() {
       const msg = err instanceof Error ? err.message : String(err)
       setViews((vs) => ({
         ...vs,
-        ['start-error']: { ...(vs['start-error'] ?? EMPTY), status: 'failed', statusReason: msg },
+        ['start-error']: {
+          ...(vs['start-error'] ?? EMPTY_SESSION_VIEW),
+          status: 'failed',
+          statusReason: msg,
+        },
       }))
       setActiveSession('start-error')
     }
@@ -746,8 +597,8 @@ export default function App() {
     setSelectedArtifact(undefined)
     if (views[id]) return
     const stored = await window.api.listEvents(id)
-    let v = EMPTY
-    for (const s of stored) v = reduce(v, s.event, `h${s.id}`)
+    let v = EMPTY_SESSION_VIEW
+    for (const s of stored) v = reduceSessionView(v, s.event, `h${s.id}`)
     setViews((vs) => ({ ...vs, [id]: v }))
   }
 
@@ -870,7 +721,7 @@ export default function App() {
       const key = activeSession ?? 'start-error'
       setViews((vs) => ({
         ...vs,
-        [key]: { ...(vs[key] ?? EMPTY), status: 'failed', statusReason: msg },
+        [key]: { ...(vs[key] ?? EMPTY_SESSION_VIEW), status: 'failed', statusReason: msg },
       }))
       setActiveSession(key)
     }
@@ -1227,7 +1078,9 @@ export default function App() {
               <span className="text-overlay1">현재 세션</span>
               {/* Codex 는 비용을 주지 않는다. 단가를 지어내 환산하느니 토큰을 그대로 보여준다. */}
               <span className="font-mono tabular-nums text-text" title={`${view.tokens.toLocaleString()} 토큰`}>
-                {view.cost > 0 ? `$${view.cost.toFixed(4)}` : `${fmtTokens(view.tokens)} 토큰`}
+                {view.cost > 0
+                  ? `$${view.cost.toFixed(4)}`
+                  : `${formatTokens(view.tokens)} 토큰`}
               </span>
             </div>
           )}
