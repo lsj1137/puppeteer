@@ -28,8 +28,27 @@ const conflictResolvers = new Map<string, WorktreeConflictResolverRequest>()
 const conflictResolverWindows = new Map<string, { token: string; win: BrowserWindow }>()
 const smokeMode = process.env['AGENT_WORKSPACE_SMOKE'] === '1'
 const smokeUserData = process.env['AGENT_WORKSPACE_SMOKE_USER_DATA']
+const e2eMode = process.env['AGENT_WORKSPACE_E2E'] === '1'
+const e2eUserData = process.env['AGENT_WORKSPACE_E2E_USER_DATA']
 
 if (smokeMode && smokeUserData) app.setPath('userData', smokeUserData)
+if (e2eMode && e2eUserData) app.setPath('userData', e2eUserData)
+
+// Windows 알림이나 바로가기를 눌렀을 때 두 번째 Electron 인스턴스가 뜨지 않게 한다.
+// smoke는 설치본과 동시에 검증할 수 있어야 하므로 잠금 대상에서 제외한다.
+const hasSingleInstanceLock = smokeMode || e2eMode || app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
+
+function focusMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+if (hasSingleInstanceLock) {
+  app.on('second-instance', () => focusMainWindow())
+}
 
 function loadRenderer(win: BrowserWindow, hash?: string): void {
   if (process.env['ELECTRON_RENDERER_URL']) {
@@ -42,6 +61,9 @@ function loadRenderer(win: BrowserWindow, hash?: string): void {
 }
 
 function createWindow(): BrowserWindow {
+  const icon = app.isPackaged
+    ? join(process.resourcesPath, 'app-icon.png')
+    : join(app.getAppPath(), 'resources', 'icon.png')
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -50,13 +72,14 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0b0d10',
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
     },
   })
   mainWindow = win
-  if (!smokeMode) win.on('ready-to-show', () => win.show())
+  if (!smokeMode && !e2eMode) win.on('ready-to-show', () => win.show())
   win.on('closed', () => { mainWindow = undefined })
 
   // 파일 드롭이 렌더러에서 처리되지 않았을 때 창이 그 파일로 이동하는 것을 막는다
@@ -111,6 +134,7 @@ function createConflictResolverWindow(
 }
 
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) return
   db.openDb()
   initNotifications(() => mainWindow)
   const sessions = new SessionManager(() => mainWindow)
@@ -267,6 +291,7 @@ app.whenReady().then(() => {
     setTimeout(() => void appUpdates.check(), 10_000)
   }
   if (smokeMode) void runSmoke(win)
+  if (e2eMode) void runE2E(win, sessions)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -298,6 +323,52 @@ async function runSmoke(win: BrowserWindow): Promise<void> {
       `AGENT_WORKSPACE_SMOKE ${JSON.stringify({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
+      })}`,
+    )
+    app.exit(1)
+  }
+}
+
+async function runE2E(win: BrowserWindow, sessions: SessionManager): Promise<void> {
+  try {
+    await waitForRenderer(win)
+    const cwd = process.env['AGENT_WORKSPACE_E2E_PROJECT']
+    const executable = process.env['AGENT_WORKSPACE_E2E_CLI']
+    if (!cwd || !executable) throw new Error('E2E project or CLI path is missing')
+    mkdirSync(cwd, { recursive: true })
+    const runner: DetectedRunner = {
+      id: 'e2e:claude-cli',
+      kind: process.platform === 'win32' ? 'windows-native' : 'posix',
+      provider: 'claude-cli',
+      executable,
+      installMethod: 'unknown',
+      available: true,
+    }
+    const id = await sessions.start({ cwd, prompt: 'E2E 요청', runner, isolate: false })
+    const deadline = Date.now() + 10_000
+    while (Date.now() < deadline) {
+      const stored = db.getSession(id)
+      if (stored?.status === 'completed') {
+        const events = db.listEvents(id)
+        const hasReply = events.some(
+          ({ event }) => event.t === 'message' && event.role === 'assistant' && event.text === 'E2E 응답 완료',
+        )
+        if (!hasReply || stored.cliSessionId !== 'e2e-cli-session') {
+          throw new Error('E2E session events were not persisted correctly')
+        }
+        console.log(`AGENT_WORKSPACE_E2E ${JSON.stringify({ ok: true, sessionId: id })}`)
+        app.quit()
+        return
+      }
+      if (stored?.status === 'failed') throw new Error('E2E session failed')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    throw new Error('E2E session did not complete')
+  } catch (error) {
+    console.error(
+      `AGENT_WORKSPACE_E2E ${JSON.stringify({
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
       })}`,
     )
     app.exit(1)

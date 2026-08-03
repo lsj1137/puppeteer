@@ -2,14 +2,15 @@ import { app, BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateInfo } from 'builder-util-runtime'
 import type { AppUpdateState } from '@shared/app-update'
+import { releaseNotesToText } from '@shared/release-notes'
 
 function releaseNotes(info: UpdateInfo): string | undefined {
-  if (typeof info.releaseNotes === 'string') return info.releaseNotes
+  if (typeof info.releaseNotes === 'string') return releaseNotesToText(info.releaseNotes)
   if (!Array.isArray(info.releaseNotes)) return undefined
   const notes = info.releaseNotes
     .map((note) => note.note?.trim())
     .filter((note): note is string => Boolean(note))
-  return notes.length ? notes.join('\n\n') : undefined
+  return notes.length ? releaseNotesToText(notes.join('\n\n')) : undefined
 }
 
 /** 패키징된 앱의 명시적 업데이트 흐름을 한곳에서 관리한다. */

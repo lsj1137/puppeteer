@@ -37,6 +37,8 @@ export default function Settings({
   notify,
   onToggleNotify,
   runners,
+  defaultRunnerId,
+  onDefaultRunnerChange,
   appUpdate,
   hasRunningSessions,
   onClose,
@@ -46,6 +48,8 @@ export default function Settings({
   notify: boolean
   onToggleNotify: (v: boolean) => void
   runners: DetectedRunner[]
+  defaultRunnerId?: string
+  onDefaultRunnerChange: (runnerId: string) => void
   appUpdate?: AppUpdateState
   hasRunningSessions: boolean
   onClose: () => void
@@ -143,29 +147,25 @@ export default function Settings({
             </div>
           </Row>
 
-          <Row label="실행 환경" hint="설치된 CLI 를 자동으로 찾은 결과입니다. 어디에 쓸지는 프로젝트마다 정합니다.">
+          <Row
+            label="기본 실행 환경"
+            hint="실행 환경을 따로 지정하지 않은 프로젝트와 새 세션에서 사용하는 기본값입니다. 기존 세션의 환경은 바뀌지 않습니다."
+          >
             {runners.length === 0 ? (
               <div className="py-1 text-[12px] text-yellow">찾은 CLI 가 없습니다</div>
             ) : (
-              <div className="space-y-1">
+              <select
+                value={defaultRunnerId ?? ''}
+                onChange={(e) => onDefaultRunnerChange(e.target.value)}
+                className="w-full rounded-md border border-surface0 bg-base px-2.5 py-2 text-[12px] text-subtext1 outline-none focus:border-mauve"
+              >
                 {runners.map((r) => (
-                  <div
-                    key={r.id}
-                    title={r.executable}
-                    className="flex items-center gap-2 rounded-md bg-base px-2.5 py-1.5 text-[12px]"
-                  >
-                    <span className="text-subtext1">
-                      {PROVIDER_LABEL[r.provider] ?? r.provider}
-                    </span>
-                    <span className="text-overlay1">{runnerEnvironmentLabel(r)}</span>
-                    {r.version && (
-                      <span className="ml-auto font-mono text-[11px] text-overlay1">
-                        {r.version}
-                      </span>
-                    )}
-                  </div>
+                  <option key={r.id} value={r.id}>
+                    {PROVIDER_LABEL[r.provider] ?? r.provider} · {runnerEnvironmentLabel(r)}
+                    {r.version ? ` · ${r.version}` : ''}
+                  </option>
                 ))}
-              </div>
+              </select>
             )}
           </Row>
 

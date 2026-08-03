@@ -168,7 +168,7 @@ app/src/
 
 **필요한 것**
 
-- Node 20.11+ (권장: 현재 LTS 이상)
+- Node 20.19+ (권장: 현재 LTS 이상)
 - Claude Code CLI 또는 Codex CLI
 - macOS/Linux: 일반 POSIX 경로에 CLI 설치
 - Windows: Windows 네이티브 또는 WSL 중 한 곳에 CLI 설치

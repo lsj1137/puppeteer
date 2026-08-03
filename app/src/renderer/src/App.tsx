@@ -333,6 +333,9 @@ export default function App() {
    * 열어둔 세션이 있으면 그 세션이 쓰던 러너를 기본으로 잡는다.
    */
   const [nextRunnerId, setNextRunnerId] = useState<string>()
+  const [defaultRunnerId, setDefaultRunnerId] = useState<string | undefined>(() =>
+    localStorage.getItem('ws.defaultRunner') || undefined,
+  )
   const [notify, setNotify] = useState(() => localStorage.getItem('ws.notify') !== 'off')
   /** 탭바 가용 폭 — 창 크기·Artifact 폭에 따라 바뀌므로 관찰한다 */
   const [tabRoom, setTabRoom] = useState(0)
@@ -384,7 +387,8 @@ export default function App() {
   const selected = sessions.find((s) => s.id === activeSession)
   const selectedSessionRunnerId = selected?.runnerId
   /** 지금 화면이 가리키는 러너 — 세션 것 > 사용자가 고른 것 > 프로젝트 기본값 */
-  const activeRunnerId = nextRunnerId ?? selectedSessionRunnerId ?? activeProject?.runnerId
+  const activeRunnerId =
+    nextRunnerId ?? selectedSessionRunnerId ?? activeProject?.runnerId ?? defaultRunnerId
   const activeRunner = runners.find((r) => r.id === activeRunnerId)
   /**
    * 세션이 한 번 시작되면 실행 환경을 못 바꾼다.
@@ -444,6 +448,21 @@ export default function App() {
     })
     void window.api.listOpenApprovals().then(setApprovals)
   }, [])
+
+  // 저장된 기본값이 사라졌거나 첫 실행이면 사용 가능한 첫 환경을 기본값으로 잡는다.
+  useEffect(() => {
+    if (!usableRunners.length) return
+    if (defaultRunnerId && usableRunners.some((r) => r.id === defaultRunnerId)) return
+    const id = usableRunners[0].id
+    localStorage.setItem('ws.defaultRunner', id)
+    setDefaultRunnerId(id)
+  }, [runners, defaultRunnerId])
+
+  function changeDefaultRunner(runnerId: string): void {
+    if (!usableRunners.some((r) => r.id === runnerId)) return
+    localStorage.setItem('ws.defaultRunner', runnerId)
+    setDefaultRunnerId(runnerId)
+  }
 
   useEffect(() => {
     void window.api.appUpdateState().then(setAppUpdate)
@@ -1465,8 +1484,7 @@ export default function App() {
                     activeRunner.provider === 'claude-cli' ? 'text-sapphire' : ''
                   }`}
                 />
-                {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider} ·{' '}
-                {runnerLabel(activeRunner)}
+                {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider}
                 {runnerLocked && <Lock className="h-3 w-3 text-overlay1" />}
               </button>
             ) : (
@@ -2015,6 +2033,8 @@ export default function App() {
           notify={notify}
           onToggleNotify={setNotify}
           runners={usableRunners}
+          defaultRunnerId={defaultRunnerId}
+          onDefaultRunnerChange={changeDefaultRunner}
           appUpdate={appUpdate}
           hasRunningSessions={running.length > 0}
           onClose={() => setSettingsOpen(false)}

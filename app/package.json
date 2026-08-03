@@ -5,15 +5,21 @@
   "author": "lsj1137",
   "main": "./out/main/index.js",
   "private": true,
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "postinstall": "install-electron",
     "dev": "node ./scripts/run-electron-vite.mjs dev",
     "build": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && electron-vite build",
-    "smoke": "npm run build && node ./scripts/smoke-electron.mjs",
+    "smoke": "npm run build && npm run smoke:run",
+    "smoke:run": "node ./scripts/smoke-electron.mjs",
+    "e2e": "npm run build && npm run e2e:run",
+    "e2e:run": "node ./scripts/e2e-electron.mjs",
     "start": "node ./scripts/run-electron-vite.mjs preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "verify": "npm test && npm run smoke",
+    "verify": "npm test && npm run build && npm run smoke:run && npm run e2e:run",
     "pack": "npm run build && electron-builder --dir",
     "dist": "npm run verify && electron-builder",
     "dist:win": "npm run verify && electron-builder --win nsis --x64",
@@ -39,6 +45,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/icon.png",
+        "to": "app-icon.png"
       }
     ],
     "asar": true,
