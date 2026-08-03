@@ -330,6 +330,7 @@ export async function commitWorktree(
 ): Promise<WorktreeCommitResult> {
   const title = message.trim()
   if (!title) return { ok: false, message: '커밋 메시지를 입력해 주세요.', status: await worktreeStatus(wt) }
+  const subject = title.split(/\r?\n/, 1)[0]
 
   const before = await worktreeStatus(wt)
   if (!before.dirty) {
@@ -345,7 +346,7 @@ export async function commitWorktree(
     await gitWithError(wt.path, ['commit', '-m', title])
     return {
       ok: true,
-      message: `worktree 변경을 커밋했습니다: ${title}`,
+      message: `worktree 변경을 커밋했습니다: ${subject}`,
       status: await worktreeStatus(wt),
     }
   } catch (error) {

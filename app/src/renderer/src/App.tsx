@@ -19,7 +19,6 @@ import {
   FolderOpen,
   MessageSquarePlus,
   Monitor,
-  Send,
   ShieldAlert,
   Terminal,
   ImagePlus,
@@ -46,6 +45,7 @@ import MemoryScreen from './components/MemoryScreen'
 import Settings from './components/Settings'
 import Checkpoint from './components/Checkpoint'
 import WorktreeDialog from './components/WorktreeDialog'
+import PromptInput, { type PromptInputHandle } from './components/PromptInput'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -70,12 +70,11 @@ import {
   baseName,
   clampArtifactWidth,
   formatTokens,
-  reduceSessionView,
   splitSessionTabs,
   timeLabel,
   toolSummary,
-  type SessionView,
 } from './lib/session-view'
+import { useSessionViews } from './hooks/use-session-views'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
@@ -134,10 +133,7 @@ export default function App() {
   const [activeSession, setActiveSession] = useState<string>()
   const [running, setRunning] = useState<RunningSession[]>([])
 
-  /** 세션별 화면 상태. 여러 세션이 동시에 돌아도 각자 쌓인다. */
-  const [views, setViews] = useState<Record<string, SessionView>>({})
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
-  const [prompt, setPrompt] = useState('')
   const [pendingPick, setPendingPick] = useState<string>()
   const [selectedArtifact, setSelectedArtifact] = useState<string>()
   const [confirmDrop, setConfirmDrop] = useState<string>()
@@ -187,6 +183,19 @@ export default function App() {
     () => clampArtifactWidth(Number(localStorage.getItem('ws.artifactW')) || 380),
   )
 
+  const refresh = useCallback(async (projectPath?: string) => {
+    setRunning(await window.api.listRunningSessions())
+    setCost(await window.api.costTotals())
+    if (projectPath) setSessions(await window.api.listSessions(projectPath))
+  }, [])
+  const {
+    views,
+    addDiffArtifact,
+    failSessionView,
+    forgetSessionView,
+    restoreSessionView,
+  } = useSessionViews(active, refresh)
+
   /** 패널 왼쪽 손잡이를 끌어 폭을 조절한다. 창 오른쪽 끝에서 마우스까지의 거리가 곧 폭이다. */
   function startResize(e: React.PointerEvent): void {
     e.preventDefault()
@@ -218,8 +227,7 @@ export default function App() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const tabBarRef = useRef<HTMLDivElement>(null)
-  const taRef = useRef<HTMLTextAreaElement>(null)
-  const seq = useRef(0)
+  const taRef = useRef<PromptInputHandle>(null)
 
   const view = (activeSession && views[activeSession]) || EMPTY_SESSION_VIEW
   const activeProject = projects.find((p) => p.path === active)
@@ -312,12 +320,6 @@ export default function App() {
     return window.api.onAppUpdateState(setAppUpdate)
   }, [])
 
-  const refresh = useCallback(async (projectPath?: string) => {
-    setRunning(await window.api.listRunningSessions())
-    setCost(await window.api.costTotals())
-    if (projectPath) setSessions(await window.api.listSessions(projectPath))
-  }, [])
-
   // 한도 리셋까지 남은 시간 표시용
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000)
@@ -355,21 +357,6 @@ export default function App() {
     ro.observe(el)
     return () => ro.disconnect()
   }, [screen])
-
-  // ── 실시간 이벤트 — 세션별로 라우팅 ──
-  useEffect(() => {
-    return window.api.onSessionEvent(({ sessionId, event }) => {
-      setViews((vs) => ({
-        ...vs,
-        [sessionId]: reduceSessionView(
-          vs[sessionId] ?? EMPTY_SESSION_VIEW,
-          event,
-          `e${seq.current++}`,
-        ),
-      }))
-      if (event.t === 'status') void refresh(active)
-    })
-  }, [active, refresh])
 
   useEffect(() => {
     return window.api.onApprovalRequest((req) => {
@@ -457,21 +444,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // 5줄까지는 창이 늘어나고, 그 뒤부터 스크롤이 생긴다
-  useLayoutEffect(() => {
-    const el = taRef.current
-    if (!el) return
-    const cs = getComputedStyle(el)
-    const lh = parseFloat(cs.lineHeight) || 22
-    const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom)
-    const max = lh * 5 + pad
-
-    el.style.height = 'auto'
-    const needed = el.scrollHeight
-    el.style.height = `${Math.min(needed, max)}px`
-    el.style.overflowY = needed > max ? 'auto' : 'hidden'
-  }, [prompt])
-
   // ── 동작 ──
   /** 이미지 파일을 프로젝트 내부 attachments 로 저장하고 미리보기를 만든다 */
   async function attachFiles(files: FileList | File[]): Promise<void> {
@@ -499,22 +471,7 @@ export default function App() {
 
   async function openDiff(path: string): Promise<void> {
     if (!activeSession) return
-    const content = await window.api.fileDiff(activeSession, path)
-    const id = `diff:${path}`
-    setViews((vs) => {
-      const v = vs[activeSession] ?? EMPTY_SESSION_VIEW
-      if (v.artifacts.some((a) => a.id === id)) return vs
-      return {
-        ...vs,
-        [activeSession]: {
-          ...v,
-          artifacts: [
-            ...v.artifacts,
-            { id, kind: 'diff', language: 'diff', path, content: content || '(변경 없음)' },
-          ],
-        },
-      }
-    })
+    const id = await addDiffArtifact(activeSession, path)
     setSelectedArtifact(id)
   }
 
@@ -573,14 +530,7 @@ export default function App() {
       void refresh(path)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      setViews((vs) => ({
-        ...vs,
-        ['start-error']: {
-          ...(vs['start-error'] ?? EMPTY_SESSION_VIEW),
-          status: 'failed',
-          statusReason: msg,
-        },
-      }))
+      failSessionView('start-error', msg)
       setActiveSession('start-error')
     }
   }
@@ -596,10 +546,7 @@ export default function App() {
     setAgentName(target?.agentName ?? undefined)
     setSelectedArtifact(undefined)
     if (views[id]) return
-    const stored = await window.api.listEvents(id)
-    let v = EMPTY_SESSION_VIEW
-    for (const s of stored) v = reduceSessionView(v, s.event, `h${s.id}`)
-    setViews((vs) => ({ ...vs, [id]: v }))
+    await restoreSessionView(id)
   }
 
   /** 다른 프로젝트의 세션으로 이동 */
@@ -621,11 +568,7 @@ export default function App() {
       return
     }
     setConfirmDelSession(undefined)
-    setViews((vs) => {
-      const next = { ...vs }
-      delete next[id]
-      return next
-    })
+    forgetSessionView(id)
     if (activeSession === id) {
       setActiveSession(undefined)
       setSelectedArtifact(undefined)
@@ -656,8 +599,7 @@ export default function App() {
     if (path === active) selectProject(next[0]?.path ?? '')
   }
 
-  function submit(): void {
-    const text = prompt.trim()
+  function submit(text: string): void {
     if (!active || !text || busy) return
 
     const runnerId = nextRunnerId ?? selectedSessionRunnerId ?? activeProject?.runnerId
@@ -665,7 +607,6 @@ export default function App() {
     if (usableRunners.length === 1) return void chooseRunner(usableRunners[0].id, text)
 
     setPendingPick(text)
-    setPrompt('')
   }
 
   /**
@@ -699,8 +640,6 @@ export default function App() {
     const continueSessionId = resumeCliSessionId ? activeSession : undefined
     // 러너를 바꿔 이어갈 수 없게 된 경우, 새 세션으로 시작하는 편이 덜 혼란스럽다
     if (!sameRunner) setActiveSession(undefined)
-    setPrompt('')
-
     try {
       const id = await window.api.startSession({
         runner,
@@ -719,10 +658,7 @@ export default function App() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       const key = activeSession ?? 'start-error'
-      setViews((vs) => ({
-        ...vs,
-        [key]: { ...(vs[key] ?? EMPTY_SESSION_VIEW), status: 'failed', statusReason: msg },
-      }))
+      failSessionView(key, msg)
       setActiveSession(key)
     }
   }
@@ -1312,7 +1248,7 @@ export default function App() {
             {activeRunner ? (
               <button
                 disabled={runnerLocked}
-                onClick={() => !runnerLocked && setPendingPick(prompt.trim() || '')}
+                onClick={() => !runnerLocked && setPendingPick('')}
                 title={
                   runnerLocked
                     ? `이 세션은 ${runnerLabel(activeRunner)} 로 시작했습니다. 바꾸려면 새 세션을 여세요.`
@@ -1785,35 +1721,7 @@ export default function App() {
               }}
             />
           </label>
-          <textarea
-            ref={taRef}
-            rows={1}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                submit()
-              }
-            }}
-            placeholder={
-              !active
-                ? '먼저 프로젝트를 추가하세요'
-                : busy
-                  ? '이 세션은 실행 중 · 새 세션은 ＋ 로 시작하세요'
-                  : '지시를 입력하고 Enter · Shift+Enter 줄바꿈 · 이미지는 붙여넣기/드래그'
-            }
-            disabled={!active || busy}
-            className="flex-1 rounded-lg border border-surface1 bg-base px-3 py-2.5 text-sm leading-relaxed text-text outline-none placeholder:text-overlay1 focus:border-lavender/60 disabled:opacity-50"
-          />
-          <button
-            onClick={submit}
-            disabled={!active || !prompt.trim() || busy}
-            title="실행"
-            className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-lg bg-lavender/20 text-lavender hover:bg-lavender/30 disabled:opacity-30"
-          >
-            <Send className="h-4 w-4" />
-          </button>
+          <PromptInput ref={taRef} active={Boolean(active)} busy={busy} onSubmit={submit} />
           {busy && activeSession && (
             <button
               onClick={() => void window.api.stopSession(activeSession)}
