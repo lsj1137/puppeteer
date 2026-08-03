@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -11,18 +11,6 @@ const temp = await mkdtemp(join(tmpdir(), 'puppeteer-e2e-'))
 const userData = join(temp, 'user-data')
 const project = join(temp, 'project')
 const fakeCli = join(root, 'scripts', 'fake-claude-cli.mjs')
-const wrapper = join(temp, process.platform === 'win32' ? 'fake-claude.cmd' : 'fake-claude')
-
-await writeFile(join(temp, '.keep'), '')
-await writeFile(
-  wrapper,
-  process.platform === 'win32'
-    // 실제 CLI 인자에는 hook JSON과 `|`가 들어 있다. `%*`로 다시 펼치면 cmd.exe가
-    // 이를 셸 문법으로 재해석한다. 가짜 CLI는 인자가 필요 없으므로 전달하지 않는다.
-    ? `@"${process.execPath}" "${fakeCli}"\r\n`
-    : `#!/bin/sh\nexec '${process.execPath.replaceAll("'", "'\\''")}' '${fakeCli.replaceAll("'", "'\\''")}'\n`,
-)
-if (process.platform !== 'win32') await chmod(wrapper, 0o755)
 
 delete process.env.ELECTRON_RUN_AS_NODE
 const child = spawn(electron, [root], {
@@ -32,7 +20,8 @@ const child = spawn(electron, [root], {
     AGENT_WORKSPACE_E2E: '1',
     AGENT_WORKSPACE_E2E_USER_DATA: userData,
     AGENT_WORKSPACE_E2E_PROJECT: project,
-    AGENT_WORKSPACE_E2E_CLI: wrapper,
+    AGENT_WORKSPACE_E2E_NODE: process.execPath,
+    AGENT_WORKSPACE_E2E_SCRIPT: fakeCli,
     ELECTRON_DISABLE_SECURITY_WARNINGS: 'true',
   },
   stdio: ['ignore', 'pipe', 'pipe'],

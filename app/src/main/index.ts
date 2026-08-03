@@ -333,14 +333,16 @@ async function runE2E(win: BrowserWindow, sessions: SessionManager): Promise<voi
   try {
     await waitForRenderer(win)
     const cwd = process.env['AGENT_WORKSPACE_E2E_PROJECT']
-    const executable = process.env['AGENT_WORKSPACE_E2E_CLI']
-    if (!cwd || !executable) throw new Error('E2E project or CLI path is missing')
+    const executable = process.env['AGENT_WORKSPACE_E2E_NODE']
+    const script = process.env['AGENT_WORKSPACE_E2E_SCRIPT']
+    if (!cwd || !executable || !script) throw new Error('E2E project or CLI path is missing')
     mkdirSync(cwd, { recursive: true })
     const runner: DetectedRunner = {
       id: 'e2e:claude-cli',
       kind: process.platform === 'win32' ? 'windows-native' : 'posix',
       provider: 'claude-cli',
       executable,
+      executableArgs: [script],
       installMethod: 'unknown',
       available: true,
     }

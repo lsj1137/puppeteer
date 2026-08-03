@@ -109,4 +109,18 @@ describe('buildRunnerCommand', () => {
       args: ['/c', 'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd', ...cliArgs],
     })
   })
+
+  it('places fixed executable args before CLI args without a shell', () => {
+    const command = buildRunnerCommand(
+      runner({ executable: 'C:\\Program Files\\nodejs\\node.exe', executableArgs: ['fake-cli.mjs'] }),
+      'C:\\repo',
+      ['--settings', '{"matcher":"Bash|Edit"}'],
+      'win32',
+    )
+
+    expect(command).toEqual({
+      command: 'C:\\Program Files\\nodejs\\node.exe',
+      args: ['fake-cli.mjs', '--settings', '{"matcher":"Bash|Edit"}'],
+    })
+  })
 })

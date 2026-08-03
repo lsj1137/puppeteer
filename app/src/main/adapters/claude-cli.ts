@@ -354,6 +354,7 @@ export function buildRunnerCommand(
   hostPlatform = process.platform,
 ): { command: string; args: string[] } {
   const opts = { runner, cwd }
+  const args = [...(runner.executableArgs ?? []), ...cliArgs]
   if (opts.runner.kind === 'wsl') {
     // 반드시 탐지된 절대경로로 실행한다.
     // WSL 은 interop 으로 Windows PATH 를 뒤에 붙이므로, 바 `claude` 로 실행하면
@@ -368,7 +369,7 @@ export function buildRunnerCommand(
         opts.cwd,
         '--',
         opts.runner.executable,
-        ...cliArgs,
+        ...args,
       ],
     }
   }
@@ -376,10 +377,10 @@ export function buildRunnerCommand(
   // shell:true 는 인용 처리가 위험하므로 cmd.exe /c 로 감싸고 인자는 배열로 넘긴다.
   const exe = opts.runner.executable
   if (hostPlatform === 'win32' && /\.(cmd|bat)$/i.test(exe)) {
-    return { command: 'cmd.exe', args: ['/c', exe, ...cliArgs] }
+    return { command: 'cmd.exe', args: ['/c', exe, ...args] }
   }
 
-  return { command: exe, args: cliArgs }
+  return { command: exe, args }
 }
 
 export function buildClaudeArgs(

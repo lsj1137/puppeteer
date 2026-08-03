@@ -111,6 +111,8 @@ export interface DetectedRunner {
   /** wsl 인 경우 배포판 이름 */
   distro?: string
   executable: string
+  /** 실행 파일 뒤, CLI 인자 앞에 붙일 고정 인자. custom/test runner가 사용한다. */
+  executableArgs?: string[]
   /** 이 러너가 CLAUDE.md 를 읽는 홈. WSL 은 UNC 경로로 준다. */
   home?: string
   version?: string
