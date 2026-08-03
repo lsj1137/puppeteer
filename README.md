@@ -179,6 +179,10 @@ npm install
 npm run dev
 ```
 
+`npm install` 은 `postinstall` 로 `install-electron` 을 실행해 Electron 실행 바이너리(약 100MB)를 내려받습니다.
+Electron 43 부터는 `electron` 패키지 자체에 postinstall 이 없어, 이 단계 없이는 `npm run dev` 가 실행되지 않습니다.
+다운로드가 실패했다면 `npx install-electron` 을 다시 실행하세요.
+
 `npm run dev` 는 `electron-vite dev` 를 직접 부르지 않고 `scripts/run-electron-vite.mjs` 를 거칩니다.
 이 래퍼는 `ELECTRON_RUN_AS_NODE` 같은 부모 환경 변수를 정리하고 로컬 `electron-vite` CLI를 Node로 실행해,
 macOS와 Windows 양쪽에서 Electron 실행 경로가 흔들리지 않게 합니다.
