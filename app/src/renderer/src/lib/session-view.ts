@@ -132,22 +132,6 @@ export const baseName = (path: string): string =>
 export const formatTokens = (tokens: number): string =>
   tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens)
 
-export function toolSummary(name: string, input: unknown): string {
-  const value = (input ?? {}) as Record<string, unknown>
-  const pick = (key: string): string | undefined =>
-    typeof value[key] === 'string' ? (value[key] as string) : undefined
-  return (
-    pick('command') ??
-    pick('file_path') ??
-    pick('notebook_path') ??
-    pick('pattern') ??
-    pick('url') ??
-    pick('query') ??
-    pick('description') ??
-    JSON.stringify(value).slice(0, 120)
-  )
-}
-
 export const timeLabel = (ms: number): string =>
   new Date(ms).toLocaleString('ko-KR', {
     month: 'numeric',

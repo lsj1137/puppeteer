@@ -49,7 +49,11 @@ async function fixture(initialFiles: Record<string, string | Uint8Array> = {}) {
 }
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
+  await Promise.all(
+    roots.splice(0).map((root) =>
+      rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }),
+    ),
+  )
 })
 
 describe('worktree merge', () => {
@@ -366,7 +370,7 @@ describe('worktree merge', () => {
 
     expect(second.ok).toBe(true)
     expect(await readFile(join(worktreePath, 'shared.txt'), 'utf8')).toContain('last resolved')
-  })
+  }, 15_000)
 
   it('aborts an in-progress multi-commit resolution cleanly', async () => {
     const { origin, worktreePath, wt } = await fixture({

@@ -31,7 +31,6 @@ import {
   GitBranch,
   FileDiff,
   Trash2,
-  Wrench,
   X,
 } from 'lucide-react'
 import ConfirmDialog from './components/ConfirmDialog'
@@ -46,6 +45,7 @@ import Settings from './components/Settings'
 import Checkpoint from './components/Checkpoint'
 import WorktreeDialog from './components/WorktreeDialog'
 import PromptInput, { type PromptInputHandle } from './components/PromptInput'
+import ToolEntry from './components/ToolEntry'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -64,7 +64,7 @@ import type {
 import Markdown from './components/Markdown'
 import ArtifactPanel, { artifactTitle, lineCount } from './components/ArtifactPanel'
 import { runnerEnvironmentLabel } from '@shared/runner'
-import { approvalNavigationPath, sessionRunPath } from './lib/navigation'
+import { approvalNavigationPath } from './lib/navigation'
 import {
   EMPTY_SESSION_VIEW,
   baseName,
@@ -72,9 +72,9 @@ import {
   formatTokens,
   splitSessionTabs,
   timeLabel,
-  toolSummary,
 } from './lib/session-view'
 import { useSessionViews } from './hooks/use-session-views'
+import { useSessionRunner } from './hooks/use-session-runner'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
@@ -269,6 +269,26 @@ export default function App() {
   })
   /** 활성 세션이 실행 중일 때만 입력을 잠근다. 다른 세션은 계속 돌아도 된다. */
   const busy = running.some((r) => r.id === activeSession)
+  const { chooseRunner, startFreshSession, submit } = useSessionRunner({
+    activeProjectPath: active,
+    activeProjectRunnerId: activeProject?.runnerId,
+    activeSessionId: activeSession,
+    agentName,
+    attachments,
+    busy,
+    nextRunnerId,
+    pendingPrompt: pendingPick,
+    runners,
+    selectedSession: selected,
+    failSessionView,
+    refresh,
+    setActiveSessionId: setActiveSession,
+    setAttachments,
+    setNextRunnerId,
+    setPendingPrompt: setPendingPick,
+    setProjects,
+    setSelectedArtifact,
+  })
 
   const myApprovals = approvals.filter((a) => a.sessionId === activeSession)
   const otherApprovals = approvals.filter((a) => a.sessionId !== activeSession)
@@ -502,8 +522,23 @@ export default function App() {
 
     const proj = projects.find((p) => p.path === projectPath)
     const runner = runners.find((r) => r.id === proj?.runnerId)
-    if (runner) return void run(runner.id, text, projectPath)
-    if (usableRunners.length === 1) return void chooseRunner(usableRunners[0].id, text, projectPath)
+    if (runner) {
+      await startFreshSession({
+        runnerId: runner.id,
+        cwd: projectPath,
+        prompt: text,
+        agentName: c.agentName,
+      })
+      return
+    }
+    if (usableRunners.length === 1) {
+      const runnerId = usableRunners[0].id
+      setNextRunnerId(runnerId)
+      await window.api.setProjectRunner(projectPath, runnerId)
+      setProjects(await window.api.listProjects())
+      await startFreshSession({ runnerId, cwd: projectPath, prompt: text, agentName: c.agentName })
+      return
+    }
 
     // 고를 게 여럿이면 선택 UI 를 띄우고 멈춘다
     setPendingPick(text)
@@ -514,25 +549,14 @@ export default function App() {
    * 실행 환경과 에이전트를 바꿔서 시작할 수 있다.
    */
   async function handoff(body: string, runnerId: string, agent?: string): Promise<void> {
-    const runner = runners.find((r) => r.id === runnerId)
     const path = checkpoint?.projectPath ?? active
-    if (!runner || !path) return
+    if (!path) return
 
     setCheckpoint(undefined)
     setActiveSession(undefined) // 새 세션으로 간다
     setNextRunnerId(runnerId)
     setAgentName(agent)
-
-    try {
-      const id = await window.api.startSession({ runner, cwd: path, prompt: body, agentName: agent })
-      setActiveSession(id)
-      setSelectedArtifact(undefined)
-      void refresh(path)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      failSessionView('start-error', msg)
-      setActiveSession('start-error')
-    }
+    await startFreshSession({ runnerId, cwd: path, prompt: body, agentName: agent })
   }
 
   /** 세션 열기. 이미 메모리에 있으면 그대로, 아니면 DB 에서 복원한다. */
@@ -597,70 +621,6 @@ export default function App() {
     const next = await window.api.listProjects()
     setProjects(next)
     if (path === active) selectProject(next[0]?.path ?? '')
-  }
-
-  function submit(text: string): void {
-    if (!active || !text || busy) return
-
-    const runnerId = nextRunnerId ?? selectedSessionRunnerId ?? activeProject?.runnerId
-    if (runnerId && runners.some((r) => r.id === runnerId)) return void run(runnerId, text)
-    if (usableRunners.length === 1) return void chooseRunner(usableRunners[0].id, text)
-
-    setPendingPick(text)
-  }
-
-  /**
-   * cwd 를 명시로 받는 이유: 홈에서 라우팅해 들어오면 selectProject 직후라
-   * `active` 상태가 아직 반영되지 않았다.
-   */
-  async function chooseRunner(runnerId: string, text?: string, cwd?: string): Promise<void> {
-    const path = cwd ?? active
-    if (!path) return
-    setNextRunnerId(runnerId)
-    // 프로젝트 기본값도 갱신한다 — 다음 새 세션이 이걸 물려받는다
-    await window.api.setProjectRunner(path, runnerId)
-    setProjects(await window.api.listProjects())
-    const body = text ?? pendingPick
-    setPendingPick(undefined)
-    if (body) void run(runnerId, body, path)
-  }
-
-  async function run(runnerId: string, text: string, cwd?: string): Promise<void> {
-    const runner = runners.find((r) => r.id === runnerId)
-    const path = sessionRunPath(cwd, selected?.projectPath, active)
-    if (!runner || !path) return
-
-    // 열어둔 세션이 있으면 그 CLI 세션을 이어간다.
-    // 앱 세션도 새로 만들지 않고 그대로 이어간다 — 한 대화가 턴마다 쪼개지면 안 된다.
-    //
-    // 단 **러너가 바뀌면 이어갈 수 없다.** 세션 기록이 러너 홈마다 따로 있어
-    // (WSL ~/.claude · Windows %USERPROFILE% · Codex ~/.codex) 세션 ID 가 통하지 않는다.
-    const sameRunner = !selected || selected.runnerId === runnerId
-    const resumeCliSessionId = sameRunner ? (selected?.cliSessionId ?? undefined) : undefined
-    const continueSessionId = resumeCliSessionId ? activeSession : undefined
-    // 러너를 바꿔 이어갈 수 없게 된 경우, 새 세션으로 시작하는 편이 덜 혼란스럽다
-    if (!sameRunner) setActiveSession(undefined)
-    try {
-      const id = await window.api.startSession({
-        runner,
-        cwd: path,
-        prompt: text,
-        resumeCliSessionId,
-        continueSessionId,
-        attachments: attachments.map((a) => a.path),
-        agentName,
-      })
-      setAttachments([])
-      // 사용자 지시는 main 이 이벤트로 되돌려주므로 여기서 따로 넣지 않는다
-      setActiveSession(id)
-      setSelectedArtifact(undefined)
-      void refresh(path)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      const key = activeSession ?? 'start-error'
-      failSessionView(key, msg)
-      setActiveSession(key)
-    }
   }
 
   const commands: Command[] = [
@@ -1368,33 +1328,7 @@ export default function App() {
                 <div className="whitespace-pre-wrap text-sm text-text">{e.text}</div>
               </div>
             ) : e.kind === 'tool' ? (
-              <div
-                key={e.id}
-                className={`rounded-md px-3 py-1.5 text-[12px] ${
-                  e.result && !e.result.ok ? 'bg-red/10' : 'bg-sapphire/10'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <Wrench
-                    className={`h-3.5 w-3.5 shrink-0 ${
-                      e.result && !e.result.ok ? 'text-red' : 'text-sapphire'
-                    }`}
-                  />
-                  <span
-                    className={`font-medium ${
-                      e.result && !e.result.ok ? 'text-red' : 'text-sapphire'
-                    }`}
-                  >
-                    {e.name}
-                  </span>
-                  <span className="truncate text-subtext0">{toolSummary(e.name, e.input)}</span>
-                </div>
-                {e.result?.preview && (
-                  <pre className="mt-1.5 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-crust/60 px-2 py-1.5 font-mono text-[12px] leading-relaxed text-subtext0">
-                    {e.result.preview}
-                  </pre>
-                )}
-              </div>
+              <ToolEntry key={e.id} entry={e} />
             ) : e.kind === 'notice' ? (
               <div
                 key={e.id}
