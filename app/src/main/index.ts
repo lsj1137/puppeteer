@@ -360,7 +360,16 @@ async function runE2E(win: BrowserWindow, sessions: SessionManager): Promise<voi
         app.quit()
         return
       }
-      if (stored?.status === 'failed') throw new Error('E2E session failed')
+      if (stored?.status === 'failed' || stored?.status === 'auth-required') {
+        const reason = db
+          .listEvents(id)
+          .map(({ event }) => event)
+          .filter((event) => event.t === 'status' && event.reason)
+          .at(-1)
+        throw new Error(
+          `E2E session ${stored.status}: ${reason?.t === 'status' ? reason.reason : 'reason unavailable'}`,
+        )
+      }
       await new Promise((resolve) => setTimeout(resolve, 50))
     }
     throw new Error('E2E session did not complete')
