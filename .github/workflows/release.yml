@@ -1,0 +1,173 @@
+name: Release desktop apps
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      macos-signing-ready: ${{ steps.macos-signing.outputs.ready }}
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify tag matches package version
+        shell: bash
+        run: |
+          package_version=$(node -p "require('./package.json').version")
+          tag_version=${GITHUB_REF_NAME#v}
+          if [ "$package_version" != "$tag_version" ]; then
+            echo "Tag v$tag_version does not match package version $package_version"
+            exit 1
+          fi
+
+      # macOS 배포 정보가 하나도 없으면 Windows 전용 Release로 진행한다.
+      # 일부만 설정된 상태는 구성 오류이므로 게시 전에 실패시킨다.
+      - name: Inspect macOS signing and notarization secrets
+        id: macos-signing
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          count=0
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [ -n "${!name}" ]; then count=$((count + 1)); fi
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "macOS signing is not configured; publishing a Windows-only release."
+          elif [ "$count" -eq 5 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "macOS signing is only partially configured ($count/5 secrets)."
+            exit 1
+          fi
+
+  windows:
+    needs: preflight
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Build Windows release
+        run: npx electron-builder --win nsis --x64 --publish never
+
+      - name: Verify Windows release artifacts
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $required = @(
+            "dist_electron/Puppeteer-$version-Setup-x64.exe",
+            "dist_electron/Puppeteer-$version-Setup-x64.exe.blockmap",
+            "dist_electron/latest.yml",
+            "dist_electron/win-unpacked/resources/hooks/approve.ps1",
+            "dist_electron/win-unpacked/resources/hooks/approve.sh"
+          )
+          foreach ($path in $required) {
+            if (-not (Test-Path $path -PathType Leaf)) { throw "Missing release artifact: $path" }
+          }
+
+      - name: Create GitHub Release and upload Windows artifacts
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $assets = @(
+            "dist_electron/Puppeteer-$version-Setup-x64.exe",
+            "dist_electron/Puppeteer-$version-Setup-x64.exe.blockmap",
+            "dist_electron/latest.yml"
+          )
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $env:GITHUB_REF_NAME @assets --clobber
+          } else {
+            gh release create $env:GITHUB_REF_NAME @assets --verify-tag --generate-notes --title "Puppeteer $env:GITHUB_REF_NAME"
+          }
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  macos:
+    needs: [preflight, windows]
+    if: ${{ needs.preflight.outputs.macos-signing-ready == 'true' }}
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify
+        run: npm run verify
+
+      - name: Build universal macOS release
+        run: npx electron-builder --mac dmg zip --universal --publish never
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Verify and upload macOS release artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          dmg="dist_electron/Puppeteer-$version-mac-universal.dmg"
+          zip="dist_electron/Puppeteer-$version-mac-universal.zip"
+          metadata="dist_electron/latest-mac.yml"
+          for path in "$dmg" "$zip" "$metadata"; do
+            if [ ! -f "$path" ]; then
+              echo "Missing release artifact: $path"
+              exit 1
+            fi
+          done
+          gh release upload "$GITHUB_REF_NAME" "$dmg" "$zip" "$metadata" --clobber

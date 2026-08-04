@@ -118,13 +118,14 @@ function runOnce(prompt: string, runner: DetectedRunner, cwd: string): Promise<s
     '--disallowedTools',
     'Bash Read Write Edit Glob Grep WebFetch WebSearch Task',
   ]
-  const { command, args: full } = buildRunnerCommand(runner, cwd, args)
+  const { command, args: full, windowsVerbatimArguments } = buildRunnerCommand(runner, cwd, args)
 
   return new Promise((resolve, reject) => {
     const child = spawn(command, full, {
       cwd: runner.kind === 'wsl' ? undefined : cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
+      windowsVerbatimArguments,
     })
 
     let out = ''

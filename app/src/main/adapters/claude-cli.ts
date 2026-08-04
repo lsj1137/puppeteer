@@ -55,7 +55,7 @@ export class ClaudeCliAdapter {
 
   start(opts: StartOptions): void {
     const cliArgs = buildClaudeArgs(opts)
-    const { command, args } = this.buildCommand(opts, cliArgs)
+    const { command, args, windowsVerbatimArguments } = this.buildCommand(opts, cliArgs)
 
     this.emit({ t: 'status', status: 'starting' })
 
@@ -67,6 +67,7 @@ export class ClaudeCliAdapter {
         cwd: opts.runner.kind === 'wsl' ? undefined : opts.cwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
+        windowsVerbatimArguments,
       })
     } catch (err) {
       this.settle('failed', `실행 실패: ${(err as Error).message} (${command})`)
@@ -110,7 +111,7 @@ export class ClaudeCliAdapter {
   private buildCommand(
     opts: StartOptions,
     cliArgs: string[],
-  ): { command: string; args: string[] } {
+  ): RunnerCommand {
     return buildRunnerCommand(opts.runner, opts.cwd, cliArgs)
   }
 
@@ -352,8 +353,9 @@ export function buildRunnerCommand(
   cwd: string,
   cliArgs: string[],
   hostPlatform = process.platform,
-): { command: string; args: string[] } {
+): RunnerCommand {
   const opts = { runner, cwd }
+  const args = [...(runner.executableArgs ?? []), ...cliArgs]
   if (opts.runner.kind === 'wsl') {
     // 반드시 탐지된 절대경로로 실행한다.
     // WSL 은 interop 으로 Windows PATH 를 뒤에 붙이므로, 바 `claude` 로 실행하면
@@ -368,7 +370,7 @@ export function buildRunnerCommand(
         opts.cwd,
         '--',
         opts.runner.executable,
-        ...cliArgs,
+        ...args,
       ],
     }
   }
@@ -376,10 +378,42 @@ export function buildRunnerCommand(
   // shell:true 는 인용 처리가 위험하므로 cmd.exe /c 로 감싸고 인자는 배열로 넘긴다.
   const exe = opts.runner.executable
   if (hostPlatform === 'win32' && /\.(cmd|bat)$/i.test(exe)) {
-    return { command: 'cmd.exe', args: ['/c', exe, ...cliArgs] }
+    return buildWindowsCmdCommand(exe, args)
   }
 
-  return { command: exe, args: cliArgs }
+  return { command: exe, args }
+}
+
+export interface RunnerCommand {
+  command: string
+  args: string[]
+  windowsVerbatimArguments?: boolean
+}
+
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g
+
+/**
+ * cmd.exe와 Windows argv 파서를 모두 통과하도록 인자 하나를 인용한다.
+ * npm .cmd shim이 한 번 더 파싱하므로 메타문자를 두 번 escape한다.
+ */
+export function escapeWindowsCmdArgument(value: string, doubleEscape = true): string {
+  let arg = String(value)
+  arg = arg.replace(/(?=(\\+?)?)\1"/g, '$1$1\\"')
+  arg = arg.replace(/(?=(\\+?)?)\1$/g, '$1$1')
+  arg = `"${arg}"`.replace(CMD_META, '^$1')
+  return doubleEscape ? arg.replace(CMD_META, '^$1') : arg
+}
+
+export function buildWindowsCmdCommand(executable: string, args: string[]): RunnerCommand {
+  const escapedExecutable = executable.replace(CMD_META, '^$1')
+  const shellCommand = [escapedExecutable, ...args.map((arg) => escapeWindowsCmdArgument(arg))].join(
+    ' ',
+  )
+  return {
+    command: process.env.ComSpec || process.env.COMSPEC || 'cmd.exe',
+    args: ['/d', '/s', '/c', `"${shellCommand}"`],
+    windowsVerbatimArguments: true,
+  }
 }
 
 export function buildClaudeArgs(

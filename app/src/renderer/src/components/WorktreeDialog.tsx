@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Check,
@@ -22,6 +22,7 @@ import type {
 } from '@shared/session'
 import Code from './Code'
 import { shouldShowWorktreeRebase } from '../lib/worktree'
+import { generateCommitMessage } from '../lib/commit-message'
 
 interface Props {
   sessionId: string
@@ -38,7 +39,9 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const [merging, setMerging] = useState(false)
   const [dropping, setDropping] = useState(false)
   const [message, setMessage] = useState<{ ok: boolean; text: string }>()
-  const [commitMessage, setCommitMessage] = useState('작업 변경 반영')
+  const [commitMessage, setCommitMessage] = useState('')
+  const [generatingMessage, setGeneratingMessage] = useState(false)
+  const commitMessageEdited = useRef(false)
   const [conflictFiles, setConflictFiles] = useState<string[]>([])
   const [diff, setDiff] = useState<string>()
   const [diffLoading, setDiffLoading] = useState(false)
@@ -66,6 +69,29 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   useEffect(() => {
     void reload()
   }, [reload])
+
+  useEffect(() => {
+    commitMessageEdited.current = false
+    setCommitMessage('')
+  }, [sessionId])
+
+  const generateMessage = useCallback(async (force = false): Promise<void> => {
+    if (commitMessageEdited.current && !force) return
+    setGeneratingMessage(true)
+    try {
+      const next = generateCommitMessage(await window.api.worktreeDiff(sessionId)).value
+      if (!commitMessageEdited.current || force) {
+        setCommitMessage(next)
+        if (force) commitMessageEdited.current = false
+      }
+    } finally {
+      setGeneratingMessage(false)
+    }
+  }, [sessionId])
+
+  useEffect(() => {
+    if (status?.dirty) void generateMessage()
+  }, [generateMessage, status?.dirty])
 
   useEffect(() => {
     return window.api.onWorktreeResolved((resolvedSessionId) => {
@@ -181,11 +207,11 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
     setDropping(true)
     setMessage(undefined)
     try {
-      const ok = await window.api.dropWorktree(sessionId, false)
-      if (!ok) {
+      const result = await window.api.dropWorktree(sessionId, false)
+      if (!result.ok) {
         setMessage({
           ok: false,
-          text: 'worktree를 정리하지 못했습니다. 커밋되지 않은 변경이 남아 있는지 확인해 주세요.',
+          text: result.message,
         })
         await reload()
         return
@@ -318,8 +344,8 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
               <div className="min-w-0 leading-relaxed">
                 <div>원본 브랜치에 커밋이 반영되었습니다.</div>
                 <div className="mt-1 text-green/80">
-                  worktree 정리 후 작업 브랜치가 필요 없으면 터미널에서{' '}
-                  <span className="font-mono">git branch -d {worktree.branch}</span>
+                  worktree 정리 시 병합됐거나 커밋이 없는 작업 브랜치는 함께 삭제합니다. 미병합
+                  커밋이 있는 브랜치는 작업 보호를 위해 남겨 둡니다.
                 </div>
               </div>
             </div>
@@ -415,31 +441,44 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
                 </span>
               </div>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2">
                 <div className="min-w-0 flex-1 rounded-md border border-surface1 bg-mantle px-2.5 py-1.5 focus-within:border-blue">
-                  <input
+                  <textarea
+                    rows={4}
                     value={commitMessage}
-                    onChange={(event) => setCommitMessage(event.target.value)}
+                    onChange={(event) => {
+                      commitMessageEdited.current = true
+                      setCommitMessage(event.target.value)
+                    }}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' && canCommit && !busy) void commit()
+                      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter' && canCommit && !busy) {
+                        event.preventDefault()
+                        void commit()
+                      }
                     }}
                     disabled={busy || running}
-                    placeholder="커밋 메시지"
-                    className="w-full bg-transparent text-[12px] text-text outline-none placeholder:text-overlay0 disabled:opacity-50"
+                    placeholder={generatingMessage ? '변경 내용 분석 중...' : '커밋 메시지'}
+                    className="w-full resize-y bg-transparent font-mono text-[12px] leading-relaxed text-text outline-none placeholder:text-overlay0 disabled:opacity-50"
                   />
                 </div>
-                <button
-                  onClick={() => void commit()}
-                  disabled={!canCommit || busy}
-                  className="flex min-h-8 items-center justify-center gap-1.5 rounded-md bg-blue px-3 py-1.5 text-[12px] font-semibold text-crust hover:bg-sky disabled:cursor-not-allowed disabled:bg-surface1 disabled:text-overlay1"
-                >
-                  {committing ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <GitCommitHorizontal className="h-3.5 w-3.5" />
-                  )}
-                  커밋
-                </button>
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    onClick={() => void generateMessage(true)}
+                    disabled={busy || generatingMessage}
+                    className="flex min-h-8 items-center gap-1.5 rounded-md border border-surface1 px-2.5 py-1.5 text-[11px] text-subtext1 hover:bg-surface0 disabled:opacity-40"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${generatingMessage ? 'animate-spin' : ''}`} />
+                    다시 생성
+                  </button>
+                  <button
+                    onClick={() => void commit()}
+                    disabled={!canCommit || busy || generatingMessage}
+                    className="flex min-h-8 items-center justify-center gap-1.5 rounded-md bg-blue px-3 py-1.5 text-[12px] font-semibold text-crust hover:bg-sky disabled:cursor-not-allowed disabled:bg-surface1 disabled:text-overlay1"
+                  >
+                    {committing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCommitHorizontal className="h-3.5 w-3.5" />}
+                    커밋
+                  </button>
+                </div>
               </div>
             </div>
           )}

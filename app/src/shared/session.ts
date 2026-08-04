@@ -111,6 +111,8 @@ export interface DetectedRunner {
   /** wsl 인 경우 배포판 이름 */
   distro?: string
   executable: string
+  /** 실행 파일 뒤, CLI 인자 앞에 붙일 고정 인자. custom/test runner가 사용한다. */
+  executableArgs?: string[]
   /** 이 러너가 CLAUDE.md 를 읽는 홈. WSL 은 UNC 경로로 준다. */
   home?: string
   version?: string
@@ -349,6 +351,14 @@ export interface WorktreeMergeResult {
   ok: boolean
   message: string
   status?: WorktreeStatus
+}
+
+/** worktree 폴더와 안전하게 삭제 가능한 작업 브랜치의 정리 결과 */
+export interface WorktreeCleanupResult {
+  ok: boolean
+  message: string
+  /** 작업 브랜치까지 삭제했는지. 미병합 브랜치는 보존한다. */
+  branchRemoved?: boolean
 }
 
 /** worktree 안의 미커밋 변경을 작업 브랜치에 커밋한 결과 */

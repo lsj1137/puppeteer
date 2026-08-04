@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { macNotificationArgs } from './notify'
+import { APP_USER_MODEL_ID, macNotificationArgs } from './notify'
+
+it('uses the same Windows AppUserModelId as electron-builder', () => {
+  expect(APP_USER_MODEL_ID).toBe('com.lsj1137.puppeteer')
+})
 
 describe('macNotificationArgs', () => {
   it('passes title and body as osascript argv values', () => {

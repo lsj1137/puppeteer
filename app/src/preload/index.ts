@@ -20,6 +20,7 @@ import type {
   StoredProject,
   StoredSession,
   WorktreeCommitResult,
+  WorktreeCleanupResult,
   WorktreeConflictFile,
   WorktreeConflictResolverRequest,
   WorktreeMergeResult,
@@ -28,6 +29,7 @@ import type {
   WorktreeResolvedFile,
   WorktreeStatus,
 } from '@shared/session'
+import type { AppUpdateState } from '@shared/app-update'
 
 export interface SessionEventEnvelope {
   sessionId: string
@@ -50,6 +52,16 @@ export interface StartSessionArgs {
 }
 
 const api = {
+  appUpdateState: (): Promise<AppUpdateState> => ipcRenderer.invoke('app-update:state'),
+  checkAppUpdate: (): Promise<AppUpdateState> => ipcRenderer.invoke('app-update:check'),
+  downloadAppUpdate: (): Promise<AppUpdateState> => ipcRenderer.invoke('app-update:download'),
+  installAppUpdate: (): Promise<void> => ipcRenderer.invoke('app-update:install'),
+  onAppUpdateState: (cb: (state: AppUpdateState) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, state: AppUpdateState): void => cb(state)
+    ipcRenderer.on('app-update:state', listener)
+    return () => ipcRenderer.off('app-update:state', listener)
+  },
+
   detectRunners: (): Promise<DetectedRunner[]> => ipcRenderer.invoke('runner:detect'),
 
   pickProject: (): Promise<string | undefined> => ipcRenderer.invoke('project:pick'),
@@ -96,7 +108,7 @@ const api = {
     name: string,
     opts: { tools?: string[]; model?: string | null },
   ): Promise<AgentDef | undefined> => ipcRenderer.invoke('agent:applyUpdate', name, opts),
-  dropWorktree: (sessionId: string, force: boolean): Promise<boolean> =>
+  dropWorktree: (sessionId: string, force: boolean): Promise<WorktreeCleanupResult> =>
     ipcRenderer.invoke('session:dropWorktree', sessionId, force),
   worktreeStatus: (sessionId: string): Promise<WorktreeStatus | undefined> =>
     ipcRenderer.invoke('session:worktreeStatus', sessionId),

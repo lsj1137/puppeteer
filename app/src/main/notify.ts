@@ -15,11 +15,14 @@ import type { ApprovalRequest, SessionStatus } from '@shared/session'
 let enabled = true
 let getWindow: () => BrowserWindow | undefined = () => undefined
 
+/** electron-builder의 package.json build.appId와 반드시 같아야 한다. */
+export const APP_USER_MODEL_ID = 'com.lsj1137.puppeteer'
+
 export function initNotifications(win: () => BrowserWindow | undefined): void {
   getWindow = win
   // Windows 는 AppUserModelId 가 없으면 알림이 조용히 무시된다.
   // 개발 중에는 electron.exe 가 잡히므로 명시적으로 지정한다.
-  if (process.platform === 'win32') app.setAppUserModelId('com.puppeteer.workspace')
+  if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID)
 }
 
 export function setNotifyEnabled(v: boolean): void {

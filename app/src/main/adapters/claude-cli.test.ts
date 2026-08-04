@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { spawnSync } from 'node:child_process'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { DetectedRunner } from '@shared/session'
-import { buildClaudeArgs, buildRunnerCommand } from './claude-cli'
+import {
+  buildClaudeArgs,
+  buildRunnerCommand,
+  escapeWindowsCmdArgument,
+} from './claude-cli'
 
 function runner(overrides: Partial<DetectedRunner> = {}): DetectedRunner {
   return {
@@ -92,7 +100,10 @@ describe('buildRunnerCommand', () => {
   })
 
   it('wraps Windows native npm shims with cmd.exe on Windows hosts', () => {
-    const cliArgs = buildClaudeArgs({ prompt: 'hello' })
+    const cliArgs = buildClaudeArgs({
+      prompt: '한글 요청 & "quoted"',
+      hookCommand: 'powershell approve.ps1',
+    })
     const command = buildRunnerCommand(
       runner({
         id: 'windows-native:claude-cli',
@@ -104,9 +115,72 @@ describe('buildRunnerCommand', () => {
       'win32',
     )
 
+    expect(command.command.toLowerCase()).toMatch(/cmd\.exe$/)
+    expect(command.args.slice(0, 3)).toEqual(['/d', '/s', '/c'])
+    expect(command.windowsVerbatimArguments).toBe(true)
+    expect(command.args[3]).toContain('claude.cmd')
+    expect(command.args[3]).toContain(escapeWindowsCmdArgument('한글 요청 & "quoted"'))
+    const settings = cliArgs[cliArgs.indexOf('--settings') + 1]
+    expect(settings).toContain('Bash|PowerShell|Write|Edit|NotebookEdit')
+    expect(command.args[3]).toContain(escapeWindowsCmdArgument(settings))
+  })
+
+  it('escapes pipes, quotes, spaces, and Korean text before cmd shim parsing', () => {
+    expect(escapeWindowsCmdArgument('{"matcher":"Bash|Edit"}')).toBe(
+      '^^^"{\\^^^"matcher\\^^^":\\^^^"Bash^^^|Edit\\^^^"}^^^"',
+    )
+    expect(escapeWindowsCmdArgument('한글 & echo "ok"')).toContain('한글^^^ ^^^&')
+    expect(escapeWindowsCmdArgument('한글 & echo "ok"')).toContain('\\^^^"ok\\^^^"')
+  })
+
+  it.runIf(process.platform === 'win32')(
+    'preserves native .cmd arguments through a real cmd.exe round trip',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'puppeteer cmd regression '))
+      try {
+        const shim = join(dir, 'fake-cli.cmd')
+        writeFileSync(
+          join(dir, 'capture.mjs'),
+          'process.stdout.write(JSON.stringify(process.argv.slice(2)))',
+        )
+        writeFileSync(shim, '@echo off\r\nnode "%~dp0capture.mjs" %*\r\n')
+        const expected = [
+          '--settings',
+          '{"matcher":"Bash|PowerShell|Write|Edit"}',
+          '--prompt',
+          '한글 요청 & "quoted"',
+        ]
+        const command = buildRunnerCommand(
+          runner({ kind: 'windows-native', executable: shim }),
+          dir,
+          expected,
+          'win32',
+        )
+        const result = spawnSync(command.command, command.args, {
+          cwd: dir,
+          encoding: 'utf8',
+          windowsVerbatimArguments: command.windowsVerbatimArguments,
+        })
+
+        expect(result.status, result.stderr).toBe(0)
+        expect(JSON.parse(result.stdout)).toEqual(expected)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it('places fixed executable args before CLI args without a shell', () => {
+    const command = buildRunnerCommand(
+      runner({ executable: 'C:\\Program Files\\nodejs\\node.exe', executableArgs: ['fake-cli.mjs'] }),
+      'C:\\repo',
+      ['--settings', '{"matcher":"Bash|Edit"}'],
+      'win32',
+    )
+
     expect(command).toEqual({
-      command: 'cmd.exe',
-      args: ['/c', 'C:\\Users\\me\\AppData\\Roaming\\npm\\claude.cmd', ...cliArgs],
+      command: 'C:\\Program Files\\nodejs\\node.exe',
+      args: ['fake-cli.mjs', '--settings', '{"matcher":"Bash|Edit"}'],
     })
   })
 })

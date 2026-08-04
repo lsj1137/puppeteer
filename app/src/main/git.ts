@@ -5,6 +5,7 @@ import { promisify } from 'node:util'
 import type {
   GitSnapshot,
   WorktreeCommitResult,
+  WorktreeCleanupResult,
   WorktreeConflictFile,
   WorktreeResolvedFile,
   SessionWorktree,
@@ -166,12 +167,31 @@ export async function addWorktree(
 }
 
 /** 세션이 끝나거나 지워질 때 정리. 작업 내용이 남아 있으면 지우지 않는다. */
-export async function removeWorktree(cwd: string, dir: string, force = false): Promise<boolean> {
+export async function removeWorktree(
+  cwd: string,
+  dir: string,
+  branch?: string,
+  force = false,
+): Promise<WorktreeCleanupResult> {
   try {
-    await git(cwd, ['worktree', 'remove', ...(force ? ['--force'] : []), dir])
-    return true
+    await gitWithError(cwd, ['worktree', 'remove', ...(force ? ['--force'] : []), dir])
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : 'Git이 worktree를 제거하지 못했습니다.'
+    return { ok: false, message: `worktree 폴더를 정리하지 못했습니다: ${detail}` }
+  }
+
+  if (!branch) return { ok: true, message: 'worktree 폴더를 정리했습니다.' }
+
+  try {
+    // -d는 원본에 병합됐거나 커밋이 없는 브랜치만 지운다. 미병합 작업은 보존한다.
+    await gitWithError(cwd, ['branch', '-d', branch])
+    return { ok: true, branchRemoved: true, message: 'worktree 폴더와 작업 브랜치를 정리했습니다.' }
   } catch {
-    return false
+    return {
+      ok: true,
+      branchRemoved: false,
+      message: 'worktree 폴더를 정리했습니다. 미병합 작업이 있는 브랜치는 보존했습니다.',
+    }
   }
 }
 
@@ -330,6 +350,7 @@ export async function commitWorktree(
 ): Promise<WorktreeCommitResult> {
   const title = message.trim()
   if (!title) return { ok: false, message: '커밋 메시지를 입력해 주세요.', status: await worktreeStatus(wt) }
+  const subject = title.split(/\r?\n/, 1)[0]
 
   const before = await worktreeStatus(wt)
   if (!before.dirty) {
@@ -345,7 +366,7 @@ export async function commitWorktree(
     await gitWithError(wt.path, ['commit', '-m', title])
     return {
       ok: true,
-      message: `worktree 변경을 커밋했습니다: ${title}`,
+      message: `worktree 변경을 커밋했습니다: ${subject}`,
       status: await worktreeStatus(wt),
     }
   } catch (error) {
