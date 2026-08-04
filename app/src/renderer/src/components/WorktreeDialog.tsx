@@ -207,11 +207,11 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
     setDropping(true)
     setMessage(undefined)
     try {
-      const ok = await window.api.dropWorktree(sessionId, false)
-      if (!ok) {
+      const result = await window.api.dropWorktree(sessionId, false)
+      if (!result.ok) {
         setMessage({
           ok: false,
-          text: 'worktree를 정리하지 못했습니다. 커밋되지 않은 변경이 남아 있는지 확인해 주세요.',
+          text: result.message,
         })
         await reload()
         return
@@ -344,8 +344,8 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
               <div className="min-w-0 leading-relaxed">
                 <div>원본 브랜치에 커밋이 반영되었습니다.</div>
                 <div className="mt-1 text-green/80">
-                  worktree 정리 후 작업 브랜치가 필요 없으면 터미널에서{' '}
-                  <span className="font-mono">git branch -d {worktree.branch}</span>
+                  worktree 정리 시 병합됐거나 커밋이 없는 작업 브랜치는 함께 삭제합니다. 미병합
+                  커밋이 있는 브랜치는 작업 보호를 위해 남겨 둡니다.
                 </div>
               </div>
             </div>

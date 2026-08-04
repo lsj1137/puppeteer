@@ -13,6 +13,7 @@ import type {
   SessionStatus,
   SessionWorktree,
   WorktreeCommitResult,
+  WorktreeCleanupResult,
   WorktreeConflictFile,
   WorktreeMergeResult,
   WorktreeRebaseResult,
@@ -266,8 +267,9 @@ export class SessionManager {
       const status = await inspectWorktree(wt)
       const blocked = sessionDeletionBlockReason(dirty, status)
       if (blocked) return { ok: false, message: blocked }
-      if (!(await removeWorktree(wt.origin, wt.path))) {
-        return { ok: false, message: 'worktree 폴더를 정리하지 못해 세션 삭제를 중단했습니다.' }
+      const cleanup = await removeWorktree(wt.origin, wt.path, wt.branch)
+      if (!cleanup.ok) {
+        return { ok: false, message: `${cleanup.message} 세션 삭제를 중단했습니다.` }
       }
     }
 
@@ -281,12 +283,18 @@ export class SessionManager {
   }
 
   /** worktree 를 사용자가 직접 정리할 때 */
-  async dropWorktree(sessionId: string, force: boolean): Promise<boolean> {
+  async dropWorktree(sessionId: string, force: boolean): Promise<WorktreeCleanupResult> {
     const wt = db.getSession(sessionId)?.worktree
-    if (!wt) return false
-    const ok = await removeWorktree(wt.origin, wt.path, force)
-    if (ok) db.setWorktree(sessionId, null)
-    return ok
+    if (!wt) return { ok: false, message: '이 세션에 연결된 worktree가 없습니다.' }
+    if (this.sessions.has(sessionId)) {
+      return {
+        ok: false,
+        message: '세션이 실행 중이라 worktree를 정리할 수 없습니다. 작업을 중지하거나 완료한 뒤 다시 시도해 주세요.',
+      }
+    }
+    const result = await removeWorktree(wt.origin, wt.path, wt.branch, force)
+    if (result.ok) db.setWorktree(sessionId, null)
+    return result
   }
 
   async worktreeStatus(sessionId: string): Promise<WorktreeStatus | undefined> {

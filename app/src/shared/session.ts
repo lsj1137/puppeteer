@@ -353,6 +353,14 @@ export interface WorktreeMergeResult {
   status?: WorktreeStatus
 }
 
+/** worktree 폴더와 안전하게 삭제 가능한 작업 브랜치의 정리 결과 */
+export interface WorktreeCleanupResult {
+  ok: boolean
+  message: string
+  /** 작업 브랜치까지 삭제했는지. 미병합 브랜치는 보존한다. */
+  branchRemoved?: boolean
+}
+
 /** worktree 안의 미커밋 변경을 작업 브랜치에 커밋한 결과 */
 export interface WorktreeCommitResult {
   ok: boolean

@@ -9,6 +9,7 @@ import {
   abortWorktreeRebase,
   commitWorktree,
   mergeWorktree,
+  removeWorktree,
   rebaseWorktree,
   resolveWorktreeConflicts,
   worktreeConflictFile,
@@ -57,6 +58,26 @@ afterEach(async () => {
 })
 
 describe('worktree merge', () => {
+  it('removes a clean worktree and its already-merged branch', async () => {
+    const { origin, worktreePath, wt } = await fixture()
+
+    const result = await removeWorktree(origin, worktreePath, wt.branch)
+
+    expect(result).toMatchObject({ ok: true, branchRemoved: true })
+    await expect(git(origin, ['show-ref', '--verify', `refs/heads/${wt.branch}`])).rejects.toThrow()
+  })
+
+  it('returns the Git reason when an uncommitted worktree cannot be removed', async () => {
+    const { origin, worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'draft.txt'), 'draft\n')
+
+    const result = await removeWorktree(origin, worktreePath, wt.branch)
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('worktree 폴더를 정리하지 못했습니다')
+    expect(result.message).toMatch(/modified|untracked/i)
+  })
+
   it('distinguishes an untouched worktree from a merged one', async () => {
     const { wt } = await fixture()
 

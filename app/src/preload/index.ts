@@ -20,6 +20,7 @@ import type {
   StoredProject,
   StoredSession,
   WorktreeCommitResult,
+  WorktreeCleanupResult,
   WorktreeConflictFile,
   WorktreeConflictResolverRequest,
   WorktreeMergeResult,
@@ -107,7 +108,7 @@ const api = {
     name: string,
     opts: { tools?: string[]; model?: string | null },
   ): Promise<AgentDef | undefined> => ipcRenderer.invoke('agent:applyUpdate', name, opts),
-  dropWorktree: (sessionId: string, force: boolean): Promise<boolean> =>
+  dropWorktree: (sessionId: string, force: boolean): Promise<WorktreeCleanupResult> =>
     ipcRenderer.invoke('session:dropWorktree', sessionId, force),
   worktreeStatus: (sessionId: string): Promise<WorktreeStatus | undefined> =>
     ipcRenderer.invoke('session:worktreeStatus', sessionId),
