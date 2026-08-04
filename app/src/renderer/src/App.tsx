@@ -3,13 +3,10 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
-  CircleStop,
-  FileCode2,
   Flag,
   FolderPlus,
   Brain,
   Bot,
-  Gauge,
   PanelRightOpen,
   Pencil,
   Plus,
@@ -24,12 +21,10 @@ import {
   ImagePlus,
   LayoutDashboard,
   Moon,
-  PencilLine,
   Paperclip,
   Settings2,
   Sun,
   GitBranch,
-  FileDiff,
   Trash2,
   X,
 } from 'lucide-react'
@@ -44,8 +39,13 @@ import MemoryScreen from './components/MemoryScreen'
 import Settings from './components/Settings'
 import Checkpoint from './components/Checkpoint'
 import WorktreeDialog from './components/WorktreeDialog'
-import PromptInput, { type PromptInputHandle } from './components/PromptInput'
-import ToolEntry from './components/ToolEntry'
+import type { PromptInputHandle } from './components/PromptInput'
+import SessionComposer from './components/SessionComposer'
+import WorkspaceLists from './components/WorkspaceLists'
+import UsageSummary from './components/UsageSummary'
+import ConversationEntries from './components/ConversationEntries'
+import ApprovalCard from './components/ApprovalCard'
+import ArtifactSidebar from './components/ArtifactSidebar'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -61,20 +61,18 @@ import type {
   StoredProject,
   StoredSession,
 } from '@shared/session'
-import Markdown from './components/Markdown'
-import ArtifactPanel, { artifactTitle, lineCount } from './components/ArtifactPanel'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import { approvalNavigationPath } from './lib/navigation'
 import {
   EMPTY_SESSION_VIEW,
   baseName,
   clampArtifactWidth,
-  formatTokens,
   splitSessionTabs,
   timeLabel,
 } from './lib/session-view'
 import { useSessionViews } from './hooks/use-session-views'
 import { useSessionRunner } from './hooks/use-session-runner'
+import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
@@ -91,19 +89,11 @@ const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   'auth-required': { label: '로그인 필요', color: 'text-yellow' },
 }
 
-const RISK: Record<string, { ring: string; text: string; label: string }> = {
-  high: { ring: 'border-red/50 bg-red/5', text: 'text-red', label: '높음' },
-  med: { ring: 'border-peach/50 bg-peach/5', text: 'text-peach', label: '보통' },
-  low: { ring: 'border-surface1 bg-surface0/40', text: 'text-subtext0', label: '낮음' },
-}
-
 const PROVIDER_LABEL: Record<string, string> = {
   'claude-cli': 'Claude',
   'codex-cli': 'Codex',
   'claude-agent-sdk': 'Claude (SDK)',
 }
-const PROVIDER_ORDER = ['claude-cli', 'codex-cli', 'claude-agent-sdk']
-
 const runnerLabel = (r: DetectedRunner): string =>
   runnerEnvironmentLabel(r) + (r.version ? ` · ${r.version}` : '')
 
@@ -196,27 +186,6 @@ export default function App() {
     restoreSessionView,
   } = useSessionViews(active, refresh)
 
-  /** 패널 왼쪽 손잡이를 끌어 폭을 조절한다. 창 오른쪽 끝에서 마우스까지의 거리가 곧 폭이다. */
-  function startResize(e: React.PointerEvent): void {
-    e.preventDefault()
-    const move = (ev: PointerEvent): void =>
-      setArtifactW(clampArtifactWidth(window.innerWidth - ev.clientX))
-    const up = (): void => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('pointerup', up)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-      setArtifactW((w) => {
-        localStorage.setItem('ws.artifactW', String(w))
-        return w
-      })
-    }
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }
-
   function toggleArtifacts(): void {
     setArtifactsOpen((v) => {
       localStorage.setItem('ws.artifacts', v ? 'closed' : 'open')
@@ -228,6 +197,7 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const tabBarRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<PromptInputHandle>(null)
+  const focusPrompt = useCallback(() => taRef.current?.focus(), [])
 
   const view = (activeSession && views[activeSession]) || EMPTY_SESSION_VIEW
   const activeProject = projects.find((p) => p.path === active)
@@ -288,6 +258,38 @@ export default function App() {
     setPendingPrompt: setPendingPick,
     setProjects,
     setSelectedArtifact,
+  })
+  const {
+    dropProject,
+    jumpTo,
+    newSession,
+    openSession,
+    pickFolder,
+    removeSession,
+    selectProject,
+  } = useWorkspaceNavigation({
+    activeProjectPath: active,
+    activeSessionId: activeSession,
+    sessions,
+    views,
+    forgetSessionView,
+    refresh,
+    restoreSessionView,
+    focusPrompt,
+    setActiveProjectPath: setActive,
+    setActiveSessionId: setActiveSession,
+    setAgentName,
+    setAttachments,
+    setConfirmDrop,
+    setConfirmDelete: setConfirmDelSession,
+    setDeleteError: setSessionDeleteError,
+    setNextRunnerId,
+    setPendingPrompt: setPendingPick,
+    setProjects,
+    setScreen,
+    setScrolled,
+    setSelectedArtifact,
+    setSessions,
   })
 
   const myApprovals = approvals.filter((a) => a.sessionId === activeSession)
@@ -364,11 +366,6 @@ export default function App() {
     localStorage.setItem('ws.notify', notify ? 'on' : 'off')
     void window.api.setNotifyEnabled(notify)
   }, [notify])
-
-  // 알림을 눌러 들어오면 그 세션을 연다
-  useEffect(() => {
-    return window.api.onNotifyJump(({ sessionId, cwd }) => void jumpTo(sessionId, cwd))
-  }, [active, sessions, views])
 
   useLayoutEffect(() => {
     const el = tabBarRef.current
@@ -500,17 +497,6 @@ export default function App() {
     setApprovals((prev) => prev.filter((a) => a.id !== id))
   }
 
-  function selectProject(path: string): void {
-    setScreen('project')
-    setPendingPick(undefined)
-    setNextRunnerId(undefined)
-    setScrolled(false)
-    setActive(path)
-    setActiveSession(undefined)
-    setSelectedArtifact(undefined)
-    setAttachments([])
-  }
-
   /**
    * 홈에서 라우팅한 지시를 실제로 실행한다.
    * 실행 환경은 여기서 임의로 정하지 않는다 — 프로젝트에 아직 없으면
@@ -557,70 +543,6 @@ export default function App() {
     setNextRunnerId(runnerId)
     setAgentName(agent)
     await startFreshSession({ runnerId, cwd: path, prompt: body, agentName: agent })
-  }
-
-  /** 세션 열기. 이미 메모리에 있으면 그대로, 아니면 DB 에서 복원한다. */
-  async function openSession(id: string, candidates = sessions): Promise<void> {
-    const target = candidates.find((session) => session.id === id)
-    setScreen('project')
-    setPendingPick(undefined)
-    setNextRunnerId(target?.runnerId ?? undefined)
-    setScrolled(false)
-    setActiveSession(id)
-    setAgentName(target?.agentName ?? undefined)
-    setSelectedArtifact(undefined)
-    if (views[id]) return
-    await restoreSessionView(id)
-  }
-
-  /** 다른 프로젝트의 세션으로 이동 */
-  async function jumpTo(sessionId: string, projectPath: string): Promise<void> {
-    let targetSessions = sessions
-    if (projectPath !== active) {
-      setActive(projectPath)
-      targetSessions = await window.api.listSessions(projectPath)
-      setSessions(targetSessions)
-    }
-    await openSession(sessionId, targetSessions)
-  }
-
-  async function removeSession(id: string): Promise<void> {
-    setSessionDeleteError(undefined)
-    const result = await window.api.deleteSession(id)
-    if (!result.ok) {
-      setSessionDeleteError(result.message ?? '세션을 삭제하지 못했습니다.')
-      return
-    }
-    setConfirmDelSession(undefined)
-    forgetSessionView(id)
-    if (activeSession === id) {
-      setActiveSession(undefined)
-      setSelectedArtifact(undefined)
-    }
-    void refresh(active)
-  }
-
-  function newSession(): void {
-    setScrolled(false)
-    setPendingPick(undefined)
-    setActiveSession(undefined)
-    setSelectedArtifact(undefined)
-    taRef.current?.focus()
-  }
-
-  async function pickFolder(): Promise<void> {
-    const p = await window.api.pickProject()
-    if (!p) return
-    setProjects(await window.api.listProjects())
-    selectProject(p)
-  }
-
-  async function dropProject(path: string): Promise<void> {
-    setConfirmDrop(undefined)
-    await window.api.removeProject(path)
-    const next = await window.api.listProjects()
-    setProjects(next)
-    if (path === active) selectProject(next[0]?.path ?? '')
   }
 
   const commands: Command[] = [
@@ -821,166 +743,25 @@ export default function App() {
           </button>
         </div>
 
-        {/* 중앙 승인 — 다른 프로젝트/세션의 요청도 모두 모인다 */}
-        {approvals.length > 0 && (
-          <section className="rounded-md border border-peach/40 bg-peach/5 p-2">
-            <div className="mb-1.5 flex items-center gap-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-peach">
-              <ShieldAlert className="h-3.5 w-3.5" />
-              승인 대기 {approvals.length}
-            </div>
-            {approvals.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => void jumpTo(a.sessionId, approvalNavigationPath(a))}
-                className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] hover:bg-surface0"
-              >
-                <span className="font-mono text-subtext1">{a.tool}</span>
-                <span className="flex-1 truncate text-overlay1">
-                  {baseName(approvalNavigationPath(a))}
-                </span>
-                {a.sessionId === activeSession && (
-                  <span className="shrink-0 text-[11px] text-peach">현재</span>
-                )}
-              </button>
-            ))}
-          </section>
-        )}
+        <WorkspaceLists
+          activeProjectPath={active}
+          activeSessionId={activeSession}
+          approvals={approvals}
+          projects={projects}
+          runners={runners}
+          running={running}
+          onDropProject={setConfirmDrop}
+          onJump={jumpTo}
+          onPickFolder={pickFolder}
+          onSelectProject={selectProject}
+        />
 
-        {/* 실행 중 — 프로젝트를 넘어 전체 */}
-        {running.length > 0 && (
-          <section>
-            <div className="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-              실행 중 {running.length}
-            </div>
-            {running.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => void jumpTo(r.id, r.projectPath)}
-                className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-[12px] ${
-                  r.id === activeSession ? 'bg-surface0' : 'hover:bg-surface0/50'
-                }`}
-              >
-                <Loader2 className="h-3 w-3 shrink-0 animate-spin text-green" />
-                <span className="flex-1 truncate text-subtext1">{r.title}</span>
-                <span className="shrink-0 text-overlay1">{baseName(r.projectPath)}</span>
-              </button>
-            ))}
-          </section>
-        )}
-
-        <section>
-          <div className="mb-2 flex items-center justify-between px-1">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-overlay1">
-              프로젝트
-            </span>
-            <button
-              onClick={() => void pickFolder()}
-              className="rounded p-1 text-subtext0 hover:bg-surface0 hover:text-text"
-              title="폴더 추가"
-            >
-              <FolderPlus className="h-4 w-4" />
-            </button>
-          </div>
-
-          {projects.length === 0 && (
-            <div className="px-1 text-[12px] text-overlay1">＋ 로 폴더를 추가하세요</div>
-          )}
-
-          <div className="space-y-0.5">
-            {projects.map((p) => {
-              const r = runners.find((x) => x.id === p.runnerId)
-              const on = p.path === active
-              const live = running.filter((x) => x.projectPath === p.path).length
-              return (
-                <div
-                  key={p.path}
-                  onClick={() => selectProject(p.path)}
-                  className={`group cursor-pointer rounded-md px-2 py-1.5 ${
-                    on ? 'bg-surface0' : 'hover:bg-surface0/50'
-                  }`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span
-                      className={`flex-1 truncate text-sm ${on ? 'text-text' : 'text-subtext1'}`}
-                      title={p.path}
-                    >
-                      {baseName(p.path)}
-                    </span>
-                    {live > 0 && (
-                      <span className="shrink-0 rounded bg-green/20 px-1 text-[11px] text-green">
-                        {live}
-                      </span>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setConfirmDrop(p.path)
-                      }}
-                      className="hidden rounded p-0.5 text-overlay1 hover:bg-red/20 hover:text-red group-hover:block"
-                      title="목록에서 제거 (폴더는 삭제되지 않음)"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-1 text-[11px] text-overlay1">
-                    {r ? (
-                      <>
-                        <RunnerIcon r={r} className="h-3 w-3" />
-                        {runnerLabel(r)}
-                      </>
-                    ) : (
-                      '실행 환경 미지정'
-                    )}
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </section>
-
-        <section className="mt-auto space-y-1.5 border-t border-surface0 px-1 pt-2.5">
-          <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-            <Gauge className="h-3.5 w-3.5" />
-            사용량
-          </div>
-
-          {limit && (
-            <>
-              <div className="h-1.5 overflow-hidden rounded-full bg-surface0">
-                <div
-                  className={`h-full rounded-full transition-all ${
-                    limit.ratio > 0.85 ? 'bg-peach' : 'bg-green'
-                  }`}
-                  style={{ width: `${Math.round(limit.ratio * 100)}%` }}
-                />
-              </div>
-              <div className="flex items-center justify-between text-[11px] text-overlay1">
-                <span>{limit.label} 한도</span>
-                <span>{limit.remain} 남음</span>
-              </div>
-            </>
-          )}
-
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-overlay1">오늘</span>
-            <span className="font-mono tabular-nums text-subtext1">${cost.today.toFixed(3)}</span>
-          </div>
-          <div className="flex items-center justify-between text-[11px]">
-            <span className="text-overlay1">이번 달</span>
-            <span className="font-mono tabular-nums text-subtext1">${cost.month.toFixed(2)}</span>
-          </div>
-          {(view.cost > 0 || view.tokens > 0) && (
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-overlay1">현재 세션</span>
-              {/* Codex 는 비용을 주지 않는다. 단가를 지어내 환산하느니 토큰을 그대로 보여준다. */}
-              <span className="font-mono tabular-nums text-text" title={`${view.tokens.toLocaleString()} 토큰`}>
-                {view.cost > 0
-                  ? `$${view.cost.toFixed(4)}`
-                  : `${formatTokens(view.tokens)} 토큰`}
-              </span>
-            </div>
-          )}
-        </section>
+        <UsageSummary
+          cost={cost}
+          limit={limit}
+          sessionCost={view.cost}
+          sessionTokens={view.tokens}
+        />
       </aside>
 
       {/* ── Session Tabs ─────────────────────────── */}
@@ -1299,99 +1080,11 @@ export default function App() {
         )}
 
         <div className="space-y-2.5">
-          {view.conflicts.map((c) => (
-            <div
-              key={c.path}
-              className="flex gap-2 rounded-lg border border-yellow/50 bg-yellow/10 p-3 text-[12px]"
-            >
-              <AlertTriangle className="h-4 w-4 shrink-0 text-yellow" />
-              <div>
-                <div className="font-semibold text-text">동시 수정 감지</div>
-                <div className="mt-0.5 text-subtext1">
-                  <span className="font-mono">{c.path}</span> 를 다른 세션(
-                  <span className="text-subtext0">{c.otherTitle}</span>)도 수정했습니다. 한쪽을
-                  중지하거나 결과를 확인하세요.
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {view.entries.map((e) =>
-            e.kind === 'user' ? (
-              <div
-                key={e.id}
-                className="rounded-lg bg-surface0/50 px-3.5 py-2.5"
-              >
-                <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-                  나
-                </div>
-                <div className="whitespace-pre-wrap text-sm text-text">{e.text}</div>
-              </div>
-            ) : e.kind === 'tool' ? (
-              <ToolEntry key={e.id} entry={e} />
-            ) : e.kind === 'notice' ? (
-              <div
-                key={e.id}
-                className={`flex gap-2 rounded-lg border p-3 text-[12px] ${
-                  e.level === 'error'
-                    ? 'border-red/50 bg-red/5 text-red'
-                    : e.level === 'warning'
-                      ? 'border-yellow/50 bg-yellow/10 text-yellow'
-                      : 'border-sapphire/40 bg-sapphire/10 text-sapphire'
-                }`}
-              >
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                <div className="min-w-0">
-                  <div className="font-semibold text-text">{e.title}</div>
-                  <div className="mt-0.5 whitespace-pre-wrap text-subtext1">{e.text}</div>
-                </div>
-              </div>
-            ) : e.isError ? (
-              <div
-                key={e.id}
-                className="flex gap-2 rounded-lg border border-red/50 bg-red/5 p-3 text-[12px] text-red"
-              >
-                <AlertTriangle className="h-4 w-4 shrink-0" />
-                <div>
-                  <div className="font-semibold">API 오류</div>
-                  <div className="mt-0.5 whitespace-pre-wrap text-red/90">{view.statusReason}</div>
-                  <div className="mt-1.5 text-[11px] text-overlay1">
-                    서버 측 일시 오류입니다. 잠시 후 같은 지시를 다시 보내면 됩니다.
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div key={e.id} className="px-0.5">
-                {e.segments.map((seg, i) =>
-                  seg.type === 'md' ? (
-                    <Markdown key={i}>{seg.text}</Markdown>
-                  ) : (
-                    (() => {
-                      const a = view.artifacts.find((x) => x.id === seg.artifactId)
-                      if (!a) return null
-                      return (
-                        <button
-                          key={i}
-                          onClick={() => setSelectedArtifact(a.id)}
-                          className={`my-2 flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-[12px] ${
-                            selectedArtifact === a.id
-                              ? 'bg-sapphire/20'
-                              : 'bg-surface0/60 hover:bg-surface0'
-                          }`}
-                        >
-                          <FileCode2 className="h-4 w-4 shrink-0 text-sapphire" />
-                          <span className="flex-1 truncate text-subtext1">{artifactTitle(a)}</span>
-                          <span className="shrink-0 font-mono text-[11px] text-overlay1">
-                            {lineCount(a.content)}L
-                          </span>
-                        </button>
-                      )
-                    })()
-                  ),
-                )}
-              </div>
-            ),
-          )}
+          <ConversationEntries
+            view={view}
+            selectedArtifact={selectedArtifact}
+            onSelectArtifact={setSelectedArtifact}
+          />
 
           {busy && (
             <div className="flex items-center gap-2 px-0.5 text-[12px] text-subtext0">
@@ -1400,58 +1093,9 @@ export default function App() {
             </div>
           )}
 
-          {myApprovals.map((a) => {
-            const r = RISK[a.risk] ?? RISK.low
-            return (
-              <div key={a.id} className={`rounded-lg border p-3.5 ${r.ring}`}>
-                <div className="mb-2.5 flex flex-wrap items-center gap-2">
-                  <ShieldAlert className={`h-4 w-4 ${r.text}`} />
-                  <span className="text-sm font-semibold text-text">승인 요청</span>
-                  <span className="rounded bg-surface0 px-1.5 py-0.5 font-mono text-[12px] text-subtext1">
-                    {a.tool}
-                  </span>
-                  <span className={`text-[11px] ${r.text}`}>위험도 {r.label}</span>
-                  {a.pending && (
-                    <span className="rounded bg-yellow/20 px-1.5 py-0.5 text-[11px] text-yellow">
-                      보류됨
-                    </span>
-                  )}
-                </div>
-
-                <pre className="mb-2 max-h-40 overflow-auto rounded-md bg-crust p-2.5 font-mono text-[12px] leading-relaxed text-subtext1">
-                  {JSON.stringify(a.input, null, 2)}
-                </pre>
-                <div className="mb-3 truncate text-[11px] text-overlay1">{a.cwd}</div>
-
-                {a.pending ? (
-                  <div className="text-[12px] text-yellow">
-                    응답 대기 시간이 지나 세션에는 보류로 통보했습니다.
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      onClick={() => decide(a.id, 'allow-once')}
-                      className="flex items-center gap-1.5 rounded-md bg-green/15 px-3 py-1.5 text-[12px] font-medium text-green hover:bg-green/25"
-                    >
-                      <Check className="h-3.5 w-3.5" /> 이번만 허용
-                    </button>
-                    <button
-                      onClick={() => decide(a.id, 'allow-session')}
-                      className="rounded-md border border-surface1 px-3 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
-                    >
-                      이 세션 동안 허용
-                    </button>
-                    <button
-                      onClick={() => decide(a.id, 'deny')}
-                      className="flex items-center gap-1.5 rounded-md bg-red/15 px-3 py-1.5 text-[12px] font-medium text-red hover:bg-red/25"
-                    >
-                      <X className="h-3.5 w-3.5" /> 거부
-                    </button>
-                  </div>
-                )}
-              </div>
-            )
-          })}
+          {myApprovals.map((approval) => (
+            <ApprovalCard key={approval.id} approval={approval} onDecide={decide} />
+          ))}
 
           {view.status === 'auth-required' && (
             <div className="rounded-lg border border-yellow/50 bg-yellow/5 p-3.5">
@@ -1482,191 +1126,39 @@ export default function App() {
       )}
 
       {/* ── Artifacts ────────────────────────────── */}
-      {!showHome && !artifactsOpen && (
-        <aside className="col-start-3 row-start-2 row-end-4 flex flex-col items-center gap-2 border-l border-surface0 bg-mantle py-2.5">
-          <button
-            onClick={toggleArtifacts}
-            title="Artifacts 펼치기"
-            className="rounded p-1.5 text-subtext0 hover:bg-surface0 hover:text-text"
-          >
-            <PanelRightOpen className="h-4 w-4" />
-          </button>
-          {view.artifacts.length > 0 && (
-            <span className="rounded bg-sapphire/20 px-1 text-[11px] text-sapphire">
-              {view.artifacts.length}
-            </span>
-          )}
-          {changes.length > 0 && (
-            <span className="rounded bg-peach/20 px-1 text-[11px] text-peach">{changes.length}</span>
-          )}
-        </aside>
-      )}
-
-      {!showHome && artifactsOpen && (
-      <aside className="relative col-start-3 row-start-2 row-end-4 flex min-h-0 flex-col overflow-hidden border-l border-surface0 bg-mantle">
-        <div
-          onPointerDown={startResize}
-          onDoubleClick={() => {
-            setArtifactW(380)
-            localStorage.setItem('ws.artifactW', '380')
-          }}
-          title="드래그로 폭 조절 · 더블클릭으로 초기화"
-          className="absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-lavender/40"
-        />
-        {(view.snapshot || changes.length > 0) && (
-          <div className="shrink-0 border-b border-surface0 px-2.5 pb-2.5 pt-2.5">
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-              <GitBranch className="h-3.5 w-3.5" />
-              Git
-            </div>
-            {view.snapshot && (
-              <div className="mb-2 flex items-center gap-1.5 pl-0.5 text-[11px]">
-                <span className="rounded bg-surface0 px-1.5 py-0.5 text-subtext1">
-                  {view.snapshot.branch}
-                </span>
-                <span className="font-mono text-overlay1">{view.snapshot.head}</span>
-              </div>
-            )}
-            {changes.length > 0 && (
-              <>
-                <div className="mb-1 text-[11px] text-overlay1">
-                  세션 시작 이후 변경 {changes.length}건
-                </div>
-                <div className="max-h-28 overflow-auto">
-                  {changes.map((c) => (
-                    <button
-                      key={c.path}
-                      onClick={() => void openDiff(c.path)}
-                      className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] hover:bg-surface0"
-                    >
-                      <span
-                        className={`shrink-0 font-mono text-[11px] font-bold ${
-                          c.status === '??' ? 'text-green' : c.status === 'D' ? 'text-red' : 'text-yellow'
-                        }`}
-                        title={
-                          c.status === '??' ? '새 파일' : c.status === 'D' ? '삭제' : '수정'
-                        }
-                      >
-                        {c.status === '??' ? '+' : c.status === 'D' ? '−' : '~'}
-                      </span>
-                      <span className="flex-1 truncate text-subtext1">{c.path}</span>
-                      <FileDiff className="h-3 w-3 shrink-0 text-overlay1" />
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-        <ArtifactPanel
-          artifacts={view.artifacts}
+      {!showHome && (
+        <ArtifactSidebar
+          open={artifactsOpen}
+          width={artifactW}
+          setWidth={setArtifactW}
+          view={view}
+          changes={changes}
           selectedId={selectedArtifact}
           onSelect={setSelectedArtifact}
-          onCollapse={toggleArtifacts}
+          onOpenDiff={openDiff}
+          onToggle={toggleArtifacts}
         />
-      </aside>
       )}
 
       {/* ── Prompt ───────────────────────────────── */}
       {!showHome && (
-      <div className="col-start-2 row-start-3 bg-mantle p-2.5">
-        {pendingPick !== undefined && !runnerLocked && (
-          <div className="mb-2.5 rounded-lg bg-surface0/60 p-3">
-            <div className="mb-2 text-[12px] text-subtext1">
-              이 프로젝트를 어디서 실행할까요?
-              <span className="ml-2 text-overlay1">한 번 정하면 기억합니다</span>
-            </div>
-            <div className="space-y-2">
-              {PROVIDER_ORDER.filter((p) => usableRunners.some((r) => r.provider === p)).map((p) => (
-                <div key={p}>
-                  <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-                    {PROVIDER_LABEL[p]}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {usableRunners
-                      .filter((r) => r.provider === p)
-                      .map((r) => (
-                        <button
-                          key={r.id}
-                          onClick={() => void chooseRunner(r.id)}
-                          className="flex items-center gap-2 rounded-md bg-surface0 px-3 py-2 text-left text-[12px] hover:bg-surface1"
-                        >
-                          <RunnerIcon r={r} className="h-4 w-4 text-sapphire" />
-                          <span>
-                            <span className="block text-subtext1">{runnerLabel(r)}</span>
-                            <span className="block text-[11px] text-overlay1">
-                              {r.installMethod}
-                            </span>
-                          </span>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              ))}
-              {usableRunners.length === 0 && (
-                <span className="text-[12px] text-yellow">실행 가능한 CLI를 찾지 못했습니다</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {attachments.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {attachments.map((a, i) => (
-              <div
-                key={a.path}
-                className="group relative h-16 w-16 overflow-hidden rounded-md"
-                title={a.name}
-              >
-                <img src={a.url} alt={a.name} className="h-full w-full object-cover" />
-                <button
-                  onClick={() => setAnnotating(i)}
-                  className="absolute bottom-0.5 left-0.5 hidden rounded bg-crust/80 p-0.5 text-lavender group-hover:block"
-                  title="주석 달기"
-                >
-                  <PencilLine className="h-3 w-3" />
-                </button>
-                <button
-                  onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
-                  className="absolute right-0.5 top-0.5 hidden rounded bg-crust/80 p-0.5 text-red group-hover:block"
-                  title="첨부 제거"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-end gap-2">
-          <label
-            title="이미지 첨부"
-            className="flex h-[42px] w-[42px] shrink-0 cursor-pointer items-center justify-center rounded-lg bg-surface0/60 text-subtext0 hover:bg-surface0 hover:text-text"
-          >
-            <ImagePlus className="h-4 w-4" />
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                if (e.target.files) void attachFiles(e.target.files)
-                e.target.value = ''
-              }}
-            />
-          </label>
-          <PromptInput ref={taRef} active={Boolean(active)} busy={busy} onSubmit={submit} />
-          {busy && activeSession && (
-            <button
-              onClick={() => void window.api.stopSession(activeSession)}
-              title="중지"
-              className="flex h-[42px] w-[42px] shrink-0 items-center justify-center rounded-lg bg-red/15 text-red hover:bg-red/25"
-            >
-              <CircleStop className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      </div>
+        <SessionComposer
+          ref={taRef}
+          active={Boolean(active)}
+          activeSessionId={activeSession}
+          attachments={attachments}
+          busy={busy}
+          runners={usableRunners}
+          showRunnerPicker={pendingPick !== undefined && !runnerLocked}
+          onAnnotate={setAnnotating}
+          onAttachFiles={attachFiles}
+          onChooseRunner={chooseRunner}
+          onRemoveAttachment={(index) =>
+            setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))
+          }
+          onStop={(sessionId) => window.api.stopSession(sessionId)}
+          onSubmit={submit}
+        />
       )}
 
       {confirmDrop && (

@@ -194,12 +194,13 @@ npm run typecheck   # 타입 검사
 npm test            # 단위 테스트
 npm run build       # 타입 검사 + 번들
 npm run smoke       # 빌드 후 실제 Electron 앱 최소 실행
-npm run verify      # 단위 테스트 + Electron smoke
+npm run e2e         # 가짜 CLI로 실제 세션·어댑터·SQLite 영속화 확인
+npm run verify      # 단위 테스트 + 빌드 + Electron smoke + E2E
 ```
 
 `npm run smoke` 는 빌드된 Electron 앱을 실제로 띄운 뒤 렌더러 로드, runner 감지, 정상 종료까지 확인합니다.
-`npm test` 가 함수 단위 회귀를 잡는다면, smoke 는 "설치·빌드·Electron 실행"이 최소한 깨지지 않았는지 보는 얇은 E2E 테스트입니다.
-v0.0.1 확인 절차는 [`docs/검증체크리스트.md`](docs/검증체크리스트.md) 에 정리했습니다.
+`npm run e2e` 는 가짜 CLI로 세션을 시작해 어댑터 이벤트와 SQLite 저장·복원까지 확인합니다.
+전체 릴리스 확인 절차는 [`docs/검증체크리스트.md`](docs/검증체크리스트.md) 에 정리했습니다.
 
 로그인은 CLI가 알아서 안내합니다. 세션이 `auth-required` 로 끝나면 화면에 안내 카드가 뜹니다.
 
@@ -211,7 +212,7 @@ v0.0.1 확인 절차는 [`docs/검증체크리스트.md`](docs/검증체크리�
 
 | 증상 | 원인 |
 |---|---|
-| `spawn EINVAL` | Node 보안 수정 이후 `.cmd`/`.bat` 직접 spawn 불가 → `cmd.exe /c` 로 감싼다 |
+| `spawn EINVAL`·프롬프트 따옴표 손상 | `.cmd`/`.bat`를 `cmd.exe /d /s /c`로 감싸고 각 인자를 Windows 규칙으로 인용한다 |
 | WSL 세션이 인증 실패 | `wsl -- claude` 가 Windows 설치본을 잡는다 → 탐지된 절대경로로 |
 | 문법 강조가 조용히 실패 | shiki 기본 엔진이 WASM → 렌더러 CSP가 차단. JS 정규식 엔진으로 교체 |
 | 코드가 한 줄씩 떠 보임 | shiki는 줄 사이에 개행을 넣는다. `.line{display:block}` 이면 두 줄이 된다 |
