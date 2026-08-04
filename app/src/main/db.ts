@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { app } from 'electron'
 import type {
   MemoryEdit,
+  MemoryProposal,
   SessionWorktree,
   ApprovalDecision,
   ApprovalRequest,
@@ -92,6 +93,21 @@ function migrate(): void {
       at       INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_memory_edit_entry ON memory_edit(entry_id);
+
+    -- 제안은 정본 Memory와 분리한다. approved가 되기 전에는 파일에 쓰지 않는다.
+    CREATE TABLE IF NOT EXISTS memory_proposal (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      entry_id   TEXT NOT NULL,
+      scope      TEXT NOT NULL,
+      content    TEXT NOT NULL,
+      reason     TEXT NOT NULL,
+      status     TEXT NOT NULL DEFAULT 'pending',
+      created_at INTEGER NOT NULL,
+      decided_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_proposal_status
+      ON memory_proposal(status, created_at DESC);
   `)
 
   addColumn('session', 'snapshot', 'TEXT')
@@ -395,4 +411,50 @@ export function memoryEdits(entryId?: string, limit = 20): MemoryEdit[] {
     : 'SELECT id, entry_id AS entryId, bytes, at FROM memory_edit ORDER BY at DESC LIMIT ?'
   const args = entryId ? [entryId, limit] : [limit]
   return db.prepare(sql).all(...args) as unknown as MemoryEdit[]
+}
+
+export function recordMemoryProposal(
+  proposal: Pick<MemoryProposal, 'sessionId' | 'entryId' | 'scope' | 'content' | 'reason'>,
+): boolean {
+  const duplicate = db.prepare(
+    `SELECT id FROM memory_proposal
+     WHERE status = 'pending' AND entry_id = ? AND content = ? LIMIT 1`,
+  ).get(proposal.entryId, proposal.content)
+  if (duplicate) return false
+  db.prepare(
+    `INSERT INTO memory_proposal
+       (session_id, entry_id, scope, content, reason, status, created_at)
+     VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+  ).run(
+    proposal.sessionId,
+    proposal.entryId,
+    proposal.scope,
+    proposal.content,
+    proposal.reason,
+    now(),
+  )
+  return true
+}
+
+export function memoryProposals(status: MemoryProposal['status'] = 'pending'): MemoryProposal[] {
+  return db.prepare(
+    `SELECT id, session_id AS sessionId, entry_id AS entryId, scope, content, reason,
+            status, created_at AS createdAt, decided_at AS decidedAt
+     FROM memory_proposal WHERE status = ? ORDER BY created_at DESC`,
+  ).all(status) as unknown as MemoryProposal[]
+}
+
+export function getMemoryProposal(id: number): MemoryProposal | undefined {
+  return db.prepare(
+    `SELECT id, session_id AS sessionId, entry_id AS entryId, scope, content, reason,
+            status, created_at AS createdAt, decided_at AS decidedAt
+     FROM memory_proposal WHERE id = ?`,
+  ).get(id) as unknown as MemoryProposal | undefined
+}
+
+export function decideMemoryProposal(id: number, status: 'approved' | 'rejected'): void {
+  db.prepare(
+    `UPDATE memory_proposal SET status = ?, decided_at = ?
+     WHERE id = ? AND status = 'pending'`,
+  ).run(status, now(), id)
 }

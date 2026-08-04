@@ -12,6 +12,7 @@ import type {
   UpdateCheck,
   MemoryEntry,
   MemoryEdit,
+  MemoryProposal,
   CheckpointDraft,
   RunningSession,
   SessionEvent,
@@ -156,6 +157,11 @@ const api = {
     ipcRenderer.invoke('memory:save', id, content),
   memoryHistory: (entryId?: string): Promise<MemoryEdit[]> =>
     ipcRenderer.invoke('memory:history', entryId),
+  memoryProposals: (): Promise<MemoryProposal[]> => ipcRenderer.invoke('memory:proposals'),
+  approveMemoryProposal: (id: number): Promise<boolean> =>
+    ipcRenderer.invoke('memory:proposal:approve', id),
+  rejectMemoryProposal: (id: number): Promise<void> =>
+    ipcRenderer.invoke('memory:proposal:reject', id),
   routeInstruction: (instruction: string, runner: DetectedRunner, cwd: string): Promise<RouteResult> =>
     ipcRenderer.invoke('agent:route', instruction, runner, cwd),
   overviewStats: (): Promise<{

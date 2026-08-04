@@ -211,6 +211,17 @@ app.whenReady().then(() => {
   ipcMain.handle('memory:save', (_e, id: string, content: string) => memory.save(id, content))
   ipcMain.handle('checkpoint:build', (_e, sessionId: string) => buildCheckpoint(sessionId))
   ipcMain.handle('memory:history', (_e, entryId?: string) => db.memoryEdits(entryId))
+  ipcMain.handle('memory:proposals', () => db.memoryProposals())
+  ipcMain.handle('memory:proposal:approve', (_e, id: number) => {
+    const proposal = db.getMemoryProposal(id)
+    if (!proposal || proposal.status !== 'pending') return false
+    const applied = memory.applyProposal(proposal)
+    if (applied) db.decideMemoryProposal(id, 'approved')
+    return applied
+  })
+  ipcMain.handle('memory:proposal:reject', (_e, id: number) => {
+    db.decideMemoryProposal(id, 'rejected')
+  })
 
   ipcMain.handle('agent:route', (_e, instruction: string, runner: DetectedRunner, cwd: string) =>
     route(instruction, runner, cwd),

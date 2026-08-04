@@ -315,6 +315,21 @@ export interface MemoryEdit {
   at: number
 }
 
+export type MemoryProposalStatus = 'pending' | 'approved' | 'rejected'
+
+/** AI가 제안했지만 아직 정본에는 반영되지 않은 Memory 추가안. */
+export interface MemoryProposal {
+  id: number
+  sessionId: string
+  entryId: string
+  scope: Extract<MemoryScope, 'project' | 'agent'>
+  content: string
+  reason: string
+  status: MemoryProposalStatus
+  createdAt: number
+  decidedAt?: number
+}
+
 /** 세션 전용 worktree */
 export interface SessionWorktree {
   /** worktree 실제 경로 (세션의 cwd 가 된다) */

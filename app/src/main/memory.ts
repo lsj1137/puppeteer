@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { DetectedRunner, MemoryEntry } from '@shared/session'
+import type { DetectedRunner, MemoryEntry, MemoryProposal } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import * as library from './agent-library'
 import * as db from './db'
@@ -140,6 +140,16 @@ export function save(id: string, content: string): boolean {
   }
   db.recordMemoryEdit(id, content.length)
   return true
+}
+
+/** 승인 시점의 최신 정본에 추가한다. 제안 당시 사본으로 덮어쓰지 않는다. */
+export function applyProposal(proposal: MemoryProposal): boolean {
+  const current = read(proposal.entryId)
+  const addition = proposal.content.trim()
+  if (!addition) return false
+  if (current.includes(addition)) return true
+  const next = current.trimEnd() ? `${current.trimEnd()}\n\n${addition}\n` : `${addition}\n`
+  return save(proposal.entryId, next)
 }
 
 const BRIDGE = '@AGENTS.md'

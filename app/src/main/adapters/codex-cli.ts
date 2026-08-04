@@ -235,7 +235,7 @@ export class CodexCliAdapter {
 }
 
 export function buildCodexArgs(
-  opts: Pick<StartOptions, 'agentPrompt' | 'hookCommand' | 'model' | 'prompt' | 'resumeSessionId'>,
+  opts: Pick<StartOptions, 'agentPrompt' | 'systemPrompt' | 'hookCommand' | 'model' | 'prompt' | 'resumeSessionId'>,
 ): string[] {
   const cliArgs = ['exec', '--json', '--skip-git-repo-check']
 
@@ -253,7 +253,8 @@ export function buildCodexArgs(
   }
 
   // 에이전트 지침은 프롬프트 앞에 붙인다 (--agents 상당 기능이 없다)
-  const prompt = opts.agentPrompt ? `${opts.agentPrompt}\n\n---\n\n${opts.prompt}` : opts.prompt
+  const prefixes = [opts.agentPrompt, opts.systemPrompt].filter(Boolean)
+  const prompt = prefixes.length ? `${prefixes.join('\n\n')}\n\n---\n\n${opts.prompt}` : opts.prompt
 
   // `resume` 뒤에는 resume 전용 옵션만 둔다. 공통 exec 옵션은 반드시 앞에 와야 한다.
   if (opts.resumeSessionId) cliArgs.push('resume', opts.resumeSessionId)

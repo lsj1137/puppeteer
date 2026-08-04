@@ -44,6 +44,8 @@ import {
   worktreeStatus as inspectWorktree,
 } from './git'
 import { notifyApproval, notifyStatus } from './notify'
+import * as memory from './memory'
+import { extractMemoryProposals, MEMORY_PROPOSAL_INSTRUCTION } from './memory-proposal'
 import {
   sessionDeletionBlockReason,
   shouldCreateWorktree,
@@ -78,6 +80,7 @@ interface LiveSession {
   title: string
   /** 이 세션이 수정한 파일 (동시 수정 감지용) */
   touched: Set<string>
+  memoryTargets: Partial<Record<'project' | 'agent', string>>
 }
 
 const TERMINAL: SessionStatus[] = ['completed', 'failed', 'stopped', 'auth-required']
@@ -185,6 +188,11 @@ export class SessionManager {
       title: prev?.title ?? input.prompt.slice(0, 80),
       // 이어가면 그동안 만진 파일 목록을 유지해야 동시 수정 감지가 끊기지 않는다
       touched: this.sessions.get(id)?.touched ?? new Set(),
+      memoryTargets: Object.fromEntries(
+        memory.list([input.runner], [input.cwd])
+          .filter((entry) => entry.scope === 'project' || (entry.scope === 'agent' && entry.id === `agent:${input.agentName}`))
+          .map((entry) => [entry.scope, entry.id]),
+      ),
     })
 
     // 세션 시작 전 git 상태를 남긴다 (실패해도 세션은 진행).
@@ -226,6 +234,7 @@ export class SessionManager {
       hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
       disallowedTools: agent?.workspace.disallowedTools,
+      systemPrompt: MEMORY_PROPOSAL_INSTRUCTION,
     })
     return id
   }
@@ -434,6 +443,24 @@ export class SessionManager {
 
   private onEvent(sessionId: string, event: SessionEvent): void {
     const session = this.sessions.get(sessionId)
+
+    if (event.t === 'message' && event.role === 'assistant' && !event.isError) {
+      const extracted = extractMemoryProposals(event.text)
+      for (const proposal of extracted.proposals) {
+        const entryId = session?.memoryTargets[proposal.scope]
+        if (!entryId) continue
+        if (db.recordMemoryProposal({ sessionId, entryId, ...proposal })) {
+          this.persistAndSend(sessionId, {
+            t: 'notice',
+            level: 'info',
+            title: 'Memory 변경 제안',
+            text: `${proposal.reason}\n\nMemory 화면에서 변경분을 검토하고 승인할 수 있습니다.`,
+          })
+        }
+      }
+      event = { ...event, text: extracted.text }
+      if (!event.text && extracted.proposals.length > 0) return
+    }
 
     if (event.t === 'status') {
       if (session) session.status = event.status

@@ -7,6 +7,8 @@ export interface StartOptions {
   /** 작업 디렉토리 (Windows 경로 그대로 전달 가능) */
   cwd: string
   prompt: string
+  /** 앱 기능 계약처럼 매 턴에만 붙이는 시스템 지침. 사용자 설정 파일은 건드리지 않는다. */
+  systemPrompt?: string
   /** 기존 CLI 세션 이어가기 */
   resumeSessionId?: string
   /** PreToolUse hook 실행 명령. 지정하면 승인 인터셉트가 켜진다. */
@@ -426,6 +428,7 @@ export function buildClaudeArgs(
     | 'hookCommand'
     | 'prompt'
     | 'resumeSessionId'
+    | 'systemPrompt'
   >,
 ): string[] {
   const cliArgs = [
@@ -436,6 +439,7 @@ export function buildClaudeArgs(
     '--verbose',
   ]
   if (opts.resumeSessionId) cliArgs.push('--resume', opts.resumeSessionId)
+  if (opts.systemPrompt) cliArgs.push('--append-system-prompt', opts.systemPrompt)
 
   // 에이전트는 앱 라이브러리에서 관리하므로 정의를 인라인으로 넘긴다.
   // 파일을 러너 홈(.claude/agents)에 배치할 필요가 없다 — WSL/Windows 홈이 다르다.

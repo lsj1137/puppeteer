@@ -9,10 +9,14 @@ import {
   Globe,
   Loader2,
   NotebookPen,
+  Sparkles,
+  X,
   Search,
   TriangleAlert,
 } from 'lucide-react'
-import type { MemoryEdit, MemoryEntry, MemoryScope } from '@shared/session'
+import type { MemoryEdit, MemoryEntry, MemoryProposal, MemoryScope } from '@shared/session'
+import Code from './Code'
+import { unifiedDiff } from '../lib/diff'
 
 const SCOPES: {
   key: MemoryScope
@@ -69,6 +73,9 @@ export default function MemoryScreen() {
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [history, setHistory] = useState<MemoryEdit[]>([])
+  const [proposals, setProposals] = useState<MemoryProposal[]>([])
+  const [proposalBusy, setProposalBusy] = useState<number>()
+  const [proposalError, setProposalError] = useState<string>()
   const [filter, setFilter] = useState('')
   /** 지금 열어둔 항목의 원본 — 저장 여부 판단용 */
   const [original, setOriginal] = useState('')
@@ -88,8 +95,12 @@ export default function MemoryScreen() {
     : entries
 
   const load = useCallback(async () => {
-    const list = await window.api.listMemories()
+    const [list, pending] = await Promise.all([
+      window.api.listMemories(),
+      window.api.memoryProposals(),
+    ])
     setEntries(list)
+    setProposals(pending)
     setLoading(false)
     return list
   }, [])
@@ -130,11 +141,63 @@ export default function MemoryScreen() {
     }
   }
 
+  async function openProposal(proposal: MemoryProposal): Promise<void> {
+    const target = entries.find((e) => e.id === proposal.entryId)
+    if (target) await open(target)
+  }
+
+  async function decideProposal(proposal: MemoryProposal, approve: boolean): Promise<void> {
+    if (approve && dirty) {
+      setProposalError('직접 편집 중인 내용을 먼저 저장하거나 되돌린 뒤 승인하세요.')
+      return
+    }
+    setProposalBusy(proposal.id)
+    setProposalError(undefined)
+    try {
+      if (approve) {
+        const ok = await window.api.approveMemoryProposal(proposal.id)
+        if (!ok) {
+          setProposalError('정본 파일에 제안을 적용하지 못했습니다. 경로와 파일 권한을 확인하세요.')
+          return
+        }
+        if (proposal.entryId === selected) {
+          const text = await window.api.readMemory(proposal.entryId)
+          setOriginal(text)
+          setDraft(text)
+        }
+      } else {
+        await window.api.rejectMemoryProposal(proposal.id)
+      }
+      setProposals((items) => items.filter((item) => item.id !== proposal.id))
+    } finally {
+      setProposalBusy(undefined)
+    }
+  }
+
   return (
     <div className="flex h-full min-h-0">
       {/* ── 목록 ─────────────────────────────── */}
       <div className="w-64 shrink-0 overflow-auto border-r border-surface0 p-2.5">
         <h1 className="mb-3 px-1 text-[16px] font-semibold text-text">Memory</h1>
+
+        {proposals.length > 0 && (
+          <section className="mb-3 rounded-lg bg-mauve/10 p-1.5 ring-1 ring-mauve/20">
+            <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px] font-medium text-mauve">
+              <Sparkles className="h-3.5 w-3.5" /> AI 제안 {proposals.length}
+            </div>
+            {proposals.map((proposal) => (
+              <button
+                key={proposal.id}
+                onClick={() => void openProposal(proposal)}
+                className="block w-full truncate rounded-md px-2 py-1.5 text-left text-[12px] text-subtext1 hover:bg-surface0/60 hover:text-text"
+                title={proposal.reason}
+              >
+                {entries.find((e) => e.id === proposal.entryId)?.label ?? proposal.scope}
+                <span className="ml-1 text-overlay1">· {proposal.reason}</span>
+              </button>
+            ))}
+          </section>
+        )}
 
         {loading && (
           <div className="flex items-center gap-2 px-1 text-[12px] text-overlay1">
@@ -270,6 +333,48 @@ export default function MemoryScreen() {
               아직 파일이 없습니다. 저장하면 이 경로에 만들어집니다.
               {entry.scope === 'global' &&
                 ' 전역 메모리는 실행 환경마다 파일이 따로입니다 — 다른 환경에는 적용되지 않습니다.'}
+            </div>
+          )}
+
+          {proposals
+            .filter((proposal) => proposal.entryId === entry.id)
+            .map((proposal) => {
+              const next = original.trimEnd()
+                ? `${original.trimEnd()}\n\n${proposal.content}\n`
+                : `${proposal.content}\n`
+              return (
+                <div key={proposal.id} className="mb-2 overflow-hidden rounded-lg bg-mauve/10 ring-1 ring-mauve/20">
+                  <div className="flex items-start gap-2 px-3 py-2">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mauve" />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12px] font-medium text-text">AI가 Memory 추가를 제안했습니다</div>
+                      <div className="mt-0.5 text-[11px] text-subtext0">{proposal.reason}</div>
+                    </div>
+                    <button
+                      disabled={proposalBusy === proposal.id}
+                      onClick={() => void decideProposal(proposal, false)}
+                      className="rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-red disabled:opacity-40"
+                      title="거절"
+                    ><X className="h-3.5 w-3.5" /></button>
+                    <button
+                      disabled={proposalBusy === proposal.id}
+                      onClick={() => void decideProposal(proposal, true)}
+                      className="rounded-md bg-green/15 px-2.5 py-1 text-[11px] font-medium text-green hover:bg-green/25 disabled:opacity-40"
+                    >승인해 추가</button>
+                  </div>
+                  <div className="max-h-44 overflow-auto">
+                    <Code code={unifiedDiff(original, next)} language="diff" />
+                  </div>
+                  <div className="px-3 py-1.5 text-[10px] text-overlay1">
+                    승인 전에는 정본 파일을 변경하지 않습니다.
+                  </div>
+                </div>
+              )
+            })}
+
+          {proposalError && (
+            <div className="mb-2 rounded-lg bg-red/10 px-3 py-2 text-[11px] text-red">
+              {proposalError}
             </div>
           )}
 
