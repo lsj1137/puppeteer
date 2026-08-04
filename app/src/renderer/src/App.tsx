@@ -2,43 +2,19 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import {
   AlertTriangle,
   Check,
-  ChevronDown,
-  Flag,
-  FolderPlus,
   Brain,
   Bot,
-  PanelRightOpen,
-  Pencil,
-  Plus,
   KeyRound,
-  Lock,
   Loader2,
-  FolderOpen,
-  MessageSquarePlus,
-  Monitor,
-  ShieldAlert,
-  Terminal,
-  ImagePlus,
   LayoutDashboard,
-  Moon,
   Paperclip,
   Settings2,
-  Sun,
-  GitBranch,
-  Trash2,
-  X,
 } from 'lucide-react'
-import ConfirmDialog from './components/ConfirmDialog'
-import CommandPalette, { type Command } from './components/CommandPalette'
-import ImageAnnotator from './components/ImageAnnotator'
-import AgentEditor, { emptyAgent } from './components/AgentEditor'
+import CommandPalette from './components/CommandPalette'
+import { emptyAgent } from './components/AgentEditor'
 import Overview from './components/Overview'
 import AgentsScreen from './components/AgentsScreen'
-import AgentImport from './components/AgentImport'
 import MemoryScreen from './components/MemoryScreen'
-import Settings from './components/Settings'
-import Checkpoint from './components/Checkpoint'
-import WorktreeDialog from './components/WorktreeDialog'
 import type { PromptInputHandle } from './components/PromptInput'
 import SessionComposer from './components/SessionComposer'
 import WorkspaceLists from './components/WorkspaceLists'
@@ -46,6 +22,9 @@ import UsageSummary from './components/UsageSummary'
 import ConversationEntries from './components/ConversationEntries'
 import ApprovalCard from './components/ApprovalCard'
 import ArtifactSidebar from './components/ArtifactSidebar'
+import WorkspaceDialogs from './components/WorkspaceDialogs'
+import AppOverlays from './components/AppOverlays'
+import SessionHeader from './components/SessionHeader'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -61,18 +40,15 @@ import type {
   StoredProject,
   StoredSession,
 } from '@shared/session'
-import { runnerEnvironmentLabel } from '@shared/runner'
-import { approvalNavigationPath } from './lib/navigation'
 import {
   EMPTY_SESSION_VIEW,
-  baseName,
   clampArtifactWidth,
   splitSessionTabs,
-  timeLabel,
 } from './lib/session-view'
 import { useSessionViews } from './hooks/use-session-views'
 import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
+import { useWorkspaceCommands } from './hooks/use-workspace-commands'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
@@ -88,17 +64,6 @@ const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   disconnected: { label: '연결 끊김', color: 'text-maroon' },
   'auth-required': { label: '로그인 필요', color: 'text-yellow' },
 }
-
-const PROVIDER_LABEL: Record<string, string> = {
-  'claude-cli': 'Claude',
-  'codex-cli': 'Codex',
-  'claude-agent-sdk': 'Claude (SDK)',
-}
-const runnerLabel = (r: DetectedRunner): string =>
-  runnerEnvironmentLabel(r) + (r.version ? ` · ${r.version}` : '')
-
-const RunnerIcon = ({ r, ...p }: { r: DetectedRunner; className?: string }) =>
-  r.kind === 'wsl' ? <Terminal {...p} /> : <Monitor {...p} />
 
 /**
  * 큰 이미지는 `String.fromCharCode(...arr)` 로 한 번에 못 바꾼다.
@@ -213,10 +178,6 @@ export default function App() {
    * 바꾸는 순간 이어가기가 끊긴다. 바꾸려면 새 세션을 연다.
    */
   const runnerLocked = !!selected
-  /** 격리 실행 중인 세션 */
-  const sessionWorktree = selected?.worktree ?? undefined
-  /** 격리 폴더는 정리됐고, 다음 지시에서 새 worktree를 만들 세션 */
-  const worktreeCleaned = Boolean(selected?.worktreeCleaned && !sessionWorktree)
   /** 세션을 돌릴 수 있는 러너 전체. provider 를 가리지 않는다. */
   const usableRunners = runners.filter((r) => r.available)
   /** 홈 라우터 전용 — 라우팅 프롬프트가 Claude CLI 인자로 짜여 있다 */
@@ -545,142 +506,36 @@ export default function App() {
     await startFreshSession({ runnerId, cwd: path, prompt: body, agentName: agent })
   }
 
-  const commands: Command[] = [
-    {
-      id: 'act:new',
-      group: '명령',
-      label: '새 세션',
-      icon: MessageSquarePlus,
-      run: newSession,
+  const commands = useWorkspaceCommands({
+    selected,
+    agents,
+    activeProjectPath: active,
+    artifactsOpen,
+    theme,
+    activeRunner,
+    approvals,
+    running,
+    projects,
+    sessions,
+    onNewSession: newSession,
+    onCheckpoint: (sessionId) => {
+      void window.api.buildCheckpoint(sessionId).then((draft) => draft && setCheckpoint(draft))
     },
-    ...(selected
-      ? [
-          {
-            id: 'act:checkpoint',
-            group: '명령',
-            label: '체크포인트로 인계',
-            icon: Flag,
-            run: () => {
-              void window.api.buildCheckpoint(selected.id).then((d) => d && setCheckpoint(d))
-            },
-          },
-        ]
-      : []),
-    {
-      id: 'act:overview',
-      group: '명령',
-      label: 'Overview 열기',
-      icon: LayoutDashboard,
-      run: () => setScreen('overview'),
+    onShowOverview: () => setScreen('overview'),
+    onSelectAgent: setAgentName,
+    onNewAgent: (projectPath) => setEditing({ agent: emptyAgent(projectPath), isNew: true }),
+    onDeleteSession: (session) => {
+      setSessionDeleteError(undefined)
+      setConfirmDelSession(session)
     },
-    ...agents.map((a) => ({
-      id: `ag:${a.name}`,
-      group: '에이전트',
-      label: `${a.name} 로 실행`,
-      hint: a.description,
-      icon: Bot,
-      run: () => setAgentName(a.name),
-    })),
-    ...(active
-      ? [
-          {
-            id: 'act:agent-new',
-            group: '명령',
-            label: '새 에이전트 만들기',
-            icon: Plus,
-            run: () => setEditing({ agent: emptyAgent(active), isNew: true }),
-          },
-        ]
-      : []),
-    ...(selected
-      ? [
-          {
-            id: 'act:session-del',
-            group: '명령',
-            label: '현재 세션 삭제',
-            hint: selected.title ?? '',
-            icon: Trash2,
-            run: () => {
-              setSessionDeleteError(undefined)
-              setConfirmDelSession(selected)
-            },
-          },
-        ]
-      : []),
-    {
-      id: 'act:artifacts',
-      group: '명령',
-      label: artifactsOpen ? 'Artifacts 패널 접기' : 'Artifacts 패널 펼치기',
-      icon: artifactsOpen ? PanelRightOpen : PanelRightOpen,
-      run: toggleArtifacts,
-    },
-    {
-      id: 'act:theme',
-      group: '명령',
-      label: theme === 'dark' ? '라이트 모드로 전환' : '다크 모드로 전환',
-      icon: theme === 'dark' ? Sun : Moon,
-      run: toggleTheme,
-    },
-    {
-      id: 'act:add',
-      group: '명령',
-      label: '프로젝트 폴더 추가',
-      icon: FolderPlus,
-      run: () => void pickFolder(),
-    },
-    ...(active
-      ? [
-          {
-            id: 'act:reveal',
-            group: '명령',
-            label: '탐색기에서 프로젝트 열기',
-            hint: baseName(active),
-            icon: FolderOpen,
-            run: () => void window.api.revealProject(active),
-          },
-          {
-            id: 'act:runner',
-            group: '명령',
-            label: '실행 환경 변경',
-            hint: activeRunner ? runnerLabel(activeRunner) : '미지정',
-            icon: Terminal,
-            run: () => setPendingPick(''),
-          },
-        ]
-      : []),
-    ...approvals.map((a) => ({
-      id: `ap:${a.id}`,
-      group: '승인 대기',
-      label: `${a.tool} 승인 요청`,
-      hint: baseName(approvalNavigationPath(a)),
-      icon: ShieldAlert,
-      run: () => void jumpTo(a.sessionId, approvalNavigationPath(a)),
-    })),
-    ...running.map((r) => ({
-      id: `run:${r.id}`,
-      group: '실행 중',
-      label: r.title,
-      hint: baseName(r.projectPath),
-      icon: Loader2,
-      run: () => void jumpTo(r.id, r.projectPath),
-    })),
-    ...projects.map((p) => ({
-      id: `pj:${p.path}`,
-      group: '프로젝트',
-      label: baseName(p.path),
-      hint: p.path,
-      icon: FolderOpen,
-      run: () => selectProject(p.path),
-    })),
-    ...sessions.map((sn) => ({
-      id: `ss:${sn.id}`,
-      group: '세션',
-      label: sn.title || '(제목 없음)',
-      hint: timeLabel(sn.startedAt),
-      icon: MessageSquarePlus,
-      run: () => void openSession(sn.id),
-    })),
-  ]
+    onToggleArtifacts: toggleArtifacts,
+    onToggleTheme: toggleTheme,
+    onPickFolder: () => void pickFolder(),
+    onChooseRunner: () => setPendingPick(''),
+    onJump: (sessionId, projectPath) => void jumpTo(sessionId, projectPath),
+    onSelectProject: selectProject,
+    onOpenSession: (sessionId) => void openSession(sessionId),
+  })
 
   return (
     <div
@@ -766,264 +621,48 @@ export default function App() {
 
       {/* ── Session Tabs ─────────────────────────── */}
       {!showHome && active && (
-        <div className="col-start-2 col-end-4 row-start-1 z-20 flex items-end bg-mantle pl-2 pr-2 pt-1">
-          <div ref={tabBarRef} className="flex min-w-0 flex-1 items-end gap-0.5">
-            {/* 새 세션은 맨 왼쪽 고정 — 탭 개수가 변해도 자리가 안 움직인다 */}
-            <button
-              onClick={newSession}
-              title="새 세션"
-              className={`flex shrink-0 items-center gap-1 rounded-t-lg px-2.5 py-1.5 text-[13px] ${
-                activeSession === undefined
-                  ? 'bg-base text-text'
-                  : 'text-subtext0 hover:bg-surface0/60'
-              }`}
-            >
-              <MessageSquarePlus className="h-4 w-4" />
-            </button>
-
-            {visibleTabs.map((s) => {
-            const on = s.id === activeSession
-            const live = running.some((r) => r.id === s.id)
-            const waiting = approvals.some((a) => a.sessionId === s.id)
-            return (
-              <div
-                key={s.id}
-                onClick={() => void openSession(s.id)}
-                title={s.title ?? ''}
-                className={`group flex min-w-0 max-w-[220px] flex-1 cursor-pointer items-center gap-1.5 rounded-t-lg py-1.5 pl-3 pr-1.5 text-[13px] ${
-                  on ? 'bg-base text-text' : 'text-subtext0 hover:bg-surface0/60'
-                }`}
-              >
-                {live ? (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-green" />
-                ) : waiting ? (
-                  <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-peach" />
-                ) : (
-                  <span
-                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                      s.status === 'failed'
-                        ? 'bg-red'
-                        : s.status === 'completed'
-                          ? 'bg-surface2'
-                          : 'bg-yellow'
-                    }`}
-                  />
-                )}
-                <span className="flex-1 truncate">{s.title || '새 세션'}</span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    setSessionDeleteError(undefined)
-                    setConfirmDelSession(s)
-                  }}
-                  title="세션 삭제"
-                  className={`rounded p-0.5 text-overlay1 hover:bg-red/20 hover:text-red ${
-                    on ? '' : 'invisible group-hover:visible'
-                  }`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            )
-          })}
-
-            {overflowTabs.length > 0 && (
-              <div className="relative shrink-0">
-                <button
-                  onClick={() => setTabMenu((v) => !v)}
-                  title={`세션 ${overflowTabs.length}개 더`}
-                  className="flex items-center gap-1 rounded-t-lg px-2 py-1.5 text-[12px] text-subtext0 hover:bg-surface0/60 hover:text-text"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                  {overflowTabs.length}
-                </button>
-                {tabMenu && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={() => setTabMenu(false)} />
-                    <div className="absolute left-0 top-full z-40 mt-1 max-h-80 w-72 overflow-auto rounded-lg border border-surface1 bg-mantle py-1 shadow-lg">
-                      {overflowTabs.map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => {
-                            setTabMenu(false)
-                            void openSession(s.id)
-                          }}
-                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
-                        >
-                          <span
-                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                              s.status === 'failed'
-                                ? 'bg-red'
-                                : s.status === 'completed'
-                                  ? 'bg-surface2'
-                                  : 'bg-yellow'
-                            }`}
-                          />
-                          <span className="truncate">{s.title || '새 세션'}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
-          </div>
-
-          <div className="mb-1 flex shrink-0 items-center gap-1.5 pl-2">
-            <div className="relative">
-              <button
-                onClick={() => setAgentMenu((v) => !v)}
-                title="Project Agent 선택"
-                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
-                  agentName
-                    ? 'bg-mauve/20 text-mauve'
-                    : 'bg-surface0/60 text-subtext1 hover:bg-surface0 hover:text-text'
-                }`}
-              >
-                <Bot className="h-3.5 w-3.5" />
-                {agentName ?? '에이전트 없음'}
-              </button>
-
-              {agentMenu && (
-                <>
-                  <div className="fixed inset-0 z-30" onClick={() => setAgentMenu(false)} />
-                  <div className="absolute right-0 top-full z-40 mt-1 w-72 overflow-hidden rounded-lg border border-surface1 bg-mantle shadow-xl">
-                    <button
-                      onClick={() => {
-                        setAgentName(undefined)
-                        setAgentMenu(false)
-                      }}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] ${
-                        agentName ? 'text-subtext1 hover:bg-surface0' : 'bg-surface0 text-text'
-                      }`}
-                    >
-                      에이전트 없이 실행
-                    </button>
-
-                    {usableAgents.map((a) => (
-                      <div
-                        key={a.name}
-                        className={`group flex items-center gap-1 ${
-                          a.name === agentName ? 'bg-surface0' : 'hover:bg-surface0/60'
-                        }`}
-                      >
-                        <button
-                          onClick={() => {
-                            setAgentName(a.name)
-                            setAgentMenu(false)
-                          }}
-                          className="min-w-0 flex-1 px-3 py-2 text-left"
-                        >
-                          <div className="flex items-center gap-1.5 text-[12px] text-text">
-                            <Bot className="h-3.5 w-3.5 shrink-0 text-mauve" />
-                            {a.name}
-                          </div>
-                          {a.description && (
-                            <div className="truncate text-[11px] text-overlay1">{a.description}</div>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditing({ agent: a, isNew: false })
-                            setAgentMenu(false)
-                          }}
-                          title="편집"
-                          className="mr-2 hidden rounded p-1 text-overlay1 hover:text-text group-hover:block"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-
-                    <button
-                      onClick={() => {
-                        setEditing({ agent: emptyAgent(active), isNew: true })
-                        setAgentMenu(false)
-                      }}
-                      className="flex w-full items-center gap-1.5 border-t border-surface0 px-3 py-2 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> 새 에이전트
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {sessionWorktree && selected && (
-              <button
-                onClick={() => setWorktreeOpen(selected.id)}
-                title={`격리 실행 중\n브랜치 ${sessionWorktree.branch}\n${sessionWorktree.path}`}
-                className="flex min-w-0 max-w-[220px] items-center gap-1.5 rounded-md bg-teal/15 px-2 py-1 text-[11px] text-teal hover:bg-teal/25"
-              >
-                <GitBranch className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{sessionWorktree.branch}</span>
-                <ChevronDown className="h-3 w-3 shrink-0" />
-              </button>
-            )}
-
-            {worktreeCleaned && (
-              <span
-                title="기존 worktree가 정리되었습니다. 이 세션에 다시 지시하면 현재 원본 기준으로 새 worktree를 자동 생성합니다."
-                className="flex min-w-0 max-w-[180px] items-center gap-1.5 rounded-md bg-surface0 px-2 py-1 text-[11px] text-subtext0"
-              >
-                <GitBranch className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Worktree 정리됨</span>
-              </span>
-            )}
-
-            {selected && (
-              <button
-                onClick={async () => {
-                  const d = await window.api.buildCheckpoint(selected.id)
-                  if (d) setCheckpoint(d)
-                }}
-                title="이 세션의 작업 상태를 정리해 다른 세션으로 넘깁니다"
-                className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-subtext0 hover:bg-surface0 hover:text-text"
-              >
-                <Flag className="h-3.5 w-3.5 text-teal" />
-                체크포인트
-              </button>
-            )}
-
-            {activeRunner ? (
-              <button
-                disabled={runnerLocked}
-                onClick={() => !runnerLocked && setPendingPick('')}
-                title={
-                  runnerLocked
-                    ? `이 세션은 ${runnerLabel(activeRunner)} 로 시작했습니다. 바꾸려면 새 세션을 여세요.`
-                    : `실행 환경 변경 · ${activeRunner.executable}`
-                }
-                /* Claude 가 아니면 눈에 띄게 — 어디로 내용이 나가는지는 한눈에 보여야 한다 */
-                className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
-                  activeRunner.provider === 'claude-cli'
-                    ? 'bg-surface0/60 text-subtext1'
-                    : 'bg-peach/15 text-peach'
-                } ${
-                  runnerLocked
-                    ? 'cursor-default'
-                    : activeRunner.provider === 'claude-cli'
-                      ? 'hover:bg-surface0 hover:text-text'
-                      : 'hover:bg-peach/25'
-                }`}
-              >
-                <RunnerIcon
-                  r={activeRunner}
-                  className={`h-3.5 w-3.5 ${
-                    activeRunner.provider === 'claude-cli' ? 'text-sapphire' : ''
-                  }`}
-                />
-                {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider}
-                {runnerLocked && <Lock className="h-3 w-3 text-overlay1" />}
-              </button>
-            ) : (
-              <span className="rounded-md border border-dashed border-surface1 px-2 py-1 text-[11px] text-overlay1">
-                실행 환경 미지정
-              </span>
-            )}
-          </div>
-        </div>
+        <SessionHeader
+          tabBarRef={tabBarRef}
+          activeSessionId={activeSession}
+          visibleTabs={visibleTabs}
+          overflowTabs={overflowTabs}
+          running={running}
+          approvals={approvals}
+          tabMenuOpen={tabMenu}
+          onToggleTabMenu={() => setTabMenu((open) => !open)}
+          onCloseTabMenu={() => setTabMenu(false)}
+          onNewSession={newSession}
+          onOpenSession={(sessionId) => void openSession(sessionId)}
+          onDeleteSession={(session) => {
+            setSessionDeleteError(undefined)
+            setConfirmDelSession(session)
+          }}
+          agentName={agentName}
+          agents={usableAgents}
+          agentMenuOpen={agentMenu}
+          onToggleAgentMenu={() => setAgentMenu((open) => !open)}
+          onCloseAgentMenu={() => setAgentMenu(false)}
+          onSelectAgent={(name) => {
+            setAgentName(name)
+            setAgentMenu(false)
+          }}
+          onEditAgent={(agent) => {
+            setEditing({ agent, isNew: false })
+            setAgentMenu(false)
+          }}
+          onNewAgent={() => {
+            setEditing({ agent: emptyAgent(active), isNew: true })
+            setAgentMenu(false)
+          }}
+          selectedSession={selected}
+          onOpenWorktree={setWorktreeOpen}
+          onCheckpoint={(sessionId) => {
+            void window.api.buildCheckpoint(sessionId).then((draft) => draft && setCheckpoint(draft))
+          }}
+          activeRunner={activeRunner}
+          runnerLocked={runnerLocked}
+          onChooseRunner={() => setPendingPick('')}
+        />
       )}
 
       {/* ── Conversation / Overview / Agents ─────── */}
@@ -1161,120 +800,74 @@ export default function App() {
         />
       )}
 
-      {confirmDrop && (
-        <ConfirmDialog
-          tone="danger"
-          title="프로젝트를 목록에서 제거할까요?"
-          description="Workspace 등록만 해제합니다. 실제 폴더와 파일은 삭제되지 않습니다. 세션 기록도 그대로 남습니다."
-          detail={confirmDrop}
-          confirmLabel="제거"
-          onConfirm={() => void dropProject(confirmDrop)}
-          onCancel={() => setConfirmDrop(undefined)}
-        />
-      )}
-
       {paletteOpen && (
         <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
       )}
 
-      {confirmDelSession && (
-        <ConfirmDialog
-          tone="danger"
-          title="이 세션을 삭제할까요?"
-          description={`대화 기록·승인 이력·변경 파일 기록이 모두 지워집니다. 되돌릴 수 없습니다.${
-            running.some((r) => r.id === confirmDelSession.id) ? ' 실행 중이라 먼저 중지됩니다.' : ''
-          }${sessionDeleteError ? `\n\n삭제 중단: ${sessionDeleteError}` : ''}`}
-          detail={confirmDelSession.worktree?.path ?? confirmDelSession.title ?? ''}
-          confirmLabel="삭제"
-          onConfirm={() => void removeSession(confirmDelSession.id)}
-          onCancel={() => {
-            setSessionDeleteError(undefined)
-            setConfirmDelSession(undefined)
-          }}
-        />
-      )}
+      <WorkspaceDialogs
+        confirmDrop={confirmDrop}
+        onConfirmDrop={(projectPath) => void dropProject(projectPath)}
+        onCancelDrop={() => setConfirmDrop(undefined)}
+        confirmDelete={confirmDelSession}
+        deleteError={sessionDeleteError}
+        running={running}
+        onConfirmDelete={(sessionId) => void removeSession(sessionId)}
+        onCancelDelete={() => {
+          setSessionDeleteError(undefined)
+          setConfirmDelSession(undefined)
+        }}
+        checkpoint={checkpoint}
+        runners={usableRunners}
+        agents={agents}
+        onCloseCheckpoint={() => setCheckpoint(undefined)}
+        onHandoff={(body, runnerId, nextAgentName) =>
+          void handoff(body, runnerId, nextAgentName)
+        }
+        worktreeSession={
+          worktreeOpen && selected?.id === worktreeOpen && selected.worktree ? selected : undefined
+        }
+        onWorktreeChanged={() => void refresh(active)}
+        onCloseWorktree={() => setWorktreeOpen(undefined)}
+      />
 
-      {checkpoint && (
-        <Checkpoint
-          draft={checkpoint}
-          runners={usableRunners}
-          agents={agents}
-          onClose={() => setCheckpoint(undefined)}
-          onHandoff={(body, rid, ag) => void handoff(body, rid, ag)}
-        />
-      )}
-
-      {worktreeOpen && selected?.id === worktreeOpen && selected.worktree && (
-        <WorktreeDialog
-          sessionId={selected.id}
-          worktree={selected.worktree}
-          onChanged={() => refresh(active)}
-          onClose={() => setWorktreeOpen(undefined)}
-        />
-      )}
-
-      {settingsOpen && (
-        <Settings
-          theme={theme}
-          onToggleTheme={toggleTheme}
-          notify={notify}
-          onToggleNotify={setNotify}
-          runners={usableRunners}
-          defaultRunnerId={defaultRunnerId}
-          onDefaultRunnerChange={changeDefaultRunner}
-          appUpdate={appUpdate}
-          hasRunningSessions={running.length > 0}
-          onClose={() => setSettingsOpen(false)}
-        />
-      )}
-
-      {importing && (
-        <AgentImport
-          projects={projects}
-          existingNames={agents.map((a) => a.name)}
-          onClose={() => setImporting(false)}
-          onSaved={() => {
-            setImporting(false)
-            void reloadAgents()
-          }}
-        />
-      )}
-
-      {editing && (
-        <AgentEditor
-          agent={editing.agent}
-          isNew={editing.isNew}
-          projects={projects}
-          onClose={() => setEditing(undefined)}
-          onSaved={(a) => {
-            setEditing(undefined)
-            setAgentName(a.name)
-            void reloadAgents()
-          }}
-          onDeleted={(name) => {
-            setEditing(undefined)
-            if (agentName === name) setAgentName(undefined)
-            void reloadAgents()
-          }}
-        />
-      )}
-
-      {annotating !== undefined && attachments[annotating] && (
-        <ImageAnnotator
-          src={attachments[annotating].url}
-          onCancel={() => setAnnotating(undefined)}
-          onSave={(url) => void saveAnnotation(annotating, url)}
-        />
-      )}
-
-      {dragOver && (
-        <div className="pointer-events-none fixed inset-0 z-40 flex items-center justify-center bg-crust/60">
-          <div className="flex flex-col items-center gap-2 rounded-xl border-2 border-dashed border-lavender bg-mantle px-8 py-6">
-            <ImagePlus className="h-8 w-8 text-lavender" />
-            <span className="text-sm text-text">놓으면 이미지가 첨부됩니다</span>
-          </div>
-        </div>
-      )}
+      <AppOverlays
+        settingsOpen={settingsOpen}
+        theme={theme}
+        notify={notify}
+        runners={usableRunners}
+        defaultRunnerId={defaultRunnerId}
+        appUpdate={appUpdate}
+        hasRunningSessions={running.length > 0}
+        onToggleTheme={toggleTheme}
+        onToggleNotify={setNotify}
+        onDefaultRunnerChange={changeDefaultRunner}
+        onCloseSettings={() => setSettingsOpen(false)}
+        importing={importing}
+        projects={projects}
+        agents={agents}
+        onCloseImport={() => setImporting(false)}
+        onImported={() => {
+          setImporting(false)
+          void reloadAgents()
+        }}
+        editing={editing}
+        onCloseEditor={() => setEditing(undefined)}
+        onAgentSaved={(savedAgent) => {
+          setEditing(undefined)
+          setAgentName(savedAgent.name)
+          void reloadAgents()
+        }}
+        onAgentDeleted={(name) => {
+          setEditing(undefined)
+          if (agentName === name) setAgentName(undefined)
+          void reloadAgents()
+        }}
+        annotating={annotating}
+        attachments={attachments}
+        onCancelAnnotation={() => setAnnotating(undefined)}
+        onSaveAnnotation={(index, url) => void saveAnnotation(index, url)}
+        dragOver={dragOver}
+      />
     </div>
   )
 }
