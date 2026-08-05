@@ -214,6 +214,23 @@ export interface AgentWorkspaceConfig {
    * 내부 도메인 지식이 든 에이전트를 외부 모델로 보내지 않기 위한 가드다.
    */
   providers?: ProviderId[]
+  /** 이름별 Skill 사용 정책. 미지정은 Available이다. */
+  skills?: Record<string, SkillState>
+}
+
+export type SkillScope = 'global' | 'project' | 'agent'
+export type SkillState = 'required' | 'available' | 'disabled'
+
+/** 공통 SKILL.md 정본 한 건. */
+export interface SkillDef {
+  id: string
+  name: string
+  description: string
+  scope: SkillScope
+  location: string
+  content: string
+  projectPath?: string
+  agentName?: string
 }
 
 export interface AgentSource {

@@ -13,6 +13,7 @@ import type {
   MemoryEntry,
   MemoryEdit,
   MemoryProposal,
+  SkillDef,
   CheckpointDraft,
   RunningSession,
   SessionEvent,
@@ -162,6 +163,9 @@ const api = {
     ipcRenderer.invoke('memory:proposal:approve', id),
   rejectMemoryProposal: (id: number): Promise<void> =>
     ipcRenderer.invoke('memory:proposal:reject', id),
+  listSkills: (): Promise<SkillDef[]> => ipcRenderer.invoke('skill:list'),
+  saveSkill: (skill: SkillDef): Promise<SkillDef> => ipcRenderer.invoke('skill:save', skill),
+  deleteSkill: (skill: SkillDef): Promise<void> => ipcRenderer.invoke('skill:delete', skill),
   routeInstruction: (instruction: string, runner: DetectedRunner, cwd: string): Promise<RouteResult> =>
     ipcRenderer.invoke('agent:route', instruction, runner, cwd),
   overviewStats: (): Promise<{

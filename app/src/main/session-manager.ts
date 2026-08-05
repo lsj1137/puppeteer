@@ -46,6 +46,7 @@ import {
 import { notifyApproval, notifyStatus } from './notify'
 import * as memory from './memory'
 import { extractMemoryProposals, MEMORY_PROPOSAL_INSTRUCTION } from './memory-proposal'
+import { prompt as skillPrompt } from './skill-library'
 import {
   sessionDeletionBlockReason,
   shouldCreateWorktree,
@@ -206,6 +207,7 @@ export class SessionManager {
     }
 
     const agent = input.agentName ? library.read(input.agentName) : undefined
+    const skills = skillPrompt(input.cwd, agent, (path) => toRunnerPath(path, input.runner))
 
     // ★ 마지막 방어선. 화면에서 걸러도 여기서 한 번 더 막는다 —
     //   지침 전문이 그대로 모델에 실려 나가므로 실수 한 번이 곧 유출이다.
@@ -234,7 +236,7 @@ export class SessionManager {
       hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
       disallowedTools: agent?.workspace.disallowedTools,
-      systemPrompt: MEMORY_PROPOSAL_INSTRUCTION,
+      systemPrompt: [MEMORY_PROPOSAL_INSTRUCTION, skills].filter(Boolean).join('\n\n---\n\n'),
     })
     return id
   }

@@ -198,6 +198,7 @@ export function parseAgentText(
         providers: strings(ws.providers) as AgentDef['workspace']['providers'],
         completion: typeof ws.completion === 'string' ? ws.completion : undefined,
         worktree: typeof ws.worktree === 'string' ? ws.worktree : undefined,
+        skills: skillStates(ws.skills),
       },
     }
   }
@@ -219,6 +220,15 @@ function strings(v: unknown): string[] | undefined {
   if (!Array.isArray(v)) return undefined
   const arr = v.filter((x): x is string => typeof x === 'string')
   return arr.length ? arr : undefined
+}
+
+function skillStates(v: unknown): AgentDef['workspace']['skills'] {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
+  const out: NonNullable<AgentDef['workspace']['skills']> = {}
+  for (const [name, state] of Object.entries(v as Record<string, unknown>)) {
+    if (state === 'required' || state === 'available' || state === 'disabled') out[name] = state
+  }
+  return Object.keys(out).length ? out : undefined
 }
 
 /** undefined / 빈 값 제거 — 안 쓰는 키를 파일에 남기지 않는다 */

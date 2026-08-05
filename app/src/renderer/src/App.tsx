@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Check,
   Brain,
+  WandSparkles,
   Bot,
   KeyRound,
   Loader2,
@@ -15,6 +16,7 @@ import { emptyAgent } from './components/AgentEditor'
 import Overview from './components/Overview'
 import AgentsScreen from './components/AgentsScreen'
 import MemoryScreen from './components/MemoryScreen'
+import SkillsScreen from './components/SkillsScreen'
 import type { PromptInputHandle } from './components/PromptInput'
 import SessionComposer from './components/SessionComposer'
 import WorkspaceLists from './components/WorkspaceLists'
@@ -98,10 +100,11 @@ export default function App() {
   const [dragOver, setDragOver] = useState(false)
   const [annotating, setAnnotating] = useState<number>()
   /** 프로젝트 화면 / 전역 화면(Overview·Agents) 전환 */
-  const [screen, setScreen] = useState<'project' | 'overview' | 'agents' | 'memory'>('project')
+  const [screen, setScreen] = useState<'project' | 'overview' | 'agents' | 'memory' | 'skills'>('project')
   const showOverview = screen === 'overview'
   const showAgents = screen === 'agents'
   const showMemory = screen === 'memory'
+  const showSkills = screen === 'skills'
   /** 프로젝트 화면이 아님 — 탭바·대화·Artifact 를 전부 감춘다 */
   const showHome = screen !== 'project'
   const [cost, setCost] = useState<CostTotals>({ today: 0, month: 0, all: 0 })
@@ -588,6 +591,16 @@ export default function App() {
           </button>
 
           <button
+            onClick={() => setScreen('skills')}
+            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
+              showSkills ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
+            }`}
+          >
+            <WandSparkles className="h-4 w-4 text-yellow" />
+            Skills
+          </button>
+
+          <button
             onClick={() => setScreen('overview')}
             className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
               showOverview ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
@@ -668,7 +681,9 @@ export default function App() {
       {/* ── Conversation / Overview / Agents ─────── */}
       {showHome ? (
         <main className="col-start-2 col-end-4 row-start-1 row-end-4 min-h-0 overflow-hidden">
-          {showMemory ? (
+          {showSkills ? (
+            <SkillsScreen projects={projects} agents={agents} />
+          ) : showMemory ? (
             <MemoryScreen />
           ) : showAgents ? (
             <AgentsScreen

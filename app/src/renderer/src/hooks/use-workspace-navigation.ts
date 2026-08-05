@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import type { StoredProject, StoredSession } from '@shared/session'
 import type { SessionView } from '../lib/session-view'
 
-type Screen = 'project' | 'overview' | 'agents' | 'memory'
+type Screen = 'project' | 'overview' | 'agents' | 'memory' | 'skills'
 type Attachment = { path: string; url: string; name: string }
 
 interface Options {

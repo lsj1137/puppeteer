@@ -8,6 +8,7 @@ import * as db from './db'
 import * as library from './agent-library'
 import { route } from './router'
 import * as memory from './memory'
+import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
 import { initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
@@ -18,6 +19,7 @@ import type {
   ApprovalDecision,
   DetectedRunner,
   FetchedAgent,
+  SkillDef,
   WorktreeConflictResolverRequest,
   WorktreeResolvedFile,
   UpdateCheck,
@@ -221,6 +223,25 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('memory:proposal:reject', (_e, id: number) => {
     db.decideMemoryProposal(id, 'rejected')
+  })
+  ipcMain.handle('skill:list', () =>
+    skills.list(db.listProjects().map((project) => project.path), library.list().map((agent) => agent.name)),
+  )
+  const assertSkillTarget = (skill: SkillDef): void => {
+    if (skill.scope === 'project' && !db.listProjects().some((p) => p.path === skill.projectPath)) {
+      throw new Error('등록되지 않은 프로젝트에는 Skill을 저장할 수 없습니다.')
+    }
+    if (skill.scope === 'agent' && !library.read(skill.agentName ?? '')) {
+      throw new Error('존재하지 않는 에이전트에는 Skill을 저장할 수 없습니다.')
+    }
+  }
+  ipcMain.handle('skill:save', (_e, skill: SkillDef) => {
+    assertSkillTarget(skill)
+    return skills.save(skill)
+  })
+  ipcMain.handle('skill:delete', (_e, skill: SkillDef) => {
+    assertSkillTarget(skill)
+    skills.remove(skill)
   })
 
   ipcMain.handle('agent:route', (_e, instruction: string, runner: DetectedRunner, cwd: string) =>

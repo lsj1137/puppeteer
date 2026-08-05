@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Bot, HelpCircle, Trash2, X } from 'lucide-react'
-import type { AgentDef, ProviderId, StoredProject } from '@shared/session'
+import type { AgentDef, ProviderId, SkillDef, SkillState, StoredProject } from '@shared/session'
 
 const PROVIDERS: { id: ProviderId; label: string }[] = [
   { id: 'claude-cli', label: 'Claude' },
@@ -81,6 +81,22 @@ export default function AgentEditor({
   const [disallowed, setDisallowed] = useState(list(agent.workspace.disallowedTools))
   const [error, setError] = useState<string>()
   const [confirmDel, setConfirmDel] = useState(false)
+  const [skills, setSkills] = useState<SkillDef[]>([])
+  useEffect(() => { void window.api.listSkills().then(setSkills) }, [])
+  const skillNames = useMemo(
+    () => [
+      ...new Set(
+        skills
+          .filter((skill) =>
+            skill.scope === 'global' ||
+            (skill.scope === 'agent' && skill.agentName === draft.name) ||
+            (skill.scope === 'project' && (scope.length === 0 || scope.includes(skill.projectPath ?? ''))),
+          )
+          .map((skill) => skill.name),
+      ),
+    ].sort(),
+    [draft.name, scope, skills],
+  )
 
   const set = <K extends keyof AgentDef>(k: K, v: AgentDef[K]): void =>
     setDraft((d) => ({ ...d, [k]: v }))
@@ -104,6 +120,7 @@ export default function AgentEditor({
         providers: providers.length ? providers : undefined,
         allowedTools: parseList(allowed),
         disallowedTools: parseList(disallowed),
+        skills: draft.workspace.skills,
       },
     }
     await window.api.saveAgent(next)
@@ -302,6 +319,34 @@ export default function AgentEditor({
                 spellCheck={false}
               />
             </div>
+          </Row>
+
+          <Row label="Skills" hint="Required는 항상 적용, Available은 필요할 때 사용, Disabled는 같은 이름의 하위 Skill까지 끕니다.">
+            {skillNames.length === 0 ? (
+              <div className="py-1.5 text-[12px] text-overlay1">등록된 Skill이 없습니다</div>
+            ) : (
+              <div className="space-y-1">
+                {skillNames.map((name) => {
+                  const state = draft.workspace.skills?.[name] ?? 'available'
+                  return (
+                    <div key={name} className="flex items-center gap-2 rounded-md bg-base px-2 py-1">
+                      <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-subtext0">{name}</span>
+                      {(['required', 'available', 'disabled'] as SkillState[]).map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => set('workspace', {
+                            ...draft.workspace,
+                            skills: { ...draft.workspace.skills, [name]: value },
+                          })}
+                          className={`rounded px-1.5 py-0.5 text-[10px] ${state === value ? 'bg-mauve/20 text-mauve' : 'text-overlay1 hover:text-subtext0'}`}
+                        >{value}</button>
+                      ))}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </Row>
 
           <Row label="완료 조건" hint="작업을 마칠 때 무엇을 보고할지 적습니다. 지침 끝에 덧붙여집니다.">
