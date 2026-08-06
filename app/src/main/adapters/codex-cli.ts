@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import type { Readable } from 'node:stream'
+import type { Readable, Writable } from 'node:stream'
 import type { SessionEvent, SessionStatus } from '@shared/session'
 import { buildRunnerCommand, type StartOptions } from './claude-cli'
 
@@ -20,7 +20,7 @@ import { buildRunnerCommand, type StartOptions } from './claude-cli'
 const GATED_TOOLS = '^(Bash|apply_patch|Edit|Write)$'
 
 export class CodexCliAdapter {
-  private child?: ChildProcessByStdio<null, Readable, Readable>
+  private child?: ChildProcessByStdio<Writable, Readable, Readable>
   private stdoutBuf = ''
   private stderrBuf = ''
   private settled = false
@@ -35,6 +35,7 @@ export class CodexCliAdapter {
     this.cwd = opts.cwd
     this.model = opts.model
     const cliArgs = buildCodexArgs(opts)
+    const prompt = buildCodexPrompt(opts)
 
     const { command, args, windowsVerbatimArguments } = buildRunnerCommand(opts.runner, opts.cwd, cliArgs)
     this.emit({ t: 'status', status: 'starting' })
@@ -42,7 +43,7 @@ export class CodexCliAdapter {
     try {
       this.child = spawn(command, args, {
         cwd: opts.runner.kind === 'wsl' ? undefined : opts.cwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         windowsVerbatimArguments,
         // TLS 검사 프록시 뒤에서는 rustls 가 시스템 CA 만 본다.
@@ -53,6 +54,15 @@ export class CodexCliAdapter {
       this.settle('failed', `실행 실패: ${(err as Error).message} (${command})`)
       return
     }
+
+    // 긴 Markdown을 Windows→WSL 명령행 인자로 넘기면 백틱 같은 문자가 중간
+    // 파서에서 손실될 수 있다. Codex가 지원하는 stdin 프롬프트 경로를 사용한다.
+    this.child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+      // CLI가 시작 직후 종료되면 pipe가 먼저 닫힐 수 있다. 실제 종료 사유는
+      // stderr/exit 처리에서 더 정확히 분류하므로 EPIPE는 그쪽에 맡긴다.
+      if (error.code !== 'EPIPE') this.settle('failed', error.message)
+    })
+    this.child.stdin.end(prompt)
 
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => this.onStdout(chunk))
@@ -253,13 +263,18 @@ export function buildCodexArgs(
   }
 
   // 에이전트 지침은 프롬프트 앞에 붙인다 (--agents 상당 기능이 없다)
-  const prefixes = [opts.agentPrompt, opts.systemPrompt].filter(Boolean)
-  const prompt = prefixes.length ? `${prefixes.join('\n\n')}\n\n---\n\n${opts.prompt}` : opts.prompt
-
   // `resume` 뒤에는 resume 전용 옵션만 둔다. 공통 exec 옵션은 반드시 앞에 와야 한다.
   if (opts.resumeSessionId) cliArgs.push('resume', opts.resumeSessionId)
-  cliArgs.push(prompt)
+  cliArgs.push('-')
   return cliArgs
+}
+
+/** 명령행 이스케이프를 거치지 않고 stdin으로 보낼 전체 프롬프트. */
+export function buildCodexPrompt(
+  opts: Pick<StartOptions, 'agentPrompt' | 'systemPrompt' | 'prompt'>,
+): string {
+  const prefixes = [opts.agentPrompt, opts.systemPrompt].filter(Boolean)
+  return prefixes.length ? `${prefixes.join('\n\n')}\n\n---\n\n${opts.prompt}` : opts.prompt
 }
 
 /**

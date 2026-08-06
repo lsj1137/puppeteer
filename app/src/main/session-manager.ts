@@ -325,21 +325,25 @@ export class SessionManager {
         ['checking', 'committing', 'merging'].includes(integration.phase) &&
         Date.now() - integration.updatedAt > 30_000,
     )
+    const mode = db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto'
+    const pendingStep = nextWorktreeIntegrationStep(mode, inspected)
+    // 이전 버그/구버전이 dirty 상태를 "이미 반영됨"으로 skipped 저장했더라도
+    // 현재 정책상 할 일이 있으면 Worktree 화면 조회 시 다시 복구한다.
+    const incorrectlySkipped = integration?.phase === 'skipped' && pendingStep !== 'none'
     if (
-      (!integration || staleInProgress) &&
+      (!integration || staleInProgress || incorrectlySkipped) &&
       stored.status === 'completed' &&
       !this.sessions.has(sessionId) &&
-      nextWorktreeIntegrationStep(
-        db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto',
-        inspected,
-      ) !== 'none'
+      pendingStep !== 'none'
     ) {
       integration = {
-        mode: db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto',
+        mode,
         phase: 'checking',
         summary: staleInProgress
           ? '중단된 자동 반영 작업을 다시 확인하고 있습니다.'
-          : '누락된 자동 반영 기록을 복구하고 있습니다.',
+          : incorrectlySkipped
+            ? '잘못 건너뛴 자동 반영 작업을 다시 확인하고 있습니다.'
+            : '누락된 자동 반영 기록을 복구하고 있습니다.',
         worktreePath: wt.path,
         updatedAt: Date.now(),
         status: integrationStatus(inspected),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildCodexArgs } from './codex-cli'
+import { buildCodexArgs, buildCodexPrompt } from './codex-cli'
 import { buildRunnerCommand } from './claude-cli'
 import type { DetectedRunner } from '@shared/session'
 
@@ -15,7 +15,7 @@ describe('buildCodexArgs', () => {
     expect(args).toContain('--dangerously-bypass-hook-trust')
     expect(args.at(-3)).toBe('resume')
     expect(args.at(-2)).toBe('session-1')
-    expect(args.at(-1)).toBe('continue this')
+    expect(args.at(-1)).toBe('-')
   })
 
   it('starts a new exec session without resume', () => {
@@ -25,8 +25,20 @@ describe('buildCodexArgs', () => {
       '--skip-git-repo-check',
       '--sandbox',
       'workspace-write',
-      'hello',
+      '-',
     ])
+  })
+
+  it('keeps agent Markdown intact in the stdin prompt', () => {
+    const prompt = buildCodexPrompt({
+      agentPrompt: '# 역할\n\n`git status -sb`와 `README`를 확인한다.',
+      systemPrompt: '시스템 지침',
+      prompt: '릴리스 상태를 점검해줘.',
+    })
+
+    expect(prompt).toContain('`git status -sb`')
+    expect(prompt).toContain('`README`')
+    expect(prompt.endsWith('릴리스 상태를 점검해줘.')).toBe(true)
   })
 
   it('keeps Codex args intact when wrapped for WSL', () => {

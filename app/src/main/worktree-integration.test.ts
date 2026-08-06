@@ -14,6 +14,9 @@ describe('completed worktree integration policy', () => {
     expect(nextWorktreeIntegrationStep('auto', status({ dirty: true, canMerge: false }))).toBe(
       'commit',
     )
+    expect(
+      nextWorktreeIntegrationStep('auto', status({ dirty: true, merged: true, canMerge: false })),
+    ).toBe('commit')
   })
 
   it('merges only a clean worktree reported as fast-forward safe', () => {
@@ -23,6 +26,9 @@ describe('completed worktree integration policy', () => {
 
   it('never commits or merges in suggestion mode', () => {
     expect(nextWorktreeIntegrationStep('suggest', status({ dirty: true }))).toBe('suggest')
+    expect(nextWorktreeIntegrationStep('suggest', status({ dirty: true, merged: true }))).toBe(
+      'suggest',
+    )
     expect(nextWorktreeIntegrationStep('suggest', status())).toBe('suggest')
   })
 
