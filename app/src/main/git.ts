@@ -17,13 +17,19 @@ import type {
 
 const exec = promisify(execFile)
 
+function hostGitArgs(args: string[]): string[] {
+  // Windows와 WSL이 같은 worktree를 볼 때 Git 전역 설정 차이만으로 전체 파일이
+  // dirty가 되는 것을 막는다. 저장소의 .gitattributes 규칙은 이 설정보다 우선한다.
+  return process.platform === 'win32' ? ['-c', 'core.autocrlf=true', ...args] : args
+}
+
 /**
  * git 은 호스트(Windows)에서 실행한다.
  * WSL 프로젝트도 경로가 /mnt/c 로 매핑된 같은 디스크라 Windows git 으로 읽을 수 있고,
  * 러너를 거치지 않아 세션이 죽어도 스냅샷 조회가 가능하다.
  */
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await exec('git', args, {
+  const { stdout } = await exec('git', hostGitArgs(args), {
     cwd,
     timeout: 20_000,
     windowsHide: true,
@@ -34,7 +40,7 @@ async function git(cwd: string, args: string[]): Promise<string> {
 
 async function gitWithError(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
   try {
-    const { stdout, stderr } = await exec('git', args, {
+    const { stdout, stderr } = await exec('git', hostGitArgs(args), {
       cwd,
       timeout: 20_000,
       windowsHide: true,
