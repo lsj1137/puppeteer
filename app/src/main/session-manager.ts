@@ -37,6 +37,7 @@ import {
   commitWorktree as commitGitWorktree,
   diffFile,
   mergeWorktree as mergeGitWorktree,
+  worktreeHeadCommitTime,
   rebaseWorktree as rebaseGitWorktree,
   resolveWorktreeConflicts as resolveGitWorktreeConflicts,
   removeWorktree,
@@ -486,14 +487,8 @@ export class SessionManager {
       for (const proposal of extracted.proposals) {
         const entryId = session?.memoryTargets[proposal.scope]
         if (!entryId) continue
-        if (db.recordMemoryProposal({ sessionId, entryId, ...proposal })) {
-          this.persistAndSend(sessionId, {
-            t: 'notice',
-            level: 'info',
-            title: 'Memory 변경 제안',
-            text: `${proposal.reason}\n\nMemory 화면에서 변경분을 검토하고 승인할 수 있습니다.`,
-          })
-        }
+        const recorded = db.recordMemoryProposal({ sessionId, entryId, ...proposal })
+        if (recorded) this.persistAndSend(sessionId, { t: 'memory-proposal', proposal: recorded })
       }
       event = { ...event, text: extracted.text }
       if (!event.text && extracted.proposals.length > 0) return
@@ -649,6 +644,13 @@ export class SessionManager {
         this.sendMergeSuggestion(sessionId, wt.path, merged.message)
         return
       }
+      const commitTime = await worktreeHeadCommitTime(wt)
+      const commitTimeText = commitTime
+        ? new Intl.DateTimeFormat('ko-KR', {
+            dateStyle: 'medium',
+            timeStyle: 'medium',
+          }).format(new Date(commitTime))
+        : '확인할 수 없음'
       this.setIntegrationReport(sessionId, {
         mode,
         phase: 'completed',
@@ -662,7 +664,7 @@ export class SessionManager {
         t: 'notice',
         level: 'info',
         title: '자동 커밋·병합 완료',
-        text: `${merged.message}\n\n원본 프로젝트에 변경이 반영되었습니다.`,
+        text: `${merged.message}\n최근 커밋 시간: ${commitTimeText}\n\n원본 프로젝트에 변경이 반영되었습니다.`,
       })
     } catch (error) {
       const message =

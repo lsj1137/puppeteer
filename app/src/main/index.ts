@@ -40,6 +40,10 @@ const smokeUserData = process.env['AGENT_WORKSPACE_SMOKE_USER_DATA']
 const e2eMode = process.env['AGENT_WORKSPACE_E2E'] === '1'
 const e2eUserData = process.env['AGENT_WORKSPACE_E2E_USER_DATA']
 
+// Windows 작업표시줄은 창 icon보다 AppUserModelID로 실행 파일·바로가기 그룹 아이콘을
+// 결정한다. electron-builder의 appId와 맞춰야 Electron 기본 로고로 묶이지 않는다.
+if (process.platform === 'win32') app.setAppUserModelId('com.lsj1137.puppeteer')
+
 if (smokeMode && smokeUserData) app.setPath('userData', smokeUserData)
 if (e2eMode && e2eUserData) app.setPath('userData', e2eUserData)
 

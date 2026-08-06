@@ -752,6 +752,7 @@ export default function App() {
             selectedArtifact={selectedArtifact}
             onSelectArtifact={setSelectedArtifact}
             rightOffset={(artifactsOpen ? artifactW : 40) + 12}
+            onOpenMemory={() => setScreen('memory')}
           />
 
           {busy && (

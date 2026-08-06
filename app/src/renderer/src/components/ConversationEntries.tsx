@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CheckCircle2, FileCode2 } from 'lucide-react'
+import { AlertTriangle, Check, CheckCircle2, FileCode2, Loader2, Sparkles, X } from 'lucide-react'
+import type { MemoryProposal } from '@shared/session'
 import type { SessionView } from '../lib/session-view'
 import { artifactTitle, lineCount } from './ArtifactPanel'
 import Markdown from './Markdown'
@@ -10,6 +11,7 @@ interface Props {
   view: SessionView
   onSelectArtifact: (id: string) => void
   rightOffset?: number
+  onOpenMemory?: () => void
 }
 
 /** 세션의 충돌 경고와 사용자·도구·assistant 메시지를 순서대로 렌더링한다. */
@@ -18,6 +20,7 @@ export default function ConversationEntries({
   view,
   onSelectArtifact,
   rightOffset = 52,
+  onOpenMemory,
 }: Props) {
   const latestAutoMergeNoticeId = [...view.entries]
     .reverse()
@@ -54,12 +57,22 @@ export default function ConversationEntries({
           )
         }
         if (entry.kind === 'tool') return <ToolEntry key={entry.id} entry={entry} />
+        if (entry.kind === 'memory-proposal') {
+          return (
+            <MemoryProposalCard
+              key={entry.id}
+              proposal={entry.proposal}
+              onOpenMemory={onOpenMemory}
+            />
+          )
+        }
         if (entry.kind === 'notice') {
           if (entry.title === '자동 커밋·병합 완료') {
             if (entry.id !== latestAutoMergeNoticeId) return null
             return (
               <AutoMergeNotice
                 key={entry.id}
+                noticeId={entry.id}
                 title={entry.title}
                 text={entry.text}
                 rightOffset={rightOffset}
@@ -133,16 +146,102 @@ export default function ConversationEntries({
   )
 }
 
+function MemoryProposalCard({
+  proposal,
+  onOpenMemory,
+}: {
+  proposal: MemoryProposal
+  onOpenMemory?: () => void
+}) {
+  const [state, setState] = useState<'checking' | 'pending' | 'approved' | 'rejected' | 'error'>(
+    'checking',
+  )
+
+  useEffect(() => {
+    void window.api.memoryProposals().then((items) =>
+      setState(items.some(({ id }) => id === proposal.id) ? 'pending' : 'approved'),
+    )
+  }, [proposal.id])
+
+  async function decide(approve: boolean): Promise<void> {
+    setState('checking')
+    if (approve) {
+      const ok = await window.api.approveMemoryProposal(proposal.id)
+      setState(ok ? 'approved' : 'error')
+    } else {
+      await window.api.rejectMemoryProposal(proposal.id)
+      setState('rejected')
+    }
+  }
+
+  if (state === 'approved' || state === 'rejected') return null
+
+  return (
+    <div className="rounded-lg border border-mauve/40 bg-mauve/10 p-3 text-[12px]">
+      <div className="flex items-start gap-2">
+        <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-mauve" />
+        <div className="min-w-0 flex-1">
+          <div className="font-semibold text-text">Memory에 추가할까요?</div>
+          <div className="mt-0.5 text-subtext0">{proposal.reason}</div>
+          <div className="mt-2 whitespace-pre-wrap rounded-md bg-base px-2.5 py-2 font-mono text-[11px] leading-relaxed text-subtext1">
+            {proposal.content}
+          </div>
+          <div className="mt-1.5 text-[10px] text-overlay1">
+            {proposal.scope === 'project' ? 'Project Memory' : 'Agent Memory'} · 승인 전에는 정본 파일을 변경하지 않습니다.
+          </div>
+          {state === 'error' && (
+            <div className="mt-1.5 text-[11px] text-red">적용하지 못했습니다. Memory 화면에서 정본과 파일 권한을 확인하세요.</div>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={onOpenMemory}
+          className="rounded-md px-2.5 py-1.5 text-[11px] text-subtext1 hover:bg-surface0 hover:text-text"
+        >
+          Memory에서 검토
+        </button>
+        <button
+          type="button"
+          disabled={state === 'checking'}
+          onClick={() => void decide(false)}
+          className="flex items-center gap-1 rounded-md px-2.5 py-1.5 text-[11px] text-overlay1 hover:bg-red/10 hover:text-red disabled:opacity-40"
+        >
+          <X className="h-3.5 w-3.5" /> 거절
+        </button>
+        <button
+          type="button"
+          disabled={state === 'checking'}
+          onClick={() => void decide(true)}
+          className="flex items-center gap-1 rounded-md bg-green/15 px-2.5 py-1.5 text-[11px] font-medium text-green hover:bg-green/25 disabled:opacity-40"
+        >
+          {state === 'checking' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+          승인해 추가
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function AutoMergeNotice({
+  noticeId,
   title,
   text,
   rightOffset,
 }: {
+  noticeId: string
   title: string
   text: string
   rightOffset: number
 }) {
-  const [compact, setCompact] = useState(false)
+  const storageKey = `workspace:auto-merge-notice-seen:${noticeId}`
+  const [compact, setCompact] = useState(() => localStorage.getItem(storageKey) === '1')
+
+  useEffect(() => {
+    // 이벤트가 처음 표시된 순간을 기록해 세션을 다시 열 때는 아이콘으로 시작한다.
+    localStorage.setItem(storageKey, '1')
+  }, [storageKey])
 
   useEffect(() => {
     const collapse = (): void => setCompact(true)

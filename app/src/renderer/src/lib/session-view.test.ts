@@ -68,6 +68,32 @@ describe('reduceSessionView', () => {
     expect(resultView.entries[0]).toMatchObject({ result: { ok: true, preview: 'updated' } })
     expect(usageView).toMatchObject({ cost: 0.01, tokens: 150 })
   })
+
+  it('keeps a memory proposal as an actionable conversation entry', () => {
+    const view = reduceSessionView(
+      EMPTY_SESSION_VIEW,
+      {
+        t: 'memory-proposal',
+        proposal: {
+          id: 7,
+          sessionId: 'session-1',
+          entryId: 'project:C:\\repo',
+          scope: 'project',
+          content: '- 릴리스 전 verify를 실행한다.',
+          reason: '반복되는 프로젝트 검증 규칙입니다.',
+          status: 'pending',
+          createdAt: 1,
+        },
+      },
+      'event-memory-1',
+    )
+
+    expect(view.entries[0]).toMatchObject({
+      kind: 'memory-proposal',
+      id: 'event-memory-1',
+      proposal: { id: 7, scope: 'project' },
+    })
+  })
 })
 
 describe('splitSessionTabs', () => {

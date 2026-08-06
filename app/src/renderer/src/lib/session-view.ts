@@ -12,6 +12,7 @@ import { splitFences, type Segment, type UiArtifact } from './fences'
 export type Entry =
   | { kind: 'assistant'; id: string; segments: Segment[]; isError?: boolean }
   | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; title: string; text: string }
+  | { kind: 'memory-proposal'; id: string; proposal: import('@shared/session').MemoryProposal }
   | {
       kind: 'tool'
       id: string
@@ -77,6 +78,11 @@ export function reduceSessionView(v: SessionView, e: SessionEvent, key: string):
           ...v.entries,
           { kind: 'notice', id: key, level: e.level, title: e.title, text: e.text },
         ],
+      }
+    case 'memory-proposal':
+      return {
+        ...v,
+        entries: [...v.entries, { kind: 'memory-proposal', id: key, proposal: e.proposal }],
       }
     case 'tool-use':
       return {

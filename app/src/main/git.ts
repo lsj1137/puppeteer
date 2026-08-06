@@ -364,10 +364,18 @@ export async function commitWorktree(
       return { ok: false, message: '커밋할 변경을 찾지 못했습니다.', status: await worktreeStatus(wt) }
     }
     await gitWithError(wt.path, ['commit', '-m', title])
+    const status = await worktreeStatus(wt)
+    if (status.dirty) {
+      return {
+        ok: false,
+        message: '커밋 후에도 worktree에 변경이 남아 있어 자동 반영을 중단했습니다.',
+        status,
+      }
+    }
     return {
       ok: true,
       message: `worktree 변경을 커밋했습니다: ${subject}`,
-      status: await worktreeStatus(wt),
+      status,
     }
   } catch (error) {
     return {
@@ -607,6 +615,17 @@ export async function mergeWorktree(wt: SessionWorktree): Promise<WorktreeMergeR
   try {
     await git(wt.origin, ['merge', '--ff-only', wt.branch])
     const status = await worktreeStatus(wt)
+    if (!status.merged || status.dirty || status.originDirty) {
+      return {
+        ok: false,
+        message: status.dirty
+          ? '병합 후에도 worktree 변경이 남아 있어 완료로 처리하지 않았습니다.'
+          : status.originDirty
+            ? '병합 후 원본 저장소에 커밋되지 않은 변경이 있어 완료로 처리하지 않았습니다.'
+            : '병합 결과를 확인하지 못해 완료로 처리하지 않았습니다.',
+        status,
+      }
+    }
     return {
       ok: true,
       message: `${wt.branch}의 커밋을 ${wt.baseBranch}에 반영했습니다.`,
@@ -619,5 +638,16 @@ export async function mergeWorktree(wt: SessionWorktree): Promise<WorktreeMergeR
       message: status.reason ?? '병합 직전에 저장소 상태가 바뀌어 작업을 중단했습니다.',
       status,
     }
+  }
+}
+
+/** worktree HEAD의 실제 커밋 시각. 알림이 오래된 성공 기록인지 구분할 때 사용한다. */
+export async function worktreeHeadCommitTime(wt: SessionWorktree): Promise<number | undefined> {
+  try {
+    const value = (await git(wt.path, ['log', '-1', '--format=%cI'])).trim()
+    const timestamp = Date.parse(value)
+    return Number.isFinite(timestamp) ? timestamp : undefined
+  } catch {
+    return undefined
   }
 }

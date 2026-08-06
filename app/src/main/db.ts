@@ -471,13 +471,14 @@ export function memoryEdits(entryId?: string, limit = 20): MemoryEdit[] {
 
 export function recordMemoryProposal(
   proposal: Pick<MemoryProposal, 'sessionId' | 'entryId' | 'scope' | 'content' | 'reason'>,
-): boolean {
+): MemoryProposal | undefined {
   const duplicate = db.prepare(
     `SELECT id FROM memory_proposal
      WHERE status = 'pending' AND entry_id = ? AND content = ? LIMIT 1`,
   ).get(proposal.entryId, proposal.content)
-  if (duplicate) return false
-  db.prepare(
+  if (duplicate) return undefined
+  const createdAt = now()
+  const inserted = db.prepare(
     `INSERT INTO memory_proposal
        (session_id, entry_id, scope, content, reason, status, created_at)
      VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
@@ -487,9 +488,10 @@ export function recordMemoryProposal(
     proposal.scope,
     proposal.content,
     proposal.reason,
-    now(),
+    createdAt,
   )
-  return true
+  const id = Number(inserted.lastInsertRowid)
+  return { ...proposal, id, status: 'pending', createdAt }
 }
 
 export function memoryProposals(status: MemoryProposal['status'] = 'pending'): MemoryProposal[] {

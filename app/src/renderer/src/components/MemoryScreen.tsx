@@ -15,8 +15,6 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import type { MemoryEdit, MemoryEntry, MemoryProposal, MemoryScope } from '@shared/session'
-import Code from './Code'
-import { unifiedDiff } from '../lib/diff'
 
 const SCOPES: {
   key: MemoryScope
@@ -101,6 +99,15 @@ export default function MemoryScreen() {
     ])
     setEntries(list)
     setProposals(pending)
+    if (pending[0]) {
+      const target = list.find((entry) => entry.id === pending[0].entryId)
+      if (target) {
+        setSelected(target.id)
+        const text = await window.api.readMemory(target.id)
+        setOriginal(text)
+        setDraft(text)
+      }
+    }
     setLoading(false)
     return list
   }, [])
@@ -175,15 +182,18 @@ export default function MemoryScreen() {
   }
 
   return (
-    <div className="flex h-full min-h-0">
+    <div className="grid h-full min-h-0 w-full grid-cols-[minmax(13rem,16rem)_minmax(0,1fr)] overflow-hidden">
       {/* ── 목록 ─────────────────────────────── */}
-      <div className="w-64 shrink-0 overflow-auto border-r border-surface0 p-2.5">
+      <div className="min-w-0 overflow-y-auto overflow-x-hidden border-r border-surface0 p-2.5">
         <h1 className="mb-3 px-1 text-[16px] font-semibold text-text">Memory</h1>
 
         {proposals.length > 0 && (
           <section className="mb-3 rounded-lg bg-mauve/10 p-1.5 ring-1 ring-mauve/20">
             <div className="flex items-center gap-1.5 px-1.5 py-1 text-[11px] font-medium text-mauve">
               <Sparkles className="h-3.5 w-3.5" /> AI 제안 {proposals.length}
+            </div>
+            <div className="px-1.5 pb-1 text-[10px] leading-relaxed text-overlay1">
+              제안을 누르면 오른쪽에서 diff를 확인하고 승인하거나 거절할 수 있습니다.
             </div>
             {proposals.map((proposal) => (
               <button
@@ -276,7 +286,7 @@ export default function MemoryScreen() {
 
       {/* ── 편집 ─────────────────────────────── */}
       {entry ? (
-        <div className="flex min-h-0 flex-1 flex-col p-4">
+        <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden p-4">
           <div className="mb-2 flex items-start gap-3">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -339,15 +349,17 @@ export default function MemoryScreen() {
           {proposals
             .filter((proposal) => proposal.entryId === entry.id)
             .map((proposal) => {
-              const next = original.trimEnd()
-                ? `${original.trimEnd()}\n\n${proposal.content}\n`
-                : `${proposal.content}\n`
               return (
-                <div key={proposal.id} className="mb-2 overflow-hidden rounded-lg bg-mauve/10 ring-1 ring-mauve/20">
+                <div key={proposal.id} className="mb-2 min-w-0 overflow-hidden rounded-lg bg-mauve/10 ring-1 ring-mauve/25">
                   <div className="flex items-start gap-2 px-3 py-2">
                     <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mauve" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-[12px] font-medium text-text">AI가 Memory 추가를 제안했습니다</div>
+                      <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium text-text">
+                        <span>Memory 추가 제안</span>
+                        <span className="rounded bg-mauve/15 px-1.5 py-0.5 text-[10px] font-normal text-mauve">
+                          {proposal.scope === 'project' ? 'Project' : 'Agent'}
+                        </span>
+                      </div>
                       <div className="mt-0.5 text-[11px] text-subtext0">{proposal.reason}</div>
                     </div>
                     <button
@@ -362,11 +374,16 @@ export default function MemoryScreen() {
                       className="rounded-md bg-green/15 px-2.5 py-1 text-[11px] font-medium text-green hover:bg-green/25 disabled:opacity-40"
                     >승인해 추가</button>
                   </div>
-                  <div className="max-h-44 overflow-auto">
-                    <Code code={unifiedDiff(original, next)} language="diff" />
+                  <div className="mx-3 mb-2 min-w-0 rounded-md border border-surface1 bg-base px-3 py-2.5">
+                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-overlay1">
+                      추가할 내용
+                    </div>
+                    <div className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-subtext1 overscroll-contain">
+                      {proposal.content}
+                    </div>
                   </div>
                   <div className="px-3 py-1.5 text-[10px] text-overlay1">
-                    승인 전에는 정본 파일을 변경하지 않습니다.
+                    승인하면 위 내용만 기존 Memory 끝에 추가합니다. 승인 전에는 정본을 변경하지 않습니다.
                   </div>
                 </div>
               )
@@ -386,7 +403,7 @@ export default function MemoryScreen() {
             }}
             spellCheck={false}
             placeholder="이 범위에서 늘 기억해야 할 것을 적습니다."
-            className="min-h-0 flex-1 resize-none rounded-lg bg-mantle p-3 font-mono text-[13px] leading-relaxed text-text outline-none ring-1 ring-transparent placeholder:text-overlay0 focus:ring-lavender/40"
+            className="min-h-48 min-w-0 flex-1 resize-none rounded-lg bg-mantle p-3 font-mono text-[13px] leading-relaxed text-text outline-none ring-1 ring-transparent placeholder:text-overlay0 focus:ring-lavender/40"
           />
 
           <div className="mt-2 flex items-center gap-3 text-[11px] text-overlay1">
