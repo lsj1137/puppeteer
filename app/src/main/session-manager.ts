@@ -22,6 +22,7 @@ import type {
   WorktreeResolvedFile,
   WorktreeStatus,
   WorktreeIntegrationMode,
+  WorktreeIntegrationReport,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
@@ -313,9 +314,38 @@ export class SessionManager {
   }
 
   async worktreeStatus(sessionId: string): Promise<WorktreeStatus | undefined> {
-    const wt = db.getSession(sessionId)?.worktree
+    const stored = db.getSession(sessionId)
+    const wt = stored?.worktree
     if (!wt) return undefined
-    const status = await inspectWorktree(wt)
+    const inspected = await inspectWorktree(wt)
+    let integration = db.getWorktreeIntegration(sessionId)
+    const staleInProgress = Boolean(
+      integration &&
+        ['checking', 'committing', 'merging'].includes(integration.phase) &&
+        Date.now() - integration.updatedAt > 30_000,
+    )
+    if (
+      (!integration || staleInProgress) &&
+      stored.status === 'completed' &&
+      !this.sessions.has(sessionId) &&
+      nextWorktreeIntegrationStep(
+        db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto',
+        inspected,
+      ) !== 'none'
+    ) {
+      integration = {
+        mode: db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto',
+        phase: 'checking',
+        summary: staleInProgress
+          ? '중단된 자동 반영 작업을 다시 확인하고 있습니다.'
+          : '누락된 자동 반영 기록을 복구하고 있습니다.',
+        worktreePath: wt.path,
+        updatedAt: Date.now(),
+        status: integrationStatus(inspected),
+      }
+      void this.integrateWorktree(sessionId)
+    }
+    const status = { ...inspected, integration }
     if (this.sessions.has(sessionId)) {
       return {
         ...status,
@@ -512,21 +542,65 @@ export class SessionManager {
       return
     }
 
+    const mode: WorktreeIntegrationMode =
+      db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto'
+    this.setIntegrationReport(sessionId, {
+      mode,
+      phase: 'checking',
+      summary: '완료된 작업의 변경 상태를 확인하고 있습니다.',
+      worktreePath: wt.path,
+      updatedAt: Date.now(),
+    })
+
     try {
       let status = await inspectWorktree(wt)
-      const mode: WorktreeIntegrationMode =
-        db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto'
       let step = nextWorktreeIntegrationStep(mode, status)
-      if (step === 'none') return
+      if (step === 'none') {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: 'skipped',
+          summary: status.merged ? '이미 원본에 반영되어 있습니다.' : '반영할 변경이 없습니다.',
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(status),
+        })
+        return
+      }
       if (step === 'suggest') {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: 'needs-review',
+          summary: '설정에 따라 자동 반영하지 않았습니다.',
+          detail: status.reason,
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(status),
+        })
         this.sendMergeSuggestion(sessionId, wt.path, '설정에 따라 자동 커밋·병합하지 않았습니다.')
         return
       }
 
       if (step === 'commit') {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: 'committing',
+          summary: '변경을 작업 브랜치에 커밋하고 있습니다.',
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(status),
+        })
         const title = (stored.title ?? '세션 작업').replace(/\s+/g, ' ').trim().slice(0, 72)
         const committed = await commitGitWorktree(wt, `Puppeteer: ${title}`)
         if (!committed.ok) {
+          this.setIntegrationReport(sessionId, {
+            mode,
+            phase: 'needs-review',
+            summary: '자동 커밋에 실패했습니다.',
+            detail: committed.message,
+            worktreePath: wt.path,
+            updatedAt: Date.now(),
+            status: committed.status ? integrationStatus(committed.status) : integrationStatus(status),
+          })
           this.sendMergeSuggestion(sessionId, wt.path, committed.message)
           return
         }
@@ -536,6 +610,15 @@ export class SessionManager {
 
       if (step === 'none') return
       if (step !== 'merge') {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: 'needs-review',
+          summary: '자동 병합의 안전 조건을 충족하지 못했습니다.',
+          detail: status.reason,
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(status),
+        })
         this.sendMergeSuggestion(
           sessionId,
           wt.path,
@@ -544,11 +627,37 @@ export class SessionManager {
         return
       }
 
+      this.setIntegrationReport(sessionId, {
+        mode,
+        phase: 'merging',
+        summary: '작업 브랜치를 원본에 fast-forward 병합하고 있습니다.',
+        worktreePath: wt.path,
+        updatedAt: Date.now(),
+        status: integrationStatus(status),
+      })
       const merged = await mergeGitWorktree(wt)
       if (!merged.ok) {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: 'needs-review',
+          summary: '자동 병합에 실패했습니다.',
+          detail: merged.message,
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: merged.status ? integrationStatus(merged.status) : integrationStatus(status),
+        })
         this.sendMergeSuggestion(sessionId, wt.path, merged.message)
         return
       }
+      this.setIntegrationReport(sessionId, {
+        mode,
+        phase: 'completed',
+        summary: '자동 커밋·병합을 완료했습니다.',
+        detail: merged.message,
+        worktreePath: wt.path,
+        updatedAt: Date.now(),
+        status: merged.status ? integrationStatus(merged.status) : undefined,
+      })
       this.persistAndSend(sessionId, {
         t: 'notice',
         level: 'info',
@@ -556,14 +665,28 @@ export class SessionManager {
         text: `${merged.message}\n\n원본 프로젝트에 변경이 반영되었습니다.`,
       })
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : '자동 커밋·병합 중 상태를 확인하지 못했습니다.'
+      this.setIntegrationReport(sessionId, {
+        mode,
+        phase: 'needs-review',
+        summary: '자동 반영 처리 중 오류가 발생했습니다.',
+        detail: message,
+        worktreePath: wt.path,
+        updatedAt: Date.now(),
+      })
       this.sendMergeSuggestion(
         sessionId,
         wt.path,
-        error instanceof Error ? error.message : '자동 커밋·병합 중 상태를 확인하지 못했습니다.',
+        message,
       )
     } finally {
       this.integratingWorktrees.delete(sessionId)
     }
+  }
+
+  private setIntegrationReport(sessionId: string, report: WorktreeIntegrationReport): void {
+    db.setWorktreeIntegration(sessionId, report)
   }
 
   private sendMergeSuggestion(sessionId: string, worktreePath: string, reason: string): void {
@@ -615,4 +738,16 @@ export class SessionManager {
 function summarizeApproval(input: unknown): string {
   const text = JSON.stringify(input, null, 2)
   return text.length <= 600 ? text : `${text.slice(0, 600)}\n…`
+}
+
+function integrationStatus(status: WorktreeStatus): NonNullable<WorktreeIntegrationReport['status']> {
+  return {
+    dirty: status.dirty,
+    originDirty: status.originDirty,
+    hasCommits: status.hasCommits,
+    ahead: status.ahead,
+    behind: status.behind,
+    merged: status.merged,
+    canMerge: status.canMerge,
+  }
 }

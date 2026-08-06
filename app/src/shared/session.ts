@@ -19,6 +19,19 @@ export type ArtifactKind = 'code' | 'md' | 'diff' | 'image' | 'log'
 /** 세션이 정상 완료된 뒤 격리 worktree를 원본에 반영하는 방식. */
 export type WorktreeIntegrationMode = 'auto' | 'suggest'
 
+export interface WorktreeIntegrationReport {
+  mode: WorktreeIntegrationMode
+  phase: 'checking' | 'committing' | 'merging' | 'completed' | 'skipped' | 'needs-review'
+  summary: string
+  detail?: string
+  worktreePath: string
+  updatedAt: number
+  status?: Pick<
+    WorktreeStatus,
+    'dirty' | 'originDirty' | 'hasCommits' | 'ahead' | 'behind' | 'merged' | 'canMerge'
+  >
+}
+
 /** 어댑터가 정규화해 올리는 이벤트. 모든 Provider가 이 타입으로 수렴한다. */
 export type SessionEvent =
   | { t: 'status'; status: SessionStatus; reason?: string }
@@ -379,6 +392,8 @@ export interface WorktreeStatus {
   /** 중단된 rebase에서 아직 해결해야 하는 파일 */
   conflictFiles?: string[]
   reason?: string
+  /** 마지막 자동 반영 시도. Git 상태와 별도로 저장해 실패 원인을 다시 볼 수 있다. */
+  integration?: WorktreeIntegrationReport
 }
 
 /** fast-forward 병합 시도 결과 */

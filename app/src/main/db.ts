@@ -13,6 +13,7 @@ import type {
   ProjectStat,
   StoredProject,
   StoredSession,
+  WorktreeIntegrationReport,
 } from '@shared/session'
 
 /**
@@ -111,6 +112,11 @@ function migrate(): void {
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS worktree_integration (
+      session_id TEXT PRIMARY KEY,
+      report     TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_memory_proposal_status
       ON memory_proposal(status, created_at DESC);
   `)
@@ -159,6 +165,34 @@ export function setSetting(key: string, value: string): void {
     `INSERT INTO app_setting (key, value) VALUES (?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
   ).run(key, value)
+}
+
+export function getWorktreeIntegration(sessionId: string): WorktreeIntegrationReport | undefined {
+  try {
+    const row = db.prepare('SELECT report FROM worktree_integration WHERE session_id = ?').get(
+      sessionId,
+    ) as { report: string } | undefined
+    if (!row) return undefined
+    return JSON.parse(row.report) as WorktreeIntegrationReport
+  } catch {
+    return undefined
+  }
+}
+
+export function setWorktreeIntegration(
+  sessionId: string,
+  report: WorktreeIntegrationReport,
+): boolean {
+  try {
+    db.prepare(
+      `INSERT INTO worktree_integration (session_id, report) VALUES (?, ?)
+       ON CONFLICT(session_id) DO UPDATE SET report = excluded.report`,
+    ).run(sessionId, JSON.stringify(report))
+    return true
+  } catch {
+    // 진단 저장 실패가 실제 자동 커밋·병합을 막아서는 안 된다.
+    return false
+  }
 }
 
 // ── 프로젝트 ────────────────────────────────────────────────
@@ -323,6 +357,7 @@ export function deleteSession(id: string): void {
   db.prepare('DELETE FROM event WHERE session_id = ?').run(id)
   db.prepare('DELETE FROM approval WHERE session_id = ?').run(id)
   db.prepare('DELETE FROM file_change WHERE session_id = ?').run(id)
+  db.prepare('DELETE FROM worktree_integration WHERE session_id = ?').run(id)
   db.prepare('DELETE FROM session WHERE id = ?').run(id)
 }
 
