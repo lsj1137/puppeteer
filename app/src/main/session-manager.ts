@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { app } from 'electron'
@@ -20,6 +21,7 @@ import type {
   WorktreeRebaseStrategy,
   WorktreeResolvedFile,
   WorktreeStatus,
+  WorktreeIntegrationMode,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
@@ -52,6 +54,7 @@ import {
   shouldCreateWorktree,
   worktreeBranchName,
 } from './worktree-policy'
+import { nextWorktreeIntegrationStep } from './worktree-integration'
 
 export interface StartSessionInput {
   runner: DetectedRunner
@@ -89,6 +92,7 @@ const TERMINAL: SessionStatus[] = ['completed', 'failed', 'stopped', 'auth-requi
 /** 세션 생명주기 관리. 모든 이벤트를 DB 에 적재하고 렌더러로 중계한다. */
 export class SessionManager {
   private sessions = new Map<string, LiveSession>()
+  private integratingWorktrees = new Set<string>()
   private broker: ApprovalBroker
 
   constructor(private readonly getWindow: () => BrowserWindow | undefined) {
@@ -445,6 +449,7 @@ export class SessionManager {
 
   private onEvent(sessionId: string, event: SessionEvent): void {
     const session = this.sessions.get(sessionId)
+    let integrateCompletedWorktree = false
 
     if (event.t === 'message' && event.role === 'assistant' && !event.isError) {
       const extracted = extractMemoryProposals(event.text)
@@ -477,6 +482,7 @@ export class SessionManager {
         }
         this.broker.detach(sessionId)
         this.sessions.delete(sessionId)
+        integrateCompletedWorktree = event.status === 'completed'
       }
     }
     if (event.t === 'session-meta') {
@@ -492,6 +498,87 @@ export class SessionManager {
     }
 
     this.persistAndSend(sessionId, event)
+    if (integrateCompletedWorktree) void this.integrateWorktree(sessionId)
+  }
+
+  /** 정상 완료된 격리 작업만 자동 커밋하고, 안전한 fast-forward일 때만 원본에 합친다. */
+  private async integrateWorktree(sessionId: string): Promise<void> {
+    if (this.integratingWorktrees.has(sessionId)) return
+    this.integratingWorktrees.add(sessionId)
+    const stored = db.getSession(sessionId)
+    const wt = stored?.worktree
+    if (!wt) {
+      this.integratingWorktrees.delete(sessionId)
+      return
+    }
+
+    try {
+      let status = await inspectWorktree(wt)
+      const mode: WorktreeIntegrationMode =
+        db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto'
+      let step = nextWorktreeIntegrationStep(mode, status)
+      if (step === 'none') return
+      if (step === 'suggest') {
+        this.sendMergeSuggestion(sessionId, wt.path, '설정에 따라 자동 커밋·병합하지 않았습니다.')
+        return
+      }
+
+      if (step === 'commit') {
+        const title = (stored.title ?? '세션 작업').replace(/\s+/g, ' ').trim().slice(0, 72)
+        const committed = await commitGitWorktree(wt, `Puppeteer: ${title}`)
+        if (!committed.ok) {
+          this.sendMergeSuggestion(sessionId, wt.path, committed.message)
+          return
+        }
+        status = committed.status ?? (await inspectWorktree(wt))
+        step = nextWorktreeIntegrationStep(mode, status)
+      }
+
+      if (step === 'none') return
+      if (step !== 'merge') {
+        this.sendMergeSuggestion(
+          sessionId,
+          wt.path,
+          status.reason ?? '자동 병합 안전 조건을 충족하지 못했습니다.',
+        )
+        return
+      }
+
+      const merged = await mergeGitWorktree(wt)
+      if (!merged.ok) {
+        this.sendMergeSuggestion(sessionId, wt.path, merged.message)
+        return
+      }
+      this.persistAndSend(sessionId, {
+        t: 'notice',
+        level: 'info',
+        title: '자동 커밋·병합 완료',
+        text: `${merged.message}\n\n원본 프로젝트에 변경이 반영되었습니다.`,
+      })
+    } catch (error) {
+      this.sendMergeSuggestion(
+        sessionId,
+        wt.path,
+        error instanceof Error ? error.message : '자동 커밋·병합 중 상태를 확인하지 못했습니다.',
+      )
+    } finally {
+      this.integratingWorktrees.delete(sessionId)
+    }
+  }
+
+  private sendMergeSuggestion(sessionId: string, worktreePath: string, reason: string): void {
+    const appPath = join(worktreePath, 'app')
+    const runPath = existsSync(join(appPath, 'package.json')) ? appPath : worktreePath
+    const runCommand = existsSync(join(runPath, 'package.json')) ? '\nnpm run dev' : ''
+    this.persistAndSend(sessionId, {
+      t: 'notice',
+      level: 'warning',
+      title: '커밋·병합 검토 필요',
+      text:
+        `${reason}\n\n현재 변경을 직접 확인하려면 이 worktree에서 실행하세요:\n` +
+        `cd "${runPath}"${runCommand}\n\n` +
+        '확인 후 세션의 Worktree 관리에서 커밋하고 병합할 수 있습니다.',
+    })
   }
 
   /**

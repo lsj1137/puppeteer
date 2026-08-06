@@ -79,6 +79,11 @@ export default function SkillsScreen({
   }
 
   const field = 'w-full rounded-lg bg-base px-3 py-2 text-[13px] text-text outline-none ring-1 ring-transparent focus:ring-lavender/40'
+  const groupTone = (key: string): string => {
+    if (key === 'global') return 'bg-sapphire/15 text-sapphire ring-sapphire/20'
+    if (key.startsWith('project:')) return 'bg-green/15 text-green ring-green/20'
+    return 'bg-mauve/15 text-mauve ring-mauve/20'
+  }
 
   return (
     <div className="flex h-full min-h-0">
@@ -89,7 +94,7 @@ export default function SkillsScreen({
         </div>
         {groups.map((group) => (
           <section key={group.key} className="mb-3">
-            <div className="mb-1 flex items-center gap-1 px-1 text-[11px] font-medium text-subtext0">
+            <div className={`mb-1 flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium ring-1 ${groupTone(group.key)}`}>
               <span className="min-w-0 flex-1 truncate">{group.label}</span>
               <button
                 title={`${group.label} Skill 추가`}
@@ -98,7 +103,7 @@ export default function SkillsScreen({
                   else if (group.key.startsWith('project:')) create('project', group.key.slice(8))
                   else create('agent', undefined, group.key.slice(6))
                 }}
-                className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text"
+                className="rounded p-1 text-current opacity-70 hover:bg-base/40 hover:opacity-100"
               ><Plus className="h-3.5 w-3.5" /></button>
             </div>
             {group.items.length === 0 ? (

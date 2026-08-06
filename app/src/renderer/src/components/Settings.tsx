@@ -1,5 +1,5 @@
-import { Bell, Download, HelpCircle, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
-import type { DetectedRunner } from '@shared/session'
+import { Bell, Download, GitMerge, HelpCircle, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
+import type { DetectedRunner, WorktreeIntegrationMode } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import type { AppUpdateState } from '@shared/app-update'
 
@@ -39,6 +39,8 @@ export default function Settings({
   runners,
   defaultRunnerId,
   onDefaultRunnerChange,
+  worktreeIntegrationMode,
+  onWorktreeIntegrationModeChange,
   appUpdate,
   hasRunningSessions,
   onClose,
@@ -50,6 +52,8 @@ export default function Settings({
   runners: DetectedRunner[]
   defaultRunnerId?: string
   onDefaultRunnerChange: (runnerId: string) => void
+  worktreeIntegrationMode: WorktreeIntegrationMode
+  onWorktreeIntegrationModeChange: (mode: WorktreeIntegrationMode) => void
   appUpdate?: AppUpdateState
   hasRunningSessions: boolean
   onClose: () => void
@@ -144,6 +148,30 @@ export default function Settings({
             <div className="mt-1.5 text-[11px] leading-relaxed text-overlay1">
               승인 대기 · 세션 완료 · 실패 · 로그인 필요를 알립니다. 알림을 누르면 그 세션으로
               바로 이동합니다.
+            </div>
+          </Row>
+
+          <Row
+            label="작업 반영"
+            hint="정상 완료된 격리 세션의 변경을 원본 프로젝트에 반영하는 방식입니다. 충돌 가능성이 있으면 자동 병합도 제안으로 전환됩니다."
+          >
+            <div className="flex gap-1.5">
+              <Choice
+                on={worktreeIntegrationMode === 'auto'}
+                onPick={() => onWorktreeIntegrationModeChange('auto')}
+              >
+                <GitMerge className="h-3.5 w-3.5" /> 자동 병합
+              </Choice>
+              <Choice
+                on={worktreeIntegrationMode === 'suggest'}
+                onPick={() => onWorktreeIntegrationModeChange('suggest')}
+              >
+                병합 제안
+              </Choice>
+            </div>
+            <div className="mt-1.5 text-[11px] leading-relaxed text-overlay1">
+              자동 병합은 완료 시 변경을 커밋하고 안전한 fast-forward만 수행합니다. 병합 제안은
+              worktree 실행 경로와 수동 반영 방법을 대화에 남깁니다.
             </div>
           </Row>
 

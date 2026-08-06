@@ -1,6 +1,6 @@
 import { ImagePlus } from 'lucide-react'
 import type { AppUpdateState } from '@shared/app-update'
-import type { AgentDef, DetectedRunner, StoredProject } from '@shared/session'
+import type { AgentDef, DetectedRunner, StoredProject, WorktreeIntegrationMode } from '@shared/session'
 import AgentEditor from './AgentEditor'
 import AgentImport from './AgentImport'
 import ImageAnnotator from './ImageAnnotator'
@@ -21,11 +21,13 @@ interface AppOverlaysProps {
   notify: boolean
   runners: DetectedRunner[]
   defaultRunnerId?: string
+  worktreeIntegrationMode: WorktreeIntegrationMode
   appUpdate?: AppUpdateState
   hasRunningSessions: boolean
   onToggleTheme: () => void
   onToggleNotify: (enabled: boolean) => void
   onDefaultRunnerChange: (runnerId: string) => void
+  onWorktreeIntegrationModeChange: (mode: WorktreeIntegrationMode) => void
   onCloseSettings: () => void
   importing: boolean
   projects: StoredProject[]
@@ -50,11 +52,13 @@ export default function AppOverlays({
   notify,
   runners,
   defaultRunnerId,
+  worktreeIntegrationMode,
   appUpdate,
   hasRunningSessions,
   onToggleTheme,
   onToggleNotify,
   onDefaultRunnerChange,
+  onWorktreeIntegrationModeChange,
   onCloseSettings,
   importing,
   projects,
@@ -84,6 +88,8 @@ export default function AppOverlays({
           runners={runners}
           defaultRunnerId={defaultRunnerId}
           onDefaultRunnerChange={onDefaultRunnerChange}
+          worktreeIntegrationMode={worktreeIntegrationMode}
+          onWorktreeIntegrationModeChange={onWorktreeIntegrationModeChange}
           appUpdate={appUpdate}
           hasRunningSessions={hasRunningSessions}
           onClose={onCloseSettings}

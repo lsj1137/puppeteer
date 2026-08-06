@@ -30,6 +30,7 @@ import type {
   WorktreeRebaseStrategy,
   WorktreeResolvedFile,
   WorktreeStatus,
+  WorktreeIntegrationMode,
 } from '@shared/session'
 import type { AppUpdateState } from '@shared/app-update'
 
@@ -83,6 +84,10 @@ const api = {
   listRunningSessions: (): Promise<RunningSession[]> => ipcRenderer.invoke('session:running'),
   costTotals: (): Promise<CostTotals> => ipcRenderer.invoke('cost:totals'),
   setNotifyEnabled: (v: boolean): Promise<void> => ipcRenderer.invoke('notify:setEnabled', v),
+  worktreeIntegrationMode: (): Promise<WorktreeIntegrationMode> =>
+    ipcRenderer.invoke('worktree:integrationMode'),
+  setWorktreeIntegrationMode: (mode: WorktreeIntegrationMode): Promise<void> =>
+    ipcRenderer.invoke('worktree:setIntegrationMode', mode),
   /** 알림을 눌러 들어온 경우 그 세션으로 이동 */
   onNotifyJump: (cb: (j: { sessionId: string; cwd: string }) => void): (() => void) => {
     const h = (_e: IpcRendererEvent, j: { sessionId: string; cwd: string }): void => cb(j)

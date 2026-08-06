@@ -16,6 +16,9 @@ export type RiskLevel = 'low' | 'med' | 'high'
 
 export type ArtifactKind = 'code' | 'md' | 'diff' | 'image' | 'log'
 
+/** 세션이 정상 완료된 뒤 격리 worktree를 원본에 반영하는 방식. */
+export type WorktreeIntegrationMode = 'auto' | 'suggest'
+
 /** 어댑터가 정규화해 올리는 이벤트. 모든 Provider가 이 타입으로 수렴한다. */
 export type SessionEvent =
   | { t: 'status'; status: SessionStatus; reason?: string }

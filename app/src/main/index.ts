@@ -20,10 +20,17 @@ import type {
   DetectedRunner,
   FetchedAgent,
   SkillDef,
+  WorktreeIntegrationMode,
   WorktreeConflictResolverRequest,
   WorktreeResolvedFile,
   UpdateCheck,
 } from '@shared/session'
+
+const WORKTREE_INTEGRATION_SETTING = 'worktree_integration_mode'
+
+function worktreeIntegrationMode(): WorktreeIntegrationMode {
+  return db.getSetting(WORKTREE_INTEGRATION_SETTING) === 'suggest' ? 'suggest' : 'auto'
+}
 
 let mainWindow: BrowserWindow | undefined
 const conflictResolvers = new Map<string, WorktreeConflictResolverRequest>()
@@ -175,6 +182,11 @@ app.whenReady().then(() => {
   ipcMain.handle('session:running', () => sessions.listRunning())
   ipcMain.handle('cost:totals', () => db.costTotals())
   ipcMain.handle('notify:setEnabled', (_e, v: boolean) => setNotifyEnabled(v))
+  ipcMain.handle('worktree:integrationMode', () => worktreeIntegrationMode())
+  ipcMain.handle('worktree:setIntegrationMode', (_e, mode: WorktreeIntegrationMode) => {
+    if (mode !== 'auto' && mode !== 'suggest') throw new Error('지원하지 않는 worktree 반영 방식입니다.')
+    db.setSetting(WORKTREE_INTEGRATION_SETTING, mode)
+  })
 
   // 에이전트는 전역 라이브러리에서 관리한다. 프로젝트 스캔은 가져오기 후보용.
   ipcMain.handle('agent:list', () => library.list())

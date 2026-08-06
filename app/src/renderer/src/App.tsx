@@ -41,6 +41,7 @@ import type {
   RouteCandidate,
   StoredProject,
   StoredSession,
+  WorktreeIntegrationMode,
 } from '@shared/session'
 import {
   EMPTY_SESSION_VIEW,
@@ -129,6 +130,8 @@ export default function App() {
     localStorage.getItem('ws.defaultRunner') || undefined,
   )
   const [notify, setNotify] = useState(() => localStorage.getItem('ws.notify') !== 'off')
+  const [worktreeIntegrationMode, setWorktreeIntegrationMode] =
+    useState<WorktreeIntegrationMode>('auto')
   /** 탭바 가용 폭 — 창 크기·Artifact 폭에 따라 바뀌므로 관찰한다 */
   const [tabRoom, setTabRoom] = useState(0)
   const [confirmDelSession, setConfirmDelSession] = useState<StoredSession>()
@@ -281,10 +284,10 @@ export default function App() {
     void window.api.detectRunners().then(setRunners)
     void window.api.listProjects().then((ps) => {
       setProjects(ps)
-      if (ps[0]) setActive(ps[0].path)
+      if (ps[0]) void selectProject(ps[0].path)
     })
     void window.api.listOpenApprovals().then(setApprovals)
-  }, [])
+  }, [selectProject])
 
   // 저장된 기본값이 사라졌거나 첫 실행이면 사용 가능한 첫 환경을 기본값으로 잡는다.
   useEffect(() => {
@@ -306,6 +309,15 @@ export default function App() {
     return window.api.onAppUpdateState(setAppUpdate)
   }, [])
 
+  useEffect(() => {
+    void window.api.worktreeIntegrationMode().then(setWorktreeIntegrationMode)
+  }, [])
+
+  function changeWorktreeIntegrationMode(mode: WorktreeIntegrationMode): void {
+    setWorktreeIntegrationMode(mode)
+    void window.api.setWorktreeIntegrationMode(mode)
+  }
+
   // 한도 리셋까지 남은 시간 표시용
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000)
@@ -323,7 +335,6 @@ export default function App() {
 
   useEffect(() => {
     void reloadAgents()
-    setAgentName(undefined)
   }, [active, reloadAgents])
 
   useEffect(() => {
@@ -467,7 +478,7 @@ export default function App() {
    * 일반 세션과 똑같이 첫 지시 시점에 사용자가 고르게 한다.
    */
   async function runRouted(c: RouteCandidate, projectPath: string, text: string): Promise<void> {
-    selectProject(projectPath)
+    void selectProject(projectPath, false)
     setAgentName(c.agentName)
 
     const proj = projects.find((p) => p.path === projectPath)
@@ -851,11 +862,13 @@ export default function App() {
         notify={notify}
         runners={usableRunners}
         defaultRunnerId={defaultRunnerId}
+        worktreeIntegrationMode={worktreeIntegrationMode}
         appUpdate={appUpdate}
         hasRunningSessions={running.length > 0}
         onToggleTheme={toggleTheme}
         onToggleNotify={setNotify}
         onDefaultRunnerChange={changeDefaultRunner}
+        onWorktreeIntegrationModeChange={changeWorktreeIntegrationMode}
         onCloseSettings={() => setSettingsOpen(false)}
         importing={importing}
         projects={projects}

@@ -19,7 +19,7 @@ interface Props {
   onDropProject: (path: string) => void
   onJump: (sessionId: string, projectPath: string) => void | Promise<void>
   onPickFolder: () => void | Promise<void>
-  onSelectProject: (path: string) => void
+  onSelectProject: (path: string) => void | Promise<void>
 }
 
 const runnerLabel = (runner: DetectedRunner): string =>
@@ -109,7 +109,7 @@ export default function WorkspaceLists(props: Props) {
             return (
               <div
                 key={project.path}
-                onClick={() => onSelectProject(project.path)}
+                onClick={() => void onSelectProject(project.path)}
                 className={`group cursor-pointer rounded-md px-2 py-1.5 ${
                   active ? 'bg-surface0' : 'hover:bg-surface0/50'
                 }`}

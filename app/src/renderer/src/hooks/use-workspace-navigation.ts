@@ -59,32 +59,14 @@ export function useWorkspaceNavigation(options: Options) {
   } = options
   const viewsRef = useRef(views)
   viewsRef.current = views
-
-  const selectProject = useCallback(
-    (path: string): void => {
-      setScreen('project')
-      setPendingPrompt(undefined)
-      setNextRunnerId(undefined)
-      setScrolled(false)
-      setActiveProjectPath(path || undefined)
-      setActiveSessionId(undefined)
-      setSelectedArtifact(undefined)
-      setAttachments([])
-    },
-    [
-      setActiveProjectPath,
-      setActiveSessionId,
-      setAttachments,
-      setNextRunnerId,
-      setPendingPrompt,
-      setScreen,
-      setScrolled,
-      setSelectedArtifact,
-    ],
-  )
+  const sessionsRef = useRef(sessions)
+  sessionsRef.current = sessions
+  /** 빠르게 프로젝트를 바꿀 때 이전 목록 응답이 새 선택을 덮지 않게 한다. */
+  const projectSelection = useRef(0)
 
   const openSession = useCallback(
-    async (id: string, candidates = sessions): Promise<void> => {
+    async (id: string, candidates = sessionsRef.current): Promise<void> => {
+      projectSelection.current++
       const target = candidates.find((session) => session.id === id)
       setScreen('project')
       setPendingPrompt(undefined)
@@ -97,7 +79,6 @@ export function useWorkspaceNavigation(options: Options) {
     },
     [
       restoreSessionView,
-      sessions,
       setActiveSessionId,
       setAgentName,
       setNextRunnerId,
@@ -105,6 +86,43 @@ export function useWorkspaceNavigation(options: Options) {
       setScreen,
       setScrolled,
       setSelectedArtifact,
+    ],
+  )
+
+  const selectProject = useCallback(
+    async (path: string, openLatest = true): Promise<void> => {
+      const selection = ++projectSelection.current
+      setScreen('project')
+      setPendingPrompt(undefined)
+      setNextRunnerId(undefined)
+      setScrolled(false)
+      setActiveProjectPath(path || undefined)
+      setActiveSessionId(undefined)
+      setSelectedArtifact(undefined)
+      setAgentName(undefined)
+      setAttachments([])
+
+      if (!path || !openLatest) return
+      const loaded = await window.api.listSessions(path)
+      if (selection !== projectSelection.current) return
+      setSessions(loaded)
+
+      // 실제 세션 탭 클릭과 같은 경로로 열어 활성화와 대화 복원을 함께 처리한다.
+      const latest = loaded[0]
+      if (latest) await openSession(latest.id, loaded)
+    },
+    [
+      openSession,
+      setActiveProjectPath,
+      setActiveSessionId,
+      setAgentName,
+      setAttachments,
+      setNextRunnerId,
+      setPendingPrompt,
+      setScreen,
+      setScrolled,
+      setSelectedArtifact,
+      setSessions,
     ],
   )
 
@@ -154,6 +172,7 @@ export function useWorkspaceNavigation(options: Options) {
   )
 
   const newSession = useCallback((): void => {
+    projectSelection.current++
     setScrolled(false)
     setPendingPrompt(undefined)
     setActiveSessionId(undefined)
@@ -165,7 +184,7 @@ export function useWorkspaceNavigation(options: Options) {
     const path = await window.api.pickProject()
     if (!path) return
     setProjects(await window.api.listProjects())
-    selectProject(path)
+    await selectProject(path)
   }, [selectProject, setProjects])
 
   const dropProject = useCallback(
@@ -174,7 +193,7 @@ export function useWorkspaceNavigation(options: Options) {
       await window.api.removeProject(path)
       const next = await window.api.listProjects()
       setProjects(next)
-      if (path === activeProjectPath) selectProject(next[0]?.path ?? '')
+      if (path === activeProjectPath) await selectProject(next[0]?.path ?? '')
     },
     [activeProjectPath, selectProject, setConfirmDrop, setProjects],
   )

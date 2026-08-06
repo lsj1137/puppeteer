@@ -106,6 +106,11 @@ function migrate(): void {
       created_at INTEGER NOT NULL,
       decided_at INTEGER
     );
+
+    CREATE TABLE IF NOT EXISTS app_setting (
+      key   TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_memory_proposal_status
       ON memory_proposal(status, created_at DESC);
   `)
@@ -139,6 +144,22 @@ function addColumn(table: string, column: string, type: string): void {
 }
 
 const now = (): number => Date.now()
+
+// ── 앱 설정 ─────────────────────────────────────────────────
+
+export function getSetting(key: string): string | undefined {
+  const row = db.prepare('SELECT value FROM app_setting WHERE key = ?').get(key) as
+    | { value: string }
+    | undefined
+  return row?.value
+}
+
+export function setSetting(key: string, value: string): void {
+  db.prepare(
+    `INSERT INTO app_setting (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+  ).run(key, value)
+}
 
 // ── 프로젝트 ────────────────────────────────────────────────
 
