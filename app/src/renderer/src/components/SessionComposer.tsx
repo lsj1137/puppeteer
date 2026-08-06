@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useEffect, useState } from 'react'
 import { CircleStop, ImagePlus, Monitor, PencilLine, Terminal, X } from 'lucide-react'
 import type { DetectedRunner } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
@@ -15,6 +15,9 @@ interface Props {
   activeSessionId?: string
   attachments: Attachment[]
   busy: boolean
+  historyKey: string
+  promptHistory: string[]
+  runningSessionIds: string[]
   runners: DetectedRunner[]
   showRunnerPicker: boolean
   onAnnotate: (index: number) => void
@@ -23,6 +26,7 @@ interface Props {
   onRemoveAttachment: (index: number) => void
   onStop: (sessionId: string) => void | Promise<void>
   onSubmit: (text: string) => void
+  onSubmitToSession: (text: string, sessionId: string) => void | Promise<void>
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -43,6 +47,9 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     activeSessionId,
     attachments,
     busy,
+    historyKey,
+    promptHistory,
+    runningSessionIds,
     runners,
     showRunnerPicker,
     onAnnotate,
@@ -51,7 +58,16 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     onRemoveAttachment,
     onStop,
     onSubmit,
+    onSubmitToSession,
   } = props
+  const [queuedPrompt, setQueuedPrompt] = useState<{ text: string; sessionId: string }>()
+
+  useEffect(() => {
+    if (!queuedPrompt || runningSessionIds.includes(queuedPrompt.sessionId)) return
+    const queued = queuedPrompt
+    setQueuedPrompt(undefined)
+    void onSubmitToSession(queued.text, queued.sessionId)
+  }, [onSubmitToSession, queuedPrompt, runningSessionIds])
 
   return (
     <div className="col-start-2 row-start-3 bg-mantle p-2.5">
@@ -61,6 +77,20 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
         onAnnotate={onAnnotate}
         onRemove={onRemoveAttachment}
       />
+      {queuedPrompt && (
+        <div className="mb-2 flex items-center gap-2 rounded-md border border-sapphire/25 bg-sapphire/5 px-2.5 py-1.5 text-[11px]">
+          <span className="shrink-0 font-medium text-sapphire">다음 지시</span>
+          <span className="min-w-0 flex-1 truncate text-subtext1">{queuedPrompt.text}</span>
+          <button
+            type="button"
+            onClick={() => setQueuedPrompt(undefined)}
+            title="예약 취소"
+            className="shrink-0 rounded p-0.5 text-overlay1 hover:bg-surface0 hover:text-text"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       <div className="flex items-end gap-2">
         <label
           title="이미지 첨부"
@@ -78,7 +108,18 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
             }}
           />
         </label>
-        <PromptInput ref={ref} active={active} busy={busy} onSubmit={onSubmit} />
+        <PromptInput
+          ref={ref}
+          active={active}
+          busy={busy}
+          historyKey={historyKey}
+          initialHistory={promptHistory}
+          queued={Boolean(queuedPrompt)}
+          onQueue={(text) => {
+            if (activeSessionId) setQueuedPrompt({ text, sessionId: activeSessionId })
+          }}
+          onSubmit={onSubmit}
+        />
         {busy && activeSessionId && (
           <button
             onClick={() => void onStop(activeSessionId)}

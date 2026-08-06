@@ -206,7 +206,7 @@ export default function App() {
   })
   /** 활성 세션이 실행 중일 때만 입력을 잠근다. 다른 세션은 계속 돌아도 된다. */
   const busy = running.some((r) => r.id === activeSession)
-  const { chooseRunner, startFreshSession, submit } = useSessionRunner({
+  const { chooseRunner, startFreshSession, submit, submitToSession } = useSessionRunner({
     activeProjectPath: active,
     activeProjectRunnerId: activeProject?.runnerId,
     activeSessionId: activeSession,
@@ -727,6 +727,8 @@ export default function App() {
       <main
         ref={scrollRef}
         onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 8)}
+        onWheel={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
+        onTouchMove={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
         className="col-start-2 row-start-2 flex flex-col overflow-auto px-5 py-4"
       >
         {/* 위로 스크롤됐을 때만 페이드를 띄운다. 항상 띄우면 첫 메시지를 가린다. */}
@@ -749,6 +751,7 @@ export default function App() {
             view={view}
             selectedArtifact={selectedArtifact}
             onSelectArtifact={setSelectedArtifact}
+            rightOffset={(artifactsOpen ? artifactW : 40) + 12}
           />
 
           {busy && (
@@ -813,6 +816,11 @@ export default function App() {
           activeSessionId={activeSession}
           attachments={attachments}
           busy={busy}
+          historyKey={active ?? 'workspace'}
+          promptHistory={view.entries
+            .filter((entry) => entry.kind === 'user')
+            .map((entry) => entry.text)}
+          runningSessionIds={running.map(({ id }) => id)}
           runners={usableRunners}
           showRunnerPicker={pendingPick !== undefined && !runnerLocked}
           onAnnotate={setAnnotating}
@@ -823,6 +831,7 @@ export default function App() {
           }
           onStop={(sessionId) => window.api.stopSession(sessionId)}
           onSubmit={submit}
+          onSubmitToSession={submitToSession}
         />
       )}
 

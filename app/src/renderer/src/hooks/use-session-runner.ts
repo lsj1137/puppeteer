@@ -145,6 +145,44 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
     ],
   )
 
+  const submitToSession = useCallback(
+    async (text: string, sessionId: string): Promise<void> => {
+      const target = await window.api.getSession(sessionId)
+      if (!target || !text) return
+      const runner = runners.find(({ id }) => id === target.runnerId)
+      if (!runner) return
+      try {
+        const id = await window.api.startSession({
+          runner,
+          cwd: target.projectPath,
+          prompt: text,
+          resumeCliSessionId: target.cliSessionId ?? undefined,
+          continueSessionId: target.id,
+          attachments: attachments.map((attachment) => attachment.path),
+          agentName: target.agentName ?? undefined,
+        })
+        setAttachments([])
+        setActiveSessionId(id)
+        setSelectedArtifact(undefined)
+        void refresh(target.projectPath)
+      } catch (error) {
+        failSessionView(
+          sessionId,
+          error instanceof Error ? error.message : String(error),
+        )
+      }
+    },
+    [
+      attachments,
+      failSessionView,
+      refresh,
+      runners,
+      setActiveSessionId,
+      setAttachments,
+      setSelectedArtifact,
+    ],
+  )
+
   const startFreshSession = useCallback(
     async ({ runnerId, cwd, prompt, agentName: freshAgent }: FreshSessionOptions): Promise<boolean> => {
       const runner = runners.find(({ id }) => id === runnerId)
@@ -165,5 +203,5 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
     [failSessionView, refresh, runners, setActiveSessionId, setSelectedArtifact],
   )
 
-  return { chooseRunner, startFreshSession, submit }
+  return { chooseRunner, startFreshSession, submit, submitToSession }
 }
