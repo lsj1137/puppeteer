@@ -102,8 +102,9 @@ x-workspace:                      # 앱 전용 설정은 표준 필드를 안 �
 실행할 때는 파일을 배치하지 않고 CLI 에 정의를 통째로 넘깁니다(`--agents` + `--agent`).
 러너마다 홈 디렉터리가 다른 문제(WSL `~` ≠ Windows `%USERPROFILE%`)를 아예 피합니다.
 
-형식은 Claude Code 표준 프론트매터 그대로라, **프로젝트로 내보내면 앱 없이
-`claude --agent <name>` 으로도 동작**합니다.
+형식은 Claude Code 표준 프론트매터 그대로라, **프로젝트로 Claude Agent를 내보내면 앱 없이
+`claude --agent <name>` 으로도 동작**합니다. 같은 역할을 Codex Skill로 내보내
+`.agents/skills/<name>/SKILL.md`에 둘 수도 있습니다.
 
 ### 홈에서 지시하면 에이전트를 찾아준다
 

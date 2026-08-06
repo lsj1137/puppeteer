@@ -104,8 +104,11 @@ const api = {
   deleteAgent: (name: string): Promise<void> => ipcRenderer.invoke('agent:delete', name),
   importAgent: (projectPath: string, name: string): Promise<AgentDef | undefined> =>
     ipcRenderer.invoke('agent:import', projectPath, name),
-  exportAgent: (name: string, projectPath: string): Promise<string | undefined> =>
-    ipcRenderer.invoke('agent:export', name, projectPath),
+  exportAgent: (
+    name: string,
+    projectPath: string,
+    format: 'claude-agent' | 'codex-skill' = 'claude-agent',
+  ): Promise<string | undefined> => ipcRenderer.invoke('agent:export', name, projectPath, format),
   fetchAgentFromUrl: (url: string): Promise<FetchedAgent> =>
     ipcRenderer.invoke('agent:fetchUrl', url),
   fetchAgentFromFile: (): Promise<FetchedAgent | undefined> => ipcRenderer.invoke('agent:fetchFile'),

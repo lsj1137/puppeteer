@@ -200,8 +200,12 @@ app.whenReady().then(() => {
   ipcMain.handle('agent:import', (_e, projectPath: string, name: string) =>
     library.importFrom(projectPath, name),
   )
-  ipcMain.handle('agent:export', (_e, name: string, projectPath: string) =>
-    library.exportTo(name, projectPath),
+  ipcMain.handle('agent:export', (
+    _e,
+    name: string,
+    projectPath: string,
+    format: library.AgentExportFormat = 'claude-agent',
+  ) => library.exportTo(name, projectPath, format),
   )
   // 가져오기는 파싱만 한다. 저장은 사용자가 검토 화면에서 승인해야 일어난다.
   ipcMain.handle('agent:fetchUrl', (_e, url: string): Promise<FetchedAgent> => fetchFromUrl(url))

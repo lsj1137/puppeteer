@@ -85,9 +85,28 @@ export function scanProject(projectPath: string): AgentDef[] {
 }
 
 /** 라이브러리 에이전트를 프로젝트에 파일로 내보낸다 (앱 없이 쓰려는 경우). */
-export function exportTo(name: string, projectPath: string): string | undefined {
+export type AgentExportFormat = 'claude-agent' | 'codex-skill'
+
+export function exportTo(
+  name: string,
+  projectPath: string,
+  format: AgentExportFormat = 'claude-agent',
+): string | undefined {
   const agent = read(name)
   if (!agent) return undefined
+
+  if (format === 'codex-skill') {
+    const dir = join(projectPath, '.agents', 'skills', agent.name)
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, 'SKILL.md')
+    const frontmatter = stringify({
+      name: agent.name,
+      description: agent.description,
+    }).trim()
+    writeFileSync(path, `---\n${frontmatter}\n---\n\n${agent.instructions.trim()}\n`, 'utf8')
+    return path
+  }
+
   const dir = join(projectPath, '.claude', 'agents')
   mkdirSync(dir, { recursive: true })
   const path = join(dir, `${name}.md`)

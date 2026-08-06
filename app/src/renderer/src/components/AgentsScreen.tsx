@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Bot,
   CornerDownLeft,
@@ -310,7 +311,7 @@ export default function AgentsScreen({
                   )}
 
                   <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition group-hover:opacity-100 motion-reduce:transition-none">
-                    <div className="relative">
+                    <div>
                       <button
                         onClick={() => setExporting(exporting === a.name ? undefined : a.name)}
                         title="프로젝트로 내보내기"
@@ -318,32 +319,6 @@ export default function AgentsScreen({
                       >
                         <Download className="h-3.5 w-3.5" />
                       </button>
-                      {exporting === a.name && (
-                        <>
-                          <div
-                            className="fixed inset-0 z-30"
-                            onClick={() => setExporting(undefined)}
-                          />
-                          <div className="absolute right-0 top-full z-40 mt-1 w-56 rounded-lg bg-mantle py-1 shadow-xl ring-1 ring-surface1">
-                            <div className="px-3 py-1 text-[11px] text-overlay1">
-                              어느 프로젝트에 파일로 둘까요
-                            </div>
-                            {projects.map((p) => (
-                              <button
-                                key={p.path}
-                                onClick={async () => {
-                                  await window.api.exportAgent(a.name, p.path)
-                                  setExporting(undefined)
-                                }}
-                                title={p.path}
-                                className="block w-full truncate px-3 py-1.5 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
-                              >
-                                {baseName(p.path)}
-                              </button>
-                            ))}
-                          </div>
-                        </>
-                      )}
                     </div>
                     <button
                       onClick={() => onEdit(a)}
@@ -404,6 +379,16 @@ export default function AgentsScreen({
         )}
       </section>
 
+      {exporting &&
+        createPortal(
+          <ExportAgentDialog
+            agentName={exporting}
+            projects={projects}
+            onClose={() => setExporting(undefined)}
+          />,
+          document.body,
+        )}
+
       {reviewing && checks[reviewing]?.fetched && (
         <AgentUpdate
           check={checks[reviewing]}
@@ -453,6 +438,110 @@ export default function AgentsScreen({
           </div>
         </section>
       )}
+    </div>
+  )
+}
+
+function ExportAgentDialog({
+  agentName,
+  projects,
+  onClose,
+}: {
+  agentName: string
+  projects: StoredProject[]
+  onClose: () => void
+}) {
+  const [busy, setBusy] = useState(false)
+
+  async function exportTo(
+    projectPath: string,
+    format: 'claude-agent' | 'codex-skill',
+  ): Promise<void> {
+    if (busy) return
+    setBusy(true)
+    try {
+      await window.api.exportAgent(agentName, projectPath, format)
+      onClose()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-crust/60 p-6 backdrop-blur-[2px]"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+    >
+      <div className="flex max-h-[min(32rem,calc(100vh-3rem))] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
+        <div className="px-5 pb-3 pt-5">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-overlay1">
+            Agent 내보내기
+          </div>
+          <div className="mt-1 font-mono text-[16px] text-text">{agentName}</div>
+          <p className="mt-1 text-[11px] leading-relaxed text-subtext0">
+            Claude Agent는 필요할 때 선택하거나 위임하고, Codex Skill은 작업 내용이 설명과
+            맞을 때 자동으로 불러올 수 있습니다.
+          </p>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-auto px-5 pb-2">
+          {projects.length === 0 ? (
+            <div className="rounded-lg bg-base px-3 py-4 text-center text-[12px] text-overlay1">
+              먼저 프로젝트를 등록해 주세요.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {projects.map((project) => (
+                <div key={project.path} className="rounded-lg bg-base p-3">
+                  <div className="truncate text-[12px] font-medium text-text" title={project.path}>
+                    {baseName(project.path)}
+                  </div>
+                  <div className="mt-0.5 truncate font-mono text-[10px] text-overlay1">
+                    {project.path}
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void exportTo(project.path, 'claude-agent')}
+                      className="rounded-md bg-lavender/15 px-2.5 py-2 text-left hover:bg-lavender/25 disabled:opacity-40"
+                    >
+                      <div className="text-[12px] font-medium text-lavender">Claude Agent</div>
+                      <div className="mt-0.5 truncate font-mono text-[10px] text-overlay1">
+                        .claude/agents/{agentName}.md
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void exportTo(project.path, 'codex-skill')}
+                      className="rounded-md bg-sapphire/15 px-2.5 py-2 text-left hover:bg-sapphire/25 disabled:opacity-40"
+                    >
+                      <div className="text-[12px] font-medium text-sapphire">Codex Skill</div>
+                      <div className="mt-0.5 truncate font-mono text-[10px] text-overlay1">
+                        .agents/skills/{agentName}/SKILL.md
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end px-5 pb-5 pt-3">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="rounded-lg px-3 py-1.5 text-[12px] text-subtext0 hover:bg-surface0 hover:text-text disabled:opacity-40"
+          >
+            취소
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
