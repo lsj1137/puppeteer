@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, CheckCircle2, FileCode2, Loader2, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, Check, FileCode2, Loader2, Sparkles, X } from 'lucide-react'
 import type { MemoryProposal } from '@shared/session'
 import type { SessionView } from '../lib/session-view'
 import { artifactTitle, lineCount } from './ArtifactPanel'
@@ -10,7 +10,6 @@ interface Props {
   selectedArtifact?: string
   view: SessionView
   onSelectArtifact: (id: string) => void
-  rightOffset?: number
   onOpenMemory?: () => void
 }
 
@@ -19,13 +18,8 @@ export default function ConversationEntries({
   selectedArtifact,
   view,
   onSelectArtifact,
-  rightOffset = 52,
   onOpenMemory,
 }: Props) {
-  const latestAutoMergeNoticeId = [...view.entries]
-    .reverse()
-    .find((entry) => entry.kind === 'notice' && entry.title === '자동 커밋·병합 완료')?.id
-
   return (
     <>
       {view.conflicts.map((conflict) => (
@@ -70,16 +64,7 @@ export default function ConversationEntries({
         }
         if (entry.kind === 'notice') {
           if (entry.title === '자동 커밋·병합 완료') {
-            if (entry.id !== latestAutoMergeNoticeId) return null
-            return (
-              <AutoMergeNotice
-                key={entry.id}
-                noticeId={entry.id}
-                title={entry.title}
-                text={entry.text}
-                rightOffset={rightOffset}
-              />
-            )
+            return null
           }
           return (
             <div
@@ -226,71 +211,3 @@ function MemoryProposalCard({
   )
 }
 
-function AutoMergeNotice({
-  noticeId,
-  title,
-  text,
-  rightOffset,
-}: {
-  noticeId: string
-  title: string
-  text: string
-  rightOffset: number
-}) {
-  const storageKey = `workspace:auto-merge-notice-seen:${noticeId}`
-  const [compact, setCompact] = useState(() => localStorage.getItem(storageKey) === '1')
-
-  useEffect(() => {
-    // 이벤트가 처음 표시된 순간을 기록해 세션을 다시 열 때는 아이콘으로 시작한다.
-    localStorage.setItem(storageKey, '1')
-  }, [storageKey])
-
-  useEffect(() => {
-    const collapse = (): void => setCompact(true)
-    window.addEventListener('workspace:user-interaction', collapse)
-    return () => window.removeEventListener('workspace:user-interaction', collapse)
-  }, [])
-
-  return (
-    <div
-      style={{ right: rightOffset }}
-      onMouseEnter={() => setCompact(false)}
-      onMouseLeave={() => setCompact(true)}
-      onFocus={() => setCompact(false)}
-      onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setCompact(true)
-      }}
-      className="fixed bottom-20 z-30 h-9 w-9 text-green"
-    >
-      <button
-        type="button"
-        onClick={() => setCompact((value) => !value)}
-        aria-label={compact ? '자동 병합 완료 내용 보기' : '자동 병합 완료 접기'}
-        title={compact ? '자동 병합 완료' : undefined}
-        className={`flex h-9 w-9 items-center justify-center transition-opacity duration-100 motion-reduce:transition-none ${
-          compact ? 'opacity-100' : 'opacity-0'
-        }`}
-      >
-        <CheckCircle2 className="h-4 w-4 shrink-0" />
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setCompact(true)}
-        aria-hidden={compact}
-        tabIndex={compact ? -1 : 0}
-        className={`absolute bottom-0 right-0 flex w-[min(28rem,calc(100vw-2rem))] transform-gpu gap-2 rounded-lg border border-green/50 bg-mantle p-3 text-left shadow-md will-change-[opacity,transform] transition-[opacity,transform] duration-100 ease-out motion-reduce:transition-none ${
-          compact
-            ? 'pointer-events-none translate-y-1 opacity-0'
-            : 'translate-y-0 opacity-100'
-        }`}
-      >
-        <CheckCircle2 className="h-4 w-4 shrink-0" />
-        <div className="min-w-0">
-          <div className="font-semibold text-text">{title}</div>
-          <div className="mt-0.5 whitespace-pre-wrap text-[12px] text-subtext1">{text}</div>
-        </div>
-      </button>
-    </div>
-  )
-}

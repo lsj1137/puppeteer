@@ -1,6 +1,7 @@
-import type { RefObject } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import {
   Bot,
+  CheckCircle2,
   ChevronDown,
   Flag,
   GitBranch,
@@ -10,6 +11,7 @@ import {
   Monitor,
   Pencil,
   Plus,
+  Settings2,
   ShieldAlert,
   Terminal,
   X,
@@ -46,6 +48,7 @@ interface SessionHeaderProps {
   onOpenWorktree: (sessionId: string) => void
   onCheckpoint: (sessionId: string) => void
 }
+const PROVIDER_ORDER = ['claude-cli', 'codex-cli', 'claude-agent-sdk']
 
 /** 프로젝트 화면 상단의 세션 탭과 세션별 실행 설정. */
 export default function SessionHeader({
@@ -199,61 +202,23 @@ function statusColor(session: StoredSession): string {
 export function ComposerSettings({
   activeRunner,
   runnerLocked,
-  onChooseRunner,
-  ...agentProps
-}: {
-  activeRunner?: DetectedRunner
-  runnerLocked: boolean
-  onChooseRunner: () => void
-  agentName?: string
-  agents: AgentDef[]
-  open: boolean
-  onToggle: () => void
-  onClose: () => void
-  onSelect: (name?: string) => void
-  onEdit: (agent: AgentDef) => void
-  onNew: () => void
-}) {
-  return (
-    <div className="mb-2 flex min-h-7 min-w-0 items-center gap-1.5 overflow-visible">
-      {activeRunner ? (
-        <button
-          disabled={runnerLocked}
-          onClick={() => !runnerLocked && onChooseRunner()}
-          title={runnerLocked
-            ? `이 세션은 ${runnerLabel(activeRunner)} 로 시작했습니다. 바꾸려면 새 세션을 여세요.`
-            : `실행 환경 변경 · ${activeRunner.executable}`}
-          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
-            activeRunner.provider === 'claude-cli' ? 'bg-surface0/60 text-subtext1' : 'bg-peach/15 text-peach'
-          } ${runnerLocked ? 'cursor-default' : 'hover:bg-surface0 hover:text-text'}`}
-        >
-          <RunnerIcon runner={activeRunner} className="h-3.5 w-3.5" />
-          {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider}
-          {runnerLocked && <Lock className="h-3 w-3 text-overlay1" />}
-        </button>
-      ) : (
-        <button
-          onClick={onChooseRunner}
-          className="rounded-md border border-dashed border-surface1 px-2 py-1 text-[11px] text-overlay1 hover:border-overlay0 hover:text-text"
-        >
-          실행 환경 선택
-        </button>
-      )}
-      <AgentPicker {...agentProps} />
-    </div>
-  )
-}
-
-function AgentPicker({
+  runners,
+  commitNotice,
   agentName,
   agents,
   open,
   onToggle,
   onClose,
+  onChooseRunner,
   onSelect,
   onEdit,
   onNew,
 }: {
+  activeRunner?: DetectedRunner
+  runnerLocked: boolean
+  runners: DetectedRunner[]
+  commitNotice?: { id: string; title: string; text: string; status: 'success' | 'warning' }
+  onChooseRunner: (runnerId: string) => void | Promise<void>
   agentName?: string
   agents: AgentDef[]
   open: boolean
@@ -263,29 +228,114 @@ function AgentPicker({
   onEdit: (agent: AgentDef) => void
   onNew: () => void
 }) {
+  const [commitExpanded, setCommitExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!commitNotice) return setCommitExpanded(false)
+    const key = `workspace:context-notice-seen:${commitNotice.id}`
+    const unseen = localStorage.getItem(key) !== '1'
+    setCommitExpanded(unseen)
+    localStorage.setItem(key, '1')
+  }, [commitNotice?.id])
+
+  useEffect(() => {
+    const collapse = (): void => setCommitExpanded(false)
+    window.addEventListener('workspace:user-interaction', collapse)
+    return () => window.removeEventListener('workspace:user-interaction', collapse)
+  }, [])
+
   return (
-    <div className="relative">
+    <div className="relative mb-1.5 flex min-h-7 min-w-0 items-center">
       <button
         onClick={onToggle}
-        title="Project Agent 선택"
-        className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
-          agentName
-            ? 'bg-mauve/20 text-mauve'
-            : 'bg-surface0/60 text-subtext1 hover:bg-surface0 hover:text-text'
+        title="실행 환경·에이전트·자동 반영 상태"
+        className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors ${
+          open ? 'bg-surface0 text-text' : 'text-overlay1 hover:bg-surface0/60 hover:text-subtext1'
         }`}
       >
-        <Bot className="h-3.5 w-3.5" />
-        {agentName ?? '에이전트 없음'}
+        <Settings2 className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">
+          {activeRunner ? (PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider) : '실행환경 선택'}
+          {agentName ? ` · ${agentName}` : ''}
+        </span>
+        {runnerLocked && <Lock className="h-3 w-3 shrink-0 text-overlay1" />}
       </button>
+
+      {commitNotice && (
+        <button
+          type="button"
+          onClick={() => { if (!open) onToggle() }}
+          title={commitNotice.title}
+          className={`ml-auto rounded-md p-1 ${
+            commitNotice.status === 'success'
+              ? 'text-green hover:bg-green/10'
+              : 'text-yellow hover:bg-yellow/10'
+          }`}
+        >
+          {commitNotice.status === 'success'
+            ? <CheckCircle2 className="h-4 w-4" />
+            : <ShieldAlert className="h-4 w-4" />}
+        </button>
+      )}
+
+      {commitNotice && commitExpanded && !open && (
+        <button
+          type="button"
+          onClick={() => setCommitExpanded(false)}
+          className={`absolute bottom-full right-0 z-40 mb-1.5 flex w-[min(28rem,calc(100vw-2rem))] gap-2 rounded-xl border bg-mantle p-3 text-left shadow-xl ${
+            commitNotice.status === 'success' ? 'border-green/40' : 'border-yellow/40'
+          }`}
+        >
+          {commitNotice.status === 'success'
+            ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green" />
+            : <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-yellow" />}
+          <span className="min-w-0">
+            <span className="block text-[12px] font-semibold text-text">{commitNotice.title}</span>
+            <span className="mt-0.5 block whitespace-pre-wrap text-[11px] leading-relaxed text-subtext1">
+              {commitNotice.text}
+            </span>
+          </span>
+        </button>
+      )}
 
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={onClose} />
-          <div className="absolute bottom-full left-0 z-40 mb-1 w-72 overflow-hidden rounded-lg border border-surface1 bg-mantle shadow-xl">
+          <div className="absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(34rem,70vh)] w-[min(30rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
+            <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">실행 환경</div>
+            {runnerLocked && activeRunner ? (
+              <div className="mb-2 flex items-center gap-2 rounded-lg bg-surface0/60 px-2.5 py-2 text-[12px] text-subtext1">
+                <RunnerIcon runner={activeRunner} className="h-4 w-4 text-sapphire" />
+                <span className="min-w-0 flex-1 truncate">{runnerLabel(activeRunner)}</span>
+                <Lock className="h-3.5 w-3.5 text-overlay1" />
+              </div>
+            ) : (
+              <div className="mb-2 space-y-1">
+                {PROVIDER_ORDER.flatMap((provider) => runners.filter((runner) => runner.provider === provider)).map((runner) => (
+                  <button
+                    key={runner.id}
+                    onClick={() => void onChooseRunner(runner.id)}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] ${
+                      runner.id === activeRunner?.id ? 'bg-surface1 text-text' : 'text-subtext1 hover:bg-surface0'
+                    }`}
+                  >
+                    <RunnerIcon runner={runner} className="h-4 w-4 text-sapphire" />
+                    <span className="min-w-0 flex-1 truncate">{runnerLabel(runner)}</span>
+                  </button>
+                ))}
+                {runners.length === 0 && (
+                  <div className="rounded-lg bg-yellow/10 px-2.5 py-2 text-[11px] text-yellow">
+                    실행 가능한 CLI를 찾지 못했습니다.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="border-t border-surface0 px-1.5 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-wider text-overlay1">에이전트</div>
             <button
               onClick={() => onSelect(undefined)}
-              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] ${
-                agentName ? 'text-subtext1 hover:bg-surface0' : 'bg-surface0 text-text'
+              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] ${
+                agentName ? 'text-subtext1 hover:bg-surface0' : 'bg-surface1 text-text'
               }`}
             >
               에이전트 없이 실행
@@ -294,7 +344,7 @@ function AgentPicker({
               <div
                 key={agent.name}
                 className={`group flex items-center gap-1 ${
-                  agent.name === agentName ? 'bg-surface0' : 'hover:bg-surface0/60'
+                  agent.name === agentName ? 'rounded-lg bg-surface1' : 'rounded-lg hover:bg-surface0/60'
                 }`}
               >
                 <button onClick={() => onSelect(agent.name)} className="min-w-0 flex-1 px-3 py-2 text-left">
@@ -316,10 +366,26 @@ function AgentPicker({
             ))}
             <button
               onClick={onNew}
-              className="flex w-full items-center gap-1.5 border-t border-surface0 px-3 py-2 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
+              className="mt-1 flex w-full items-center gap-1.5 rounded-lg px-2.5 py-2 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
             >
               <Plus className="h-3.5 w-3.5" /> 새 에이전트
             </button>
+
+            {commitNotice && (
+              <div className="mt-2 border-t border-surface0 px-1.5 pt-2">
+                <div className={`mb-1 flex items-center gap-1.5 text-[11px] font-medium ${
+                  commitNotice.status === 'success' ? 'text-green' : 'text-yellow'
+                }`}>
+                  {commitNotice.status === 'success'
+                    ? <CheckCircle2 className="h-3.5 w-3.5" />
+                    : <ShieldAlert className="h-3.5 w-3.5" />}
+                  {commitNotice.title}
+                </div>
+                <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-subtext1">
+                  {commitNotice.text}
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}

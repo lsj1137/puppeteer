@@ -278,6 +278,13 @@ export default function App() {
   })()
 
   const isEmpty = !active || (view.entries.length === 0 && myApprovals.length === 0 && !view.status)
+  const commitNotice = [...view.entries]
+    .reverse()
+    .find(
+      (entry) =>
+        entry.kind === 'notice' &&
+        (entry.title === '자동 커밋·병합 완료' || entry.title === '커밋·병합 검토 필요'),
+    )
 
   // ── 초기 로드 ──
   useEffect(() => {
@@ -731,7 +738,6 @@ export default function App() {
             view={view}
             selectedArtifact={selectedArtifact}
             onSelectArtifact={setSelectedArtifact}
-            rightOffset={(artifactsOpen ? artifactW : 40) + 12}
             onOpenMemory={() => setScreen('memory')}
           />
 
@@ -810,10 +816,19 @@ export default function App() {
           agentName={agentName}
           agents={usableAgents}
           agentMenuOpen={agentMenu}
+          commitNotice={
+            commitNotice?.kind === 'notice'
+              ? {
+                  id: commitNotice.id,
+                  title: commitNotice.title,
+                  text: commitNotice.text,
+                  status: commitNotice.title === '자동 커밋·병합 완료' ? 'success' : 'warning',
+                }
+              : undefined
+          }
           onAnnotate={setAnnotating}
           onAttachFiles={attachFiles}
           onChooseRunner={chooseRunner}
-          onOpenRunnerPicker={() => setPendingPick('')}
           onToggleAgentMenu={() => setAgentMenu((open) => !open)}
           onCloseAgentMenu={() => setAgentMenu(false)}
           onSelectAgent={(name) => {
