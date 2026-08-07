@@ -34,8 +34,17 @@ export default function ApprovalCard({ approval, onDecide }: Props) {
       <div className="mb-3 truncate text-[11px] text-overlay1">{approval.cwd}</div>
 
       {approval.pending ? (
-        <div className="text-[12px] text-yellow">
-          응답 대기 시간이 지나 세션에는 보류로 통보했습니다.
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[12px] text-yellow">
+            응답할 세션이 종료되었거나 대기 시간이 지나 보류되었습니다.
+          </div>
+          <button
+            type="button"
+            onClick={() => onDecide(approval.id, 'deny')}
+            className="shrink-0 rounded-md px-2.5 py-1.5 text-[11px] text-overlay1 hover:bg-surface0 hover:text-text"
+          >
+            내역 지우기
+          </button>
         </div>
       ) : (
         <div className="flex flex-wrap gap-2">

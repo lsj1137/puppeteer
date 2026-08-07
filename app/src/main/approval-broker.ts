@@ -50,6 +50,9 @@ export class ApprovalBroker {
     if (!w) return
     clearInterval(w.timer)
     this.watched.delete(sessionId)
+    for (const [id, entry] of this.open) {
+      if (entry.sessionId === sessionId) this.open.delete(id)
+    }
     try {
       rmSync(w.dir, { recursive: true, force: true })
     } catch {

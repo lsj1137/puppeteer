@@ -86,7 +86,7 @@ function loadRenderer(win: BrowserWindow, hash?: string): void {
   }
 }
 
-function createWindow(getActiveWorkCount: () => number): BrowserWindow {
+function createWindow(getActiveWorkCount: () => number, onConfirmedClose: () => void): BrowserWindow {
   const icon = app.isPackaged
     ? join(process.resourcesPath, 'app-icon.png')
     : join(app.getAppPath(), 'resources', 'icon.png')
@@ -123,6 +123,7 @@ function createWindow(getActiveWorkCount: () => number): BrowserWindow {
       noLink: true,
     })
     if (response === 1) {
+      onConfirmedClose()
       closeConfirmed = true
       win.close()
     }
@@ -184,6 +185,8 @@ function createConflictResolverWindow(
 app.whenReady().then(() => {
   if (!hasSingleInstanceLock) return
   db.openDb()
+  // 이전 앱 프로세스와 함께 승인 hook도 사라졌다. 응답할 수 없는 요청을 재노출하지 않는다.
+  db.discardOpenApprovals()
   initNotifications(() => mainWindow)
   const sessions = new SessionManager(() => mainWindow)
   const appUpdates = new AppUpdateManager()
@@ -464,7 +467,10 @@ app.whenReady().then(() => {
       sessions.resolveApproval(approvalId, decision, reason),
   )
 
-  const win = createWindow(() => sessions.activeWorkCount())
+  const win = createWindow(
+    () => sessions.activeWorkCount(),
+    () => { db.discardOpenApprovals() },
+  )
   if (!smokeMode && app.isPackaged) {
     setTimeout(() => void appUpdates.check(), 10_000)
   }
@@ -472,7 +478,12 @@ app.whenReady().then(() => {
   if (e2eMode) void runE2E(win, sessions)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(() => sessions.activeWorkCount())
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow(
+        () => sessions.activeWorkCount(),
+        () => { db.discardOpenApprovals() },
+      )
+    }
   })
 })
 

@@ -441,7 +441,22 @@ export function listOpenApprovals(): ApprovalRequest[] {
        WHERE a.decision IS NULL ORDER BY a.created_at`,
     )
     .all() as unknown as Array<Omit<ApprovalRequest, 'input' | 'pending'> & { input: string }>
-  return rows.map((r) => ({ ...r, input: JSON.parse(r.input) as unknown, pending: true }))
+  // 같은 메인 프로세스에서 렌더러만 새로고침됐을 수 있다. DB에 열려 있다면 broker도
+  // 아직 응답 가능하므로 일반 승인 카드로 복원한다. 진짜 timeout은 onApproval에서 닫힌다.
+  return rows.map((r) => ({ ...r, input: JSON.parse(r.input) as unknown, pending: false }))
+}
+
+/** 프로세스나 세션이 끝나 더는 응답할 수 없는 승인 요청을 닫는다. */
+export function discardOpenApprovals(sessionId?: string): string[] {
+  const where = sessionId ? 'decision IS NULL AND session_id = ?' : 'decision IS NULL'
+  const args = sessionId ? [sessionId] : []
+  const rows = db.prepare(`SELECT id FROM approval WHERE ${where}`).all(...args) as Array<{ id: string }>
+  if (rows.length === 0) return []
+  db.prepare(`UPDATE approval SET decision = 'deny', decided_at = ? WHERE ${where}`).run(
+    now(),
+    ...args,
+  )
+  return rows.map(({ id }) => id)
 }
 
 function expireStaleApprovals(): void {

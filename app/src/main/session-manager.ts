@@ -514,6 +514,9 @@ export class SessionManager {
           const cwd = 'projectPath' in meta ? meta.projectPath : ''
           notifyStatus(event.status, meta.title ?? '', cwd, sessionId, event.reason)
         }
+        for (const approvalId of db.discardOpenApprovals(sessionId)) {
+          this.getWindow()?.webContents.send('approval:cleared', approvalId)
+        }
         this.broker.detach(sessionId)
         this.sessions.delete(sessionId)
         integrateCompletedWorktree = event.status === 'completed'
