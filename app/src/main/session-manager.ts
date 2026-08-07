@@ -540,7 +540,7 @@ export class SessionManager {
     if (this.integratingWorktrees.has(sessionId)) return
     this.integratingWorktrees.add(sessionId)
     const stored = db.getSession(sessionId)
-    const wt = stored?.worktree
+    let wt = stored?.worktree
     if (!wt) {
       this.integratingWorktrees.delete(sessionId)
       return
@@ -613,6 +613,40 @@ export class SessionManager {
       }
 
       if (step === 'none') return
+      if (step === 'rebase') {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: 'merging',
+          summary: '원본의 승인된 변경 위로 작업 브랜치를 재배치하고 있습니다.',
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(status),
+        })
+        const rebased = await rebaseGitWorktree(wt)
+        if (!rebased.ok) {
+          // 자동 처리에서는 충돌 상태를 남기지 않는다. 사용자가 Worktree 화면에서 다시 시도한다.
+          if (rebased.conflictFiles?.length) await abortGitWorktreeRebase(wt)
+          status = await inspectWorktree(wt)
+          this.setIntegrationReport(sessionId, {
+            mode,
+            phase: 'needs-review',
+            summary: '원본 변경과 작업 내용이 겹쳐 자동 병합하지 않았습니다.',
+            detail: rebased.message,
+            worktreePath: wt.path,
+            updatedAt: Date.now(),
+            status: integrationStatus(status),
+          })
+          this.sendMergeSuggestion(sessionId, wt.path, rebased.message)
+          return
+        }
+        if (rebased.status?.worktree) {
+          wt = rebased.status.worktree
+          db.setWorktree(sessionId, wt)
+        }
+        status = rebased.status ?? (await inspectWorktree(wt))
+        step = nextWorktreeIntegrationStep(mode, status)
+      }
+
       if (step !== 'merge') {
         this.setIntegrationReport(sessionId, {
           mode,

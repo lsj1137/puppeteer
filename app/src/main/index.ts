@@ -1,5 +1,5 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname, resolve, sep } from 'node:path'
+import { dirname, join, extname, resolve, sep } from 'node:path'
 import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { detectRunners } from './runner-detect'
@@ -10,7 +10,7 @@ import { route } from './router'
 import * as memory from './memory'
 import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
-import { isRepo } from './git'
+import { commitProjectMemory, isRepo, projectMemoryDirty } from './git'
 import { initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
 import { AppUpdateManager } from './app-update'
@@ -31,6 +31,18 @@ const WORKTREE_INTEGRATION_SETTING = 'worktree_integration_mode'
 
 function worktreeIntegrationMode(): WorktreeIntegrationMode {
   return db.getSetting(WORKTREE_INTEGRATION_SETTING) === 'suggest' ? 'suggest' : 'auto'
+}
+
+function projectRootForMemoryId(id: string): string | undefined {
+  if (!id.startsWith('file:')) return undefined
+  const root = dirname(id.slice('file:'.length))
+  const canonical = (path: string): string => {
+    const value = resolve(path)
+    return process.platform === 'win32' ? value.toLocaleLowerCase() : value
+  }
+  return db.listProjects().some((project) => canonical(project.path) === canonical(root))
+    ? root
+    : undefined
 }
 
 let mainWindow: BrowserWindow | undefined
@@ -253,15 +265,36 @@ app.whenReady().then(() => {
     return memory.list(runners, db.listProjects().map((p) => p.path))
   })
   ipcMain.handle('memory:read', (_e, id: string) => memory.read(id))
-  ipcMain.handle('memory:save', (_e, id: string, content: string) => memory.save(id, content))
+  ipcMain.handle('memory:save', async (_e, id: string, content: string) => {
+    const projectRoot = projectRootForMemoryId(id)
+    const memoryWasClean = projectRoot ? !(await projectMemoryDirty(projectRoot)) : false
+    const saved = memory.save(id, content)
+    if (saved && projectRoot && memoryWasClean && worktreeIntegrationMode() === 'auto') {
+      await commitProjectMemory(projectRoot)
+    }
+    return saved
+  })
   ipcMain.handle('checkpoint:build', (_e, sessionId: string) => buildCheckpoint(sessionId))
   ipcMain.handle('memory:history', (_e, entryId?: string) => db.memoryEdits(entryId))
   ipcMain.handle('memory:proposals', () => db.memoryProposals())
-  ipcMain.handle('memory:proposal:approve', (_e, id: number) => {
+  ipcMain.handle('memory:proposal:approve', async (_e, id: number) => {
     const proposal = db.getMemoryProposal(id)
     if (!proposal || proposal.status !== 'pending') return false
+    const projectRoot = projectRootForMemoryId(proposal.entryId)
+    const memoryWasClean = projectRoot ? !(await projectMemoryDirty(projectRoot)) : false
     const applied = memory.applyProposal(proposal)
-    if (applied) db.decideMemoryProposal(id, 'approved')
+    if (applied) {
+      db.decideMemoryProposal(id, 'approved')
+      if (
+        proposal.scope === 'project'
+        && projectRoot
+        && memoryWasClean
+        && worktreeIntegrationMode() === 'auto'
+      ) {
+        // 승인이 명시된 정본 파일만 커밋한다. 실패해도 이미 적용된 Memory 승인을 되돌리지는 않는다.
+        await commitProjectMemory(projectRoot)
+      }
+    }
     return applied
   })
   ipcMain.handle('memory:proposal:reject', (_e, id: number) => {

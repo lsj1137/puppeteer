@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   addWorktree,
   abortWorktreeRebase,
+  commitProjectMemory,
   commitWorktree,
   mergeWorktree,
   removeWorktree,
@@ -58,6 +59,22 @@ afterEach(async () => {
 })
 
 describe('worktree merge', () => {
+  it('commits only approved project Memory files and leaves unrelated changes untouched', async () => {
+    const { origin } = await fixture()
+    await writeFile(join(origin, 'AGENTS.md'), 'approved memory\n')
+    await writeFile(join(origin, 'CLAUDE.md'), '@AGENTS.md\n')
+    await writeFile(join(origin, 'local.txt'), 'unrelated\n')
+
+    const result = await commitProjectMemory(origin)
+
+    expect(result.ok).toBe(true)
+    expect((await git(origin, ['show', '--pretty=', '--name-only', 'HEAD'])).split(/\r?\n/)).toEqual([
+      'AGENTS.md',
+      'CLAUDE.md',
+    ])
+    expect(await git(origin, ['status', '--porcelain'])).toBe('?? local.txt')
+  })
+
   it('removes a clean worktree and its already-merged branch', async () => {
     const { origin, worktreePath, wt } = await fixture()
 

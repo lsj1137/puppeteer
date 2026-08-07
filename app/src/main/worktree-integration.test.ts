@@ -3,9 +3,14 @@ import { nextWorktreeIntegrationStep } from './worktree-integration'
 
 const status = (patch: Partial<Parameters<typeof nextWorktreeIntegrationStep>[1]> = {}) => ({
   dirty: false,
+  originDirty: false,
   hasCommits: true,
   merged: false,
   canMerge: true,
+  ahead: 1,
+  behind: 0,
+  currentBranch: 'main',
+  baseBranch: 'main',
   ...patch,
 })
 
@@ -22,6 +27,15 @@ describe('completed worktree integration policy', () => {
   it('merges only a clean worktree reported as fast-forward safe', () => {
     expect(nextWorktreeIntegrationStep('auto', status())).toBe('merge')
     expect(nextWorktreeIntegrationStep('auto', status({ canMerge: false }))).toBe('suggest')
+  })
+
+  it('rebases a private worktree when approved Memory advanced the clean source branch', () => {
+    expect(nextWorktreeIntegrationStep('auto', status({ canMerge: false, behind: 1 }))).toBe(
+      'rebase',
+    )
+    expect(
+      nextWorktreeIntegrationStep('auto', status({ canMerge: false, behind: 1, originDirty: true })),
+    ).toBe('suggest')
   })
 
   it('never commits or merges in suggestion mode', () => {

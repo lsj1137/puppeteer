@@ -76,6 +76,38 @@ export async function isRepo(cwd: string): Promise<boolean> {
   }
 }
 
+/** 사용자가 승인한 Project Memory 정본만 커밋한다. 다른 staged/working 변경은 포함하지 않는다. */
+export async function commitProjectMemory(cwd: string): Promise<{ ok: boolean; message: string }> {
+  if (!(await isRepo(cwd))) return { ok: true, message: 'Git 저장소가 아니므로 파일만 저장했습니다.' }
+  const paths = ['AGENTS.md', 'CLAUDE.md']
+  try {
+    const changed = await git(cwd, ['status', '--porcelain', '--', ...paths])
+    if (!changed.trim()) return { ok: true, message: '새로 커밋할 Memory 변경이 없습니다.' }
+    await gitWithError(cwd, ['add', '--', ...paths])
+    await gitWithError(cwd, [
+      'commit',
+      '--only',
+      '-m',
+      'Puppeteer: update project memory',
+      '--',
+      ...paths,
+    ])
+    return { ok: true, message: '승인한 Project Memory를 원본 브랜치에 커밋했습니다.' }
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'Project Memory 커밋에 실패했습니다.',
+    }
+  }
+}
+
+export async function projectMemoryDirty(cwd: string): Promise<boolean> {
+  if (!(await isRepo(cwd))) return false
+  return git(cwd, ['status', '--porcelain', '--', 'AGENTS.md', 'CLAUDE.md'])
+    .then((output) => output.trim().length > 0)
+    .catch(() => true)
+}
+
 /** 세션 시작 전 상태 기록 (기획서 17장 Git Snapshot) */
 export async function snapshot(cwd: string): Promise<GitSnapshot | undefined> {
   if (!(await isRepo(cwd))) return undefined
