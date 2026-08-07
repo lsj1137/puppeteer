@@ -25,3 +25,16 @@ https://github.com/lsj1137/puppeteer/blob/main/agents/release-maintainer.md
 - Edit: 사용자가 승인한 버전 파일과 릴리스 문서 수정
 
 공개 Agent 파일은 실행 지침이므로 변경 리뷰 없이 권한을 확대하지 않는다.
+
+## agent-creator
+
+반복 작업 아이디어를 Agent · Skill · Memory 중 알맞은 형태로 먼저 구분하고, Agent가 적합하면
+역할·범위·최소 권한·완료 조건을 갖춘 전체 Markdown 초안을 만드는 생성 도우미다. 초안을 먼저
+보여주며 사용자가 명시적으로 승인하기 전에는 파일을 작성하거나 기존 Agent를 덮어쓰지 않는다.
+
+```text
+https://github.com/lsj1137/puppeteer/blob/main/agents/agent-creator.md
+```
+
+프로젝트 구조를 읽기 위한 Read · Glob · Grep과 승인된 Agent 파일을 저장하기 위한 Edit만 요청한다.
+커밋·push나 Agent 이외의 코드 변경은 별도 요청 없이는 수행하지 않는다.
