@@ -114,7 +114,6 @@ export default function App() {
   const [scrolled, setScrolled] = useState(false)
   const [agents, setAgents] = useState<AgentDef[]>([])
   const [agentName, setAgentName] = useState<string>()
-  const [agentMenu, setAgentMenu] = useState(false)
   const [tabMenu, setTabMenu] = useState(false)
   const [importing, setImporting] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -815,7 +814,6 @@ export default function App() {
           runnerLocked={runnerLocked}
           agentName={agentName}
           agents={usableAgents}
-          agentMenuOpen={agentMenu}
           commitNotice={
             commitNotice?.kind === 'notice'
               ? {
@@ -829,19 +827,14 @@ export default function App() {
           onAnnotate={setAnnotating}
           onAttachFiles={attachFiles}
           onChooseRunner={chooseRunner}
-          onToggleAgentMenu={() => setAgentMenu((open) => !open)}
-          onCloseAgentMenu={() => setAgentMenu(false)}
           onSelectAgent={(name) => {
             setAgentName(name)
-            setAgentMenu(false)
           }}
           onEditAgent={(agent) => {
             setEditing({ agent, isNew: false })
-            setAgentMenu(false)
           }}
           onNewAgent={() => {
             setEditing({ agent: emptyAgent(active), isNew: true })
-            setAgentMenu(false)
           }}
           onRemoveAttachment={(index) =>
             setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))

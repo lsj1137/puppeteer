@@ -25,13 +25,10 @@ interface Props {
   runnerLocked: boolean
   agentName?: string
   agents: AgentDef[]
-  agentMenuOpen: boolean
   commitNotice?: { id: string; title: string; text: string; status: 'success' | 'warning' }
   onAnnotate: (index: number) => void
   onAttachFiles: (files: FileList) => void | Promise<void>
   onChooseRunner: (runnerId: string) => void | Promise<void>
-  onToggleAgentMenu: () => void
-  onCloseAgentMenu: () => void
   onSelectAgent: (name?: string) => void
   onEditAgent: (agent: AgentDef) => void
   onNewAgent: () => void
@@ -59,13 +56,10 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     runnerLocked,
     agentName,
     agents,
-    agentMenuOpen,
     commitNotice,
     onAnnotate,
     onAttachFiles,
     onChooseRunner,
-    onToggleAgentMenu,
-    onCloseAgentMenu,
     onSelectAgent,
     onEditAgent,
     onNewAgent,
@@ -109,14 +103,10 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
         runnerLocked={runnerLocked}
         runners={runners}
         commitNotice={commitNotice}
-        onChooseRunner={(runnerId) => {
-          void Promise.resolve(onChooseRunner(runnerId)).finally(onCloseAgentMenu)
-        }}
+        onChooseRunner={onChooseRunner}
         agentName={agentName}
         agents={agents}
-        open={agentMenuOpen || showRunnerPicker}
-        onToggle={onToggleAgentMenu}
-        onClose={onCloseAgentMenu}
+        forceRunnerOpen={showRunnerPicker}
         onSelect={onSelectAgent}
         onEdit={onEditAgent}
         onNew={onNewAgent}

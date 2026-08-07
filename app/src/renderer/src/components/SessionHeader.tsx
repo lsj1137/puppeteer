@@ -5,6 +5,7 @@ import {
   ChevronDown,
   Flag,
   GitBranch,
+  GitCommitHorizontal,
   Loader2,
   Lock,
   MessageSquarePlus,
@@ -206,9 +207,7 @@ export function ComposerSettings({
   commitNotice,
   agentName,
   agents,
-  open,
-  onToggle,
-  onClose,
+  forceRunnerOpen,
   onChooseRunner,
   onSelect,
   onEdit,
@@ -221,14 +220,22 @@ export function ComposerSettings({
   onChooseRunner: (runnerId: string) => void | Promise<void>
   agentName?: string
   agents: AgentDef[]
-  open: boolean
-  onToggle: () => void
-  onClose: () => void
+  forceRunnerOpen: boolean
   onSelect: (name?: string) => void
   onEdit: (agent: AgentDef) => void
   onNew: () => void
 }) {
+  const [expanded, setExpanded] = useState(
+    () => localStorage.getItem('ws.composerContextExpanded') === 'true',
+  )
+  const [panel, setPanel] = useState<'runner' | 'agent' | 'commit'>()
   const [commitExpanded, setCommitExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!forceRunnerOpen) return
+    setExpanded(true)
+    setPanel('runner')
+  }, [forceRunnerOpen])
 
   useEffect(() => {
     if (!commitNotice) return setCommitExpanded(false)
@@ -244,41 +251,92 @@ export function ComposerSettings({
     return () => window.removeEventListener('workspace:user-interaction', collapse)
   }, [])
 
+  const toggleExpanded = (): void => {
+    setExpanded((current) => {
+      const next = !current
+      localStorage.setItem('ws.composerContextExpanded', String(next))
+      if (!next) setPanel(undefined)
+      return next
+    })
+  }
+
+  const togglePanel = (next: 'runner' | 'agent' | 'commit'): void => {
+    setPanel((current) => current === next ? undefined : next)
+    if (next === 'commit') setCommitExpanded(false)
+  }
+
   return (
-    <div className="relative mb-1.5 flex min-h-7 min-w-0 items-center">
+    <div className="relative mb-1.5 min-h-7 min-w-0">
+      <div className="flex min-w-0 items-center gap-1">
       <button
-        onClick={onToggle}
-        title="실행 환경·에이전트·자동 반영 상태"
-        className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-colors ${
-          open ? 'bg-surface0 text-text' : 'text-overlay1 hover:bg-surface0/60 hover:text-subtext1'
-        }`}
+        onClick={toggleExpanded}
+        title={expanded ? '세션 도구 접기' : '세션 도구 펼치기'}
+        className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-overlay1 hover:bg-surface0/60 hover:text-subtext1"
       >
         <Settings2 className="h-3.5 w-3.5 shrink-0" />
-        <span className="truncate">
-          {activeRunner ? (PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider) : '실행환경 선택'}
-          {agentName ? ` · ${agentName}` : ''}
-        </span>
-        {runnerLocked && <Lock className="h-3 w-3 shrink-0 text-overlay1" />}
+        <span>{expanded ? '세션 도구' : '세션 설정'}</span>
+        <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
       </button>
 
-      {commitNotice && (
+      {expanded && (
+        <>
+          <button
+            type="button"
+            onClick={() => togglePanel('runner')}
+            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
+              panel === 'runner' ? 'bg-surface0 text-text' : 'text-subtext0 hover:bg-surface0/60'
+            }`}
+          >
+            {activeRunner
+              ? <RunnerIcon runner={activeRunner} className="h-3.5 w-3.5 shrink-0 text-sapphire" />
+              : <Monitor className="h-3.5 w-3.5 shrink-0" />}
+            <span className="truncate">{activeRunner ? (PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider) : '실행환경'}</span>
+            {runnerLocked && <Lock className="h-3 w-3 shrink-0 text-overlay1" />}
+          </button>
+          <button
+            type="button"
+            onClick={() => togglePanel('agent')}
+            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
+              panel === 'agent' ? 'bg-surface0 text-text' : 'text-subtext0 hover:bg-surface0/60'
+            }`}
+          >
+            <Bot className="h-3.5 w-3.5 shrink-0 text-mauve" />
+            <span className="truncate">{agentName ?? '에이전트 없음'}</span>
+          </button>
+        </>
+      )}
+
+      {expanded && (
         <button
           type="button"
-          onClick={() => { if (!open) onToggle() }}
-          title={commitNotice.title}
-          className={`ml-auto rounded-md p-1 ${
-            commitNotice.status === 'success'
+          onClick={() => togglePanel('commit')}
+          title={commitNotice?.title ?? '최근 자동 반영 내역'}
+          className={`ml-auto flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
+            commitNotice?.status === 'success'
               ? 'text-green hover:bg-green/10'
-              : 'text-yellow hover:bg-yellow/10'
+              : commitNotice?.status === 'warning'
+                ? 'text-yellow hover:bg-yellow/10'
+                : 'text-overlay1 hover:bg-surface0/60 hover:text-subtext1'
           }`}
         >
+          {commitNotice?.status === 'success'
+            ? <CheckCircle2 className="h-4 w-4" />
+            : commitNotice?.status === 'warning'
+              ? <ShieldAlert className="h-4 w-4" />
+              : <GitCommitHorizontal className="h-4 w-4" />}
+          <span>반영 상태</span>
+        </button>
+      )}
+      {!expanded && commitNotice && (
+        <span className={`ml-auto p-1 ${commitNotice.status === 'success' ? 'text-green' : 'text-yellow'}`}>
           {commitNotice.status === 'success'
             ? <CheckCircle2 className="h-4 w-4" />
             : <ShieldAlert className="h-4 w-4" />}
-        </button>
+        </span>
       )}
+      </div>
 
-      {commitNotice && commitExpanded && !open && (
+      {commitNotice && commitExpanded && panel !== 'commit' && (
         <button
           type="button"
           onClick={() => setCommitExpanded(false)}
@@ -298,10 +356,11 @@ export function ComposerSettings({
         </button>
       )}
 
-      {open && (
+      {panel && (
         <>
-          <div className="fixed inset-0 z-30" onClick={onClose} />
-          <div className="absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(34rem,70vh)] w-[min(30rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
+          <div className="fixed inset-0 z-30" onClick={() => setPanel(undefined)} />
+          {panel === 'runner' && (
+          <div className="absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(28rem,70vh)] w-[min(24rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
             <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">실행 환경</div>
             {runnerLocked && activeRunner ? (
               <div className="mb-2 flex items-center gap-2 rounded-lg bg-surface0/60 px-2.5 py-2 text-[12px] text-subtext1">
@@ -314,7 +373,9 @@ export function ComposerSettings({
                 {PROVIDER_ORDER.flatMap((provider) => runners.filter((runner) => runner.provider === provider)).map((runner) => (
                   <button
                     key={runner.id}
-                    onClick={() => void onChooseRunner(runner.id)}
+                    onClick={() => {
+                      void Promise.resolve(onChooseRunner(runner.id)).finally(() => setPanel(undefined))
+                    }}
                     className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] ${
                       runner.id === activeRunner?.id ? 'bg-surface1 text-text' : 'text-subtext1 hover:bg-surface0'
                     }`}
@@ -330,10 +391,13 @@ export function ComposerSettings({
                 )}
               </div>
             )}
-
-            <div className="border-t border-surface0 px-1.5 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-wider text-overlay1">에이전트</div>
+          </div>
+          )}
+          {panel === 'agent' && (
+          <div className="absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(28rem,70vh)] w-[min(22rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
+            <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">에이전트</div>
             <button
-              onClick={() => onSelect(undefined)}
+              onClick={() => { onSelect(undefined); setPanel(undefined) }}
               className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] ${
                 agentName ? 'text-subtext1 hover:bg-surface0' : 'bg-surface1 text-text'
               }`}
@@ -347,7 +411,7 @@ export function ComposerSettings({
                   agent.name === agentName ? 'rounded-lg bg-surface1' : 'rounded-lg hover:bg-surface0/60'
                 }`}
               >
-                <button onClick={() => onSelect(agent.name)} className="min-w-0 flex-1 px-3 py-2 text-left">
+                <button onClick={() => { onSelect(agent.name); setPanel(undefined) }} className="min-w-0 flex-1 px-3 py-2 text-left">
                   <div className="flex items-center gap-1.5 text-[12px] text-text">
                     <Bot className="h-3.5 w-3.5 shrink-0 text-mauve" /> {agent.name}
                   </div>
@@ -356,7 +420,7 @@ export function ComposerSettings({
                   )}
                 </button>
                 <button
-                  onClick={() => onEdit(agent)}
+                  onClick={() => { onEdit(agent); setPanel(undefined) }}
                   title="편집"
                   className="mr-2 hidden rounded p-1 text-overlay1 hover:text-text group-hover:block"
                 >
@@ -365,14 +429,17 @@ export function ComposerSettings({
               </div>
             ))}
             <button
-              onClick={onNew}
+              onClick={() => { onNew(); setPanel(undefined) }}
               className="mt-1 flex w-full items-center gap-1.5 rounded-lg px-2.5 py-2 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
             >
               <Plus className="h-3.5 w-3.5" /> 새 에이전트
             </button>
-
-            {commitNotice && (
-              <div className="mt-2 border-t border-surface0 px-1.5 pt-2">
+          </div>
+          )}
+          {panel === 'commit' && (
+            <div className="absolute bottom-full right-0 z-40 mb-1.5 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-surface1 bg-mantle p-3 shadow-xl">
+              {commitNotice ? (
+                <>
                 <div className={`mb-1 flex items-center gap-1.5 text-[11px] font-medium ${
                   commitNotice.status === 'success' ? 'text-green' : 'text-yellow'
                 }`}>
@@ -384,9 +451,14 @@ export function ComposerSettings({
                 <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-subtext1">
                   {commitNotice.text}
                 </div>
-              </div>
-            )}
-          </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-[11px] text-overlay1">
+                  <GitCommitHorizontal className="h-4 w-4" /> 아직 자동 반영 내역이 없습니다.
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
