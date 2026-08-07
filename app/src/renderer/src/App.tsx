@@ -760,8 +760,13 @@ export default function App() {
             </div>
           )}
 
-          {myApprovals.map((approval) => (
-            <ApprovalCard key={approval.id} approval={approval} onDecide={decide} />
+          {myApprovals.map((approval, index) => (
+            <ApprovalCard
+              key={approval.id}
+              approval={approval}
+              shortcutsActive={index === myApprovals.length - 1}
+              onDecide={decide}
+            />
           ))}
 
           {view.status === 'auth-required' && (

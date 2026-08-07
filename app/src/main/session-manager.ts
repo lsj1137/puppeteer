@@ -464,9 +464,17 @@ export class SessionManager {
   }
 
   resolveApproval(approvalId: string, decision: ApprovalDecision, reason?: string): void {
+    const openApprovals = db.listOpenApprovals()
+    const approval = openApprovals.find(({ id }) => id === approvalId)
     db.decideApproval(approvalId, decision)
     this.broker.resolve(approvalId, decision, reason)
     this.getWindow()?.webContents.send('approval:cleared', approvalId)
+    const hasAnotherApproval = approval && openApprovals.some(
+      ({ id, sessionId }) => id !== approvalId && sessionId === approval.sessionId,
+    )
+    if (approval && !hasAnotherApproval && this.sessions.has(approval.sessionId)) {
+      this.onEvent(approval.sessionId, { t: 'status', status: 'running' })
+    }
   }
 
   private onApproval(req: ApprovalRequest): void {

@@ -1,4 +1,5 @@
-import { Check, ShieldAlert, X } from 'lucide-react'
+import { useEffect } from 'react'
+import { Check, ShieldAlert, ShieldCheck, X } from 'lucide-react'
 import type { ApprovalDecision, ApprovalRequest } from '@shared/session'
 
 const RISK = {
@@ -9,11 +10,31 @@ const RISK = {
 
 interface Props {
   approval: ApprovalRequest
+  shortcutsActive?: boolean
   onDecide: (id: string, decision: ApprovalDecision) => void
 }
 
-export default function ApprovalCard({ approval, onDecide }: Props) {
+export default function ApprovalCard({ approval, shortcutsActive = true, onDecide }: Props) {
   const risk = RISK[approval.risk] ?? RISK.low
+  useEffect(() => {
+    if (approval.pending || !shortcutsActive) return
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null
+      if (target?.matches('input, textarea, [contenteditable="true"]')) return
+      const decision = event.code === 'Space'
+        ? 'allow-once'
+        : event.key === 'Enter'
+          ? 'allow-session'
+          : event.key === 'Escape'
+            ? 'deny'
+            : undefined
+      if (!decision) return
+      event.preventDefault()
+      onDecide(approval.id, decision)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [approval.id, approval.pending, onDecide, shortcutsActive])
   return (
     <div className={`rounded-lg border p-3.5 ${risk.ring}`}>
       <div className="mb-2.5 flex flex-wrap items-center gap-2">
@@ -53,18 +74,21 @@ export default function ApprovalCard({ approval, onDecide }: Props) {
             className="flex items-center gap-1.5 rounded-md bg-green/15 px-3 py-1.5 text-[12px] font-medium text-green hover:bg-green/25"
           >
             <Check className="h-3.5 w-3.5" /> 이번만 허용
+            <kbd className="ml-1 rounded bg-green/15 px-1.5 py-0.5 font-mono text-[10px]">Space</kbd>
           </button>
           <button
             onClick={() => onDecide(approval.id, 'allow-session')}
-            className="rounded-md border border-surface1 px-3 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
+            className="flex items-center gap-1.5 rounded-md border border-surface1 px-3 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
           >
-            이 세션 동안 허용
+            <ShieldCheck className="h-3.5 w-3.5" /> 이 세션 동안 허용
+            <kbd className="ml-1 rounded bg-surface0 px-1.5 py-0.5 font-mono text-[10px]">Enter</kbd>
           </button>
           <button
             onClick={() => onDecide(approval.id, 'deny')}
             className="flex items-center gap-1.5 rounded-md bg-red/15 px-3 py-1.5 text-[12px] font-medium text-red hover:bg-red/25"
           >
             <X className="h-3.5 w-3.5" /> 거부
+            <kbd className="ml-1 rounded bg-red/15 px-1.5 py-0.5 font-mono text-[10px]">Esc</kbd>
           </button>
         </div>
       )}
