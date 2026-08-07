@@ -207,7 +207,7 @@ export default function ArtifactSidebar({
                   className="group flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-surface0/65"
                 >
                   <span className="mt-0.5 shrink-0 font-mono text-[10px] text-overlay1">{index + 1}</span>
-                  <span className="line-clamp-3 min-w-0 text-[12px] leading-relaxed text-subtext1 group-hover:text-text">
+                  <span className="line-clamp-3 min-w-0 text-[13px] leading-relaxed text-subtext1 group-hover:text-text">
                     {entry.text}
                   </span>
                 </button>
