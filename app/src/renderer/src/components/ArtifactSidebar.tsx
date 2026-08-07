@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
 import type { ChangedFile, GitHistoryEntry, ProjectFileEntry, ProjectFilePreview, SessionWorktree, WorktreeStatus } from '@shared/session'
 import type { SessionView } from '../lib/session-view'
@@ -47,6 +47,7 @@ export default function ArtifactSidebar({
   const [history, setHistory] = useState<GitHistoryEntry[]>([])
   const [worktreeStatus, setWorktreeStatus] = useState<WorktreeStatus>()
   const [gitLoading, setGitLoading] = useState(false)
+  const initializedFileRoot = useRef<string | undefined>(undefined)
 
   const reloadGit = useCallback(async (): Promise<void> => {
     if (!rootPath) return
@@ -82,7 +83,12 @@ export default function ArtifactSidebar({
     let cancelled = false
     setFiles([])
     void window.api.listProjectFiles(rootPath).then((next) => {
-      if (!cancelled) setFiles(next)
+      if (cancelled) return
+      setFiles(next)
+      if (initializedFileRoot.current !== rootPath) {
+        setCollapsed(new Set(next.filter((entry) => entry.kind === 'directory').map((entry) => entry.path)))
+        initializedFileRoot.current = rootPath
+      }
     }).catch(() => {
       if (!cancelled) setFiles([])
     })
