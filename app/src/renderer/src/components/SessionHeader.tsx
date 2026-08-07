@@ -42,20 +42,9 @@ interface SessionHeaderProps {
   onNewSession: () => void
   onOpenSession: (sessionId: string) => void
   onDeleteSession: (session: StoredSession) => void
-  agentName?: string
-  agents: AgentDef[]
-  agentMenuOpen: boolean
-  onToggleAgentMenu: () => void
-  onCloseAgentMenu: () => void
-  onSelectAgent: (name?: string) => void
-  onEditAgent: (agent: AgentDef) => void
-  onNewAgent: () => void
   selectedSession?: StoredSession
   onOpenWorktree: (sessionId: string) => void
   onCheckpoint: (sessionId: string) => void
-  activeRunner?: DetectedRunner
-  runnerLocked: boolean
-  onChooseRunner: () => void
 }
 
 /** 프로젝트 화면 상단의 세션 탭과 세션별 실행 설정. */
@@ -72,20 +61,9 @@ export default function SessionHeader({
   onNewSession,
   onOpenSession,
   onDeleteSession,
-  agentName,
-  agents,
-  agentMenuOpen,
-  onToggleAgentMenu,
-  onCloseAgentMenu,
-  onSelectAgent,
-  onEditAgent,
-  onNewAgent,
   selectedSession,
   onOpenWorktree,
   onCheckpoint,
-  activeRunner,
-  runnerLocked,
-  onChooseRunner,
 }: SessionHeaderProps) {
   const worktree = selectedSession?.worktree
   const worktreeCleaned = Boolean(selectedSession?.worktreeCleaned && !worktree)
@@ -175,17 +153,6 @@ export default function SessionHeader({
       </div>
 
       <div className="mb-1 flex shrink-0 items-center gap-1.5 pl-2">
-        <AgentPicker
-          agentName={agentName}
-          agents={agents}
-          open={agentMenuOpen}
-          onToggle={onToggleAgentMenu}
-          onClose={onCloseAgentMenu}
-          onSelect={onSelectAgent}
-          onEdit={onEditAgent}
-          onNew={onNewAgent}
-        />
-
         {worktree && selectedSession && (
           <button
             onClick={() => onOpenWorktree(selectedSession.id)}
@@ -218,39 +185,6 @@ export default function SessionHeader({
           </button>
         )}
 
-        {activeRunner ? (
-          <button
-            disabled={runnerLocked}
-            onClick={() => !runnerLocked && onChooseRunner()}
-            title={
-              runnerLocked
-                ? `이 세션은 ${runnerLabel(activeRunner)} 로 시작했습니다. 바꾸려면 새 세션을 여세요.`
-                : `실행 환경 변경 · ${activeRunner.executable}`
-            }
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
-              activeRunner.provider === 'claude-cli'
-                ? 'bg-surface0/60 text-subtext1'
-                : 'bg-peach/15 text-peach'
-            } ${
-              runnerLocked
-                ? 'cursor-default'
-                : activeRunner.provider === 'claude-cli'
-                  ? 'hover:bg-surface0 hover:text-text'
-                  : 'hover:bg-peach/25'
-            }`}
-          >
-            <RunnerIcon
-              runner={activeRunner}
-              className={`h-3.5 w-3.5 ${activeRunner.provider === 'claude-cli' ? 'text-sapphire' : ''}`}
-            />
-            {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider}
-            {runnerLocked && <Lock className="h-3 w-3 text-overlay1" />}
-          </button>
-        ) : (
-          <span className="rounded-md border border-dashed border-surface1 px-2 py-1 text-[11px] text-overlay1">
-            실행 환경 미지정
-          </span>
-        )}
       </div>
     </div>
   )
@@ -260,6 +194,54 @@ function statusColor(session: StoredSession): string {
   if (session.status === 'failed') return 'bg-red'
   if (session.status === 'completed') return 'bg-surface2'
   return 'bg-yellow'
+}
+
+export function ComposerSettings({
+  activeRunner,
+  runnerLocked,
+  onChooseRunner,
+  ...agentProps
+}: {
+  activeRunner?: DetectedRunner
+  runnerLocked: boolean
+  onChooseRunner: () => void
+  agentName?: string
+  agents: AgentDef[]
+  open: boolean
+  onToggle: () => void
+  onClose: () => void
+  onSelect: (name?: string) => void
+  onEdit: (agent: AgentDef) => void
+  onNew: () => void
+}) {
+  return (
+    <div className="mb-2 flex min-h-7 items-center gap-1.5">
+      <AgentPicker {...agentProps} />
+      {activeRunner ? (
+        <button
+          disabled={runnerLocked}
+          onClick={() => !runnerLocked && onChooseRunner()}
+          title={runnerLocked
+            ? `이 세션은 ${runnerLabel(activeRunner)} 로 시작했습니다. 바꾸려면 새 세션을 여세요.`
+            : `실행 환경 변경 · ${activeRunner.executable}`}
+          className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${
+            activeRunner.provider === 'claude-cli' ? 'bg-surface0/60 text-subtext1' : 'bg-peach/15 text-peach'
+          } ${runnerLocked ? 'cursor-default' : 'hover:bg-surface0 hover:text-text'}`}
+        >
+          <RunnerIcon runner={activeRunner} className="h-3.5 w-3.5" />
+          {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider}
+          {runnerLocked && <Lock className="h-3 w-3 text-overlay1" />}
+        </button>
+      ) : (
+        <button
+          onClick={onChooseRunner}
+          className="rounded-md border border-dashed border-surface1 px-2 py-1 text-[11px] text-overlay1 hover:border-overlay0 hover:text-text"
+        >
+          실행 환경 선택
+        </button>
+      )}
+    </div>
+  )
 }
 
 function AgentPicker({
@@ -299,7 +281,7 @@ function AgentPicker({
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={onClose} />
-          <div className="absolute right-0 top-full z-40 mt-1 w-72 overflow-hidden rounded-lg border border-surface1 bg-mantle shadow-xl">
+          <div className="absolute bottom-full left-0 z-40 mb-1 w-72 overflow-hidden rounded-lg border border-surface1 bg-mantle shadow-xl">
             <button
               onClick={() => onSelect(undefined)}
               className={`flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] ${

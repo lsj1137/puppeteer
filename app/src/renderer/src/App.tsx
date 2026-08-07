@@ -661,31 +661,11 @@ export default function App() {
             setSessionDeleteError(undefined)
             setConfirmDelSession(session)
           }}
-          agentName={agentName}
-          agents={usableAgents}
-          agentMenuOpen={agentMenu}
-          onToggleAgentMenu={() => setAgentMenu((open) => !open)}
-          onCloseAgentMenu={() => setAgentMenu(false)}
-          onSelectAgent={(name) => {
-            setAgentName(name)
-            setAgentMenu(false)
-          }}
-          onEditAgent={(agent) => {
-            setEditing({ agent, isNew: false })
-            setAgentMenu(false)
-          }}
-          onNewAgent={() => {
-            setEditing({ agent: emptyAgent(active), isNew: true })
-            setAgentMenu(false)
-          }}
           selectedSession={selected}
           onOpenWorktree={setWorktreeOpen}
           onCheckpoint={(sessionId) => {
             void window.api.buildCheckpoint(sessionId).then((draft) => draft && setCheckpoint(draft))
           }}
-          activeRunner={activeRunner}
-          runnerLocked={runnerLocked}
-          onChooseRunner={() => setPendingPick('')}
         />
       )}
 
@@ -806,6 +786,7 @@ export default function App() {
           onSelect={setSelectedArtifact}
           onOpenDiff={openDiff}
           onToggle={toggleArtifacts}
+          rootPath={selected?.worktree?.path ?? active}
         />
       )}
 
@@ -824,9 +805,29 @@ export default function App() {
           runningSessionIds={running.map(({ id }) => id)}
           runners={usableRunners}
           showRunnerPicker={pendingPick !== undefined && !runnerLocked}
+          activeRunner={activeRunner}
+          runnerLocked={runnerLocked}
+          agentName={agentName}
+          agents={usableAgents}
+          agentMenuOpen={agentMenu}
           onAnnotate={setAnnotating}
           onAttachFiles={attachFiles}
           onChooseRunner={chooseRunner}
+          onOpenRunnerPicker={() => setPendingPick('')}
+          onToggleAgentMenu={() => setAgentMenu((open) => !open)}
+          onCloseAgentMenu={() => setAgentMenu(false)}
+          onSelectAgent={(name) => {
+            setAgentName(name)
+            setAgentMenu(false)
+          }}
+          onEditAgent={(agent) => {
+            setEditing({ agent, isNew: false })
+            setAgentMenu(false)
+          }}
+          onNewAgent={() => {
+            setEditing({ agent: emptyAgent(active), isNew: true })
+            setAgentMenu(false)
+          }}
           onRemoveAttachment={(index) =>
             setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))
           }

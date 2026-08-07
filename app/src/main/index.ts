@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname } from 'node:path'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { join, extname, resolve } from 'node:path'
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { detectRunners } from './runner-detect'
 import { SessionManager } from './session-manager'
@@ -268,6 +268,45 @@ app.whenReady().then(() => {
     route(instruction, runner, cwd),
   )
   ipcMain.handle('project:reveal', (_e, path: string) => shell.openPath(path))
+  ipcMain.handle('project:files', (_e, root: string) => {
+    const canonical = (path: string): string => {
+      const value = resolve(path)
+      return process.platform === 'win32' ? value.toLocaleLowerCase() : value
+    }
+    const target = canonical(root)
+    const projects = db.listProjects()
+    const roots = projects.flatMap((project) => [
+      project.path,
+      ...db.listSessions(project.path).flatMap((session) =>
+        session.worktree?.path ? [session.worktree.path] : [],
+      ),
+    ])
+    if (!roots.some((path) => canonical(path) === target)) {
+      throw new Error('등록되지 않은 프로젝트 경로입니다.')
+    }
+
+    const ignored = new Set(['.git', 'node_modules', 'dist', 'dist_electron', 'out', '.next', 'coverage'])
+    const entries: { path: string; kind: 'file' | 'directory' }[] = []
+    const visit = (dir: string, relative = ''): void => {
+      if (entries.length >= 2000) return
+      let children
+      try {
+        children = readdirSync(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      children.sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
+      for (const child of children) {
+        if (ignored.has(child.name)) continue
+        const path = relative ? `${relative}/${child.name}` : child.name
+        entries.push({ path, kind: child.isDirectory() ? 'directory' : 'file' })
+        if (child.isDirectory()) visit(join(dir, child.name), path)
+        if (entries.length >= 2000) break
+      }
+    }
+    visit(root)
+    return entries
+  })
   ipcMain.handle('session:changes', (_e, id: string) => sessions.changes(id))
 
   // 이미지 첨부 — 세션이 접근 가능한 프로젝트 내부 경로에 저장 (기획서 10장)

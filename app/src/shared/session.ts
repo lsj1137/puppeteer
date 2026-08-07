@@ -193,6 +193,11 @@ export interface ChangedFile {
   status: string
 }
 
+export interface ProjectFileEntry {
+  path: string
+  kind: 'file' | 'directory'
+}
+
 export interface ProjectStat {
   path: string
   runnerId: string | null

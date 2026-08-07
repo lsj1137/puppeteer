@@ -5,7 +5,6 @@ import {
   FileCode2,
   FileDiff,
   FileText,
-  PanelRightClose,
   ScrollText,
 } from 'lucide-react'
 import Markdown from './Markdown'
@@ -35,12 +34,10 @@ export default function ArtifactPanel({
   artifacts,
   selectedId,
   onSelect,
-  onCollapse,
 }: {
   artifacts: UiArtifact[]
   selectedId?: string
   onSelect: (id: string) => void
-  onCollapse: () => void
 }) {
   const [copied, setCopied] = useState(false)
   const [raw, setRaw] = useState(false)
@@ -53,20 +50,6 @@ export default function ArtifactPanel({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-surface0 px-3 py-2 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-        <span className="flex-1">
-          Artifacts
-          {artifacts.length > 0 && <span className="ml-1.5 text-subtext0">{artifacts.length}</span>}
-        </span>
-        <button
-          onClick={onCollapse}
-          title="패널 접기"
-          className="rounded p-0.5 text-overlay1 hover:bg-surface0 hover:text-text"
-        >
-          <PanelRightClose className="h-3.5 w-3.5" />
-        </button>
-      </div>
-
       {artifacts.length === 0 && (
         <div className="p-3 text-[12px] text-overlay1">
           코드·실행 결과가 생기면 여기에 모입니다

@@ -3,6 +3,8 @@ import { CircleStop, ImagePlus, Monitor, PencilLine, Terminal, X } from 'lucide-
 import type { DetectedRunner } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import PromptInput, { type PromptInputHandle } from './PromptInput'
+import { ComposerSettings } from './SessionHeader'
+import type { AgentDef } from '@shared/session'
 
 interface Attachment {
   path: string
@@ -20,9 +22,20 @@ interface Props {
   runningSessionIds: string[]
   runners: DetectedRunner[]
   showRunnerPicker: boolean
+  activeRunner?: DetectedRunner
+  runnerLocked: boolean
+  agentName?: string
+  agents: AgentDef[]
+  agentMenuOpen: boolean
   onAnnotate: (index: number) => void
   onAttachFiles: (files: FileList) => void | Promise<void>
   onChooseRunner: (runnerId: string) => void | Promise<void>
+  onOpenRunnerPicker: () => void
+  onToggleAgentMenu: () => void
+  onCloseAgentMenu: () => void
+  onSelectAgent: (name?: string) => void
+  onEditAgent: (agent: AgentDef) => void
+  onNewAgent: () => void
   onRemoveAttachment: (index: number) => void
   onStop: (sessionId: string) => void | Promise<void>
   onSubmit: (text: string) => void
@@ -52,9 +65,20 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     runningSessionIds,
     runners,
     showRunnerPicker,
+    activeRunner,
+    runnerLocked,
+    agentName,
+    agents,
+    agentMenuOpen,
     onAnnotate,
     onAttachFiles,
     onChooseRunner,
+    onOpenRunnerPicker,
+    onToggleAgentMenu,
+    onCloseAgentMenu,
+    onSelectAgent,
+    onEditAgent,
+    onNewAgent,
     onRemoveAttachment,
     onStop,
     onSubmit,
@@ -91,6 +115,19 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
           </button>
         </div>
       )}
+      <ComposerSettings
+        activeRunner={activeRunner}
+        runnerLocked={runnerLocked}
+        onChooseRunner={onOpenRunnerPicker}
+        agentName={agentName}
+        agents={agents}
+        open={agentMenuOpen}
+        onToggle={onToggleAgentMenu}
+        onClose={onCloseAgentMenu}
+        onSelect={onSelectAgent}
+        onEdit={onEditAgent}
+        onNew={onNewAgent}
+      />
       <div className="flex items-end gap-2">
         <label
           title="이미지 첨부"

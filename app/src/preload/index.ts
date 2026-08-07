@@ -6,6 +6,7 @@ import type {
   ChangedFile,
   CostTotals,
   ProjectStat,
+  ProjectFileEntry,
   DetectedRunner,
   RouteResult,
   FetchedAgent,
@@ -182,6 +183,8 @@ const api = {
     cost: CostTotals
   }> => ipcRenderer.invoke('overview:stats'),
   revealProject: (path: string): Promise<string> => ipcRenderer.invoke('project:reveal', path),
+  listProjectFiles: (path: string): Promise<ProjectFileEntry[]> =>
+    ipcRenderer.invoke('project:files', path),
   listChanges: (sessionId: string): Promise<ChangedFile[]> =>
     ipcRenderer.invoke('session:changes', sessionId),
   fileDiff: (sessionId: string, path: string): Promise<string> =>
