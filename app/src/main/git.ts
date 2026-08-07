@@ -16,6 +16,23 @@ import type {
 } from '@shared/session'
 
 const exec = promisify(execFile)
+const worktreeMutationQueues = new Map<string, Promise<void>>()
+
+/** 같은 worktree의 add/commit이 겹쳐 index.lock을 두고 경쟁하지 않게 한다. */
+async function serializeWorktreeMutation<T>(cwd: string, task: () => Promise<T>): Promise<T> {
+  const previous = worktreeMutationQueues.get(cwd) ?? Promise.resolve()
+  let release!: () => void
+  const current = new Promise<void>((resolve) => { release = resolve })
+  const queued = previous.catch(() => undefined).then(() => current)
+  worktreeMutationQueues.set(cwd, queued)
+  await previous.catch(() => undefined)
+  try {
+    return await task()
+  } finally {
+    release()
+    if (worktreeMutationQueues.get(cwd) === queued) worktreeMutationQueues.delete(cwd)
+  }
+}
 
 function hostGitArgs(args: string[]): string[] {
   // Windows와 WSL이 같은 worktree를 볼 때 Git 전역 설정 차이만으로 전체 파일이
@@ -88,7 +105,7 @@ export async function commitProjectMemory(cwd: string): Promise<{ ok: boolean; m
       'commit',
       '--only',
       '-m',
-      'Puppeteer: update project memory',
+      'docs: 프로젝트 Memory 갱신',
       '--',
       ...paths,
     ])
@@ -386,42 +403,44 @@ export async function commitWorktree(
   wt: SessionWorktree,
   message: string,
 ): Promise<WorktreeCommitResult> {
-  const title = message.trim()
-  if (!title) return { ok: false, message: '커밋 메시지를 입력해 주세요.', status: await worktreeStatus(wt) }
-  const subject = title.split(/\r?\n/, 1)[0]
+  return serializeWorktreeMutation(wt.path, async () => {
+    const title = message.trim()
+    if (!title) return { ok: false, message: '커밋 메시지를 입력해 주세요.', status: await worktreeStatus(wt) }
+    const subject = title.split(/\r?\n/, 1)[0]
 
-  const before = await worktreeStatus(wt)
-  if (!before.dirty) {
-    return { ok: false, message: '커밋할 worktree 변경이 없습니다.', status: before }
-  }
-
-  try {
-    await gitWithError(wt.path, ['add', '-A'])
-    const staged = await git(wt.path, ['diff', '--cached', '--name-only'])
-    if (!staged.trim()) {
-      return { ok: false, message: '커밋할 변경을 찾지 못했습니다.', status: await worktreeStatus(wt) }
+    const before = await worktreeStatus(wt)
+    if (!before.dirty) {
+      return { ok: false, message: '커밋할 worktree 변경이 없습니다.', status: before }
     }
-    await gitWithError(wt.path, ['commit', '-m', title])
-    const status = await worktreeStatus(wt)
-    if (status.dirty) {
+
+    try {
+      await gitWithError(wt.path, ['add', '-A'])
+      const staged = await git(wt.path, ['diff', '--cached', '--name-only'])
+      if (!staged.trim()) {
+        return { ok: false, message: '커밋할 변경을 찾지 못했습니다.', status: await worktreeStatus(wt) }
+      }
+      await gitWithError(wt.path, ['commit', '-m', title])
+      const status = await worktreeStatus(wt)
+      if (status.dirty) {
+        return {
+          ok: false,
+          message: '커밋 후에도 worktree에 변경이 남아 있어 자동 반영을 중단했습니다.',
+          status,
+        }
+      }
       return {
-        ok: false,
-        message: '커밋 후에도 worktree에 변경이 남아 있어 자동 반영을 중단했습니다.',
+        ok: true,
+        message: `worktree 변경을 커밋했습니다: ${subject}`,
         status,
       }
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'worktree 커밋에 실패했습니다.',
+        status: await worktreeStatus(wt),
+      }
     }
-    return {
-      ok: true,
-      message: `worktree 변경을 커밋했습니다: ${subject}`,
-      status,
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      message: error instanceof Error ? error.message : 'worktree 커밋에 실패했습니다.',
-      status: await worktreeStatus(wt),
-    }
-  }
+  })
 }
 
 /** worktree 브랜치를 현재 원본 브랜치 위로 재배치한다. 충돌은 해결 창에서 이어갈 수 있게 유지한다. */

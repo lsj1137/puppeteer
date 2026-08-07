@@ -57,6 +57,7 @@ import {
   worktreeBranchName,
 } from './worktree-policy'
 import { nextWorktreeIntegrationStep } from './worktree-integration'
+import { generateCommitMessage } from '@shared/commit-message'
 
 export interface StartSessionInput {
   runner: DetectedRunner
@@ -596,8 +597,8 @@ export class SessionManager {
           updatedAt: Date.now(),
           status: integrationStatus(status),
         })
-        const title = (stored.title ?? '세션 작업').replace(/\s+/g, ' ').trim().slice(0, 72)
-        const committed = await commitGitWorktree(wt, `Puppeteer: ${title}`)
+        const commitMessage = generateCommitMessage(await readWorktreeDiff(wt)).value
+        const committed = await commitGitWorktree(wt, commitMessage)
         if (!committed.ok) {
           this.setIntegrationReport(sessionId, {
             mode,

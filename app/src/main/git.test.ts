@@ -162,6 +162,20 @@ describe('worktree merge', () => {
     expect(await worktreeDiff(wt)).toContain('draft.txt')
   })
 
+  it('serializes concurrent commits for the same worktree', async () => {
+    const { worktreePath, wt } = await fixture()
+    await writeFile(join(worktreePath, 'queued.txt'), 'queued\n')
+
+    const results = await Promise.all([
+      commitWorktree(wt, 'feat: queued 변경 반영'),
+      commitWorktree(wt, 'feat: 중복 커밋 시도'),
+    ])
+
+    expect(results.filter(({ ok }) => ok)).toHaveLength(1)
+    expect(results.find(({ ok }) => !ok)?.message).toContain('커밋할 worktree 변경이 없습니다')
+    expect(await git(worktreePath, ['log', '-1', '--pretty=%s'])).toBe('feat: queued 변경 반영')
+  })
+
   it('blocks a merge while the original checkout has uncommitted changes', async () => {
     const { origin, worktreePath, wt } = await fixture()
     await git(worktreePath, ['config', 'user.name', 'Agent Workspace Test'])

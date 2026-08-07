@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowDown,
   Check,
   Brain,
   WandSparkles,
@@ -112,6 +113,7 @@ export default function App() {
   const [now, setNow] = useState(Date.now())
   /** 대화가 위로 스크롤됐는지 — 페이드·그림자를 그때만 보인다 */
   const [scrolled, setScrolled] = useState(false)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [agents, setAgents] = useState<AgentDef[]>([])
   const [agentName, setAgentName] = useState<string>()
   const [tabMenu, setTabMenu] = useState(false)
@@ -712,7 +714,13 @@ export default function App() {
       ) : (
       <main
         ref={scrollRef}
-        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 8)}
+        onScroll={(event) => {
+          const target = event.currentTarget
+          setScrolled(target.scrollTop > 8)
+          setShowScrollToBottom(
+            target.scrollHeight - target.scrollTop - target.clientHeight > 48,
+          )
+        }}
         onWheel={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
         onTouchMove={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
         className="col-start-2 row-start-2 flex min-w-0 flex-col overflow-y-auto overflow-x-hidden px-5 py-4 [overflow-wrap:anywhere]"
@@ -777,6 +785,20 @@ export default function App() {
           )}
         </div>
       </main>
+      )}
+
+      {!showHome && showScrollToBottom && (
+        <button
+          type="button"
+          onClick={() => {
+            scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+          }}
+          title="대화 맨 아래로"
+          aria-label="대화 맨 아래로"
+          className="col-start-2 row-start-2 z-20 mb-3 mr-3 flex h-8 w-8 self-end justify-self-end items-center justify-center rounded-full border border-surface1 bg-mantle/95 text-subtext0 shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:bg-surface0 hover:text-text"
+        >
+          <ArrowDown className="h-4 w-4" />
+        </button>
       )}
 
       {/* ── Artifacts ────────────────────────────── */}
