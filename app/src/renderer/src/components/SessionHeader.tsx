@@ -3,6 +3,7 @@ import {
   Bot,
   CheckCircle2,
   ChevronDown,
+  ChevronUp,
   Flag,
   GitBranch,
   GitCommitHorizontal,
@@ -226,7 +227,7 @@ export function ComposerSettings({
   onNew: () => void
 }) {
   const [expanded, setExpanded] = useState(
-    () => localStorage.getItem('ws.composerContextExpanded') === 'true',
+    () => localStorage.getItem('ws.composerContextExpanded') !== 'false',
   )
   const [panel, setPanel] = useState<'runner' | 'agent' | 'commit'>()
   const [commitExpanded, setCommitExpanded] = useState(false)
@@ -266,20 +267,16 @@ export function ComposerSettings({
   }
 
   return (
-    <div className="relative mb-1.5 min-h-7 min-w-0">
-      <div className="flex min-w-0 items-center gap-1">
-      <button
-        onClick={toggleExpanded}
-        title={expanded ? '세션 도구 접기' : '세션 도구 펼치기'}
-        className="flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-overlay1 hover:bg-surface0/60 hover:text-subtext1"
+    <div className={`relative min-w-0 transition-[margin] duration-150 ${expanded ? 'mb-1.5' : 'mb-0'}`}>
+      <div
+        className={`grid min-w-0 transition-[grid-template-rows,opacity,transform] duration-150 ease-out motion-reduce:transition-none ${
+          expanded
+            ? 'grid-rows-[1fr] translate-y-0 opacity-100'
+            : 'pointer-events-none grid-rows-[0fr] translate-y-1 opacity-0'
+        }`}
       >
-        <Settings2 className="h-3.5 w-3.5 shrink-0" />
-        <span>{expanded ? '세션 도구' : '세션 설정'}</span>
-        <ChevronDown className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-      </button>
-
-      {expanded && (
-        <>
+        <div className="min-h-0 overflow-hidden">
+          <div className="flex min-w-0 items-center gap-1">
           <button
             type="button"
             onClick={() => togglePanel('runner')}
@@ -303,10 +300,7 @@ export function ComposerSettings({
             <Bot className="h-3.5 w-3.5 shrink-0 text-mauve" />
             <span className="truncate">{agentName ?? '에이전트 없음'}</span>
           </button>
-        </>
-      )}
 
-      {expanded && (
         <button
           type="button"
           onClick={() => togglePanel('commit')}
@@ -326,15 +320,29 @@ export function ComposerSettings({
               : <GitCommitHorizontal className="h-4 w-4" />}
           <span>반영 상태</span>
         </button>
-      )}
-      {!expanded && commitNotice && (
-        <span className={`ml-auto p-1 ${commitNotice.status === 'success' ? 'text-green' : 'text-yellow'}`}>
-          {commitNotice.status === 'success'
-            ? <CheckCircle2 className="h-4 w-4" />
-            : <ShieldAlert className="h-4 w-4" />}
-        </span>
-      )}
+          <button
+            type="button"
+            onClick={toggleExpanded}
+            title="세션 도구 모음 접기"
+            className="ml-0.5 rounded-md p-1 text-overlay1 hover:bg-surface0/60 hover:text-text"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+          </div>
+        </div>
       </div>
+
+      {!expanded && (
+        <button
+          type="button"
+          onClick={toggleExpanded}
+          title="세션 도구 모음 펼치기"
+          className="absolute bottom-0 left-1 z-10 flex translate-y-0.5 items-center gap-1 rounded-t-md bg-surface0/55 px-1.5 py-0.5 text-[10px] text-overlay1 hover:bg-surface0 hover:text-text"
+        >
+          <Settings2 className="h-3 w-3" />
+          <ChevronUp className="h-3 w-3" />
+        </button>
+      )}
 
       {commitNotice && commitExpanded && panel !== 'commit' && (
         <button
