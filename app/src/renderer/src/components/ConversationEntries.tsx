@@ -68,7 +68,7 @@ export default function ConversationEntries({
           }
           if (entry.title === '승인 요청 시간 초과') {
             return (
-              <div key={entry.id} className="flex items-center gap-1.5 px-1 text-[11px] text-overlay1">
+              <div key={entry.id} className="flex w-fit items-center gap-1.5 rounded-md bg-yellow/10 px-2 py-1 text-[12px] text-yellow">
                 <AlertTriangle className="h-3 w-3 shrink-0 text-yellow" />
                 <span>승인 요청 시간 초과</span>
               </div>

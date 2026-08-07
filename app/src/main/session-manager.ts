@@ -483,13 +483,16 @@ export class SessionManager {
     db.recordApproval(routedReq)
     if (routedReq.pending) {
       db.decideApproval(routedReq.id, 'deny')
-      this.getWindow()?.webContents.send('approval:cleared', routedReq.id)
       this.onEvent(routedReq.sessionId, {
         t: 'notice',
         level: 'warning',
         title: '승인 요청 시간 초과',
         text: `${routedReq.tool} 요청을 건너뛰었습니다.`,
       })
+      if (this.sessions.has(routedReq.sessionId)) {
+        this.onEvent(routedReq.sessionId, { t: 'status', status: 'running' })
+      }
+      this.getWindow()?.webContents.send('approval:cleared', routedReq.id)
       return
     }
     this.getWindow()?.webContents.send('approval:request', routedReq)
