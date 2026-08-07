@@ -372,6 +372,15 @@ export function appendEvent(sessionId: string, event: SessionEvent): void {
   )
 }
 
+/** 수동 커밋·병합으로 해결된 과거 Worktree 검토 알림이 다시 나타나지 않게 정리한다. */
+export function deleteWorktreeReviewNotices(sessionId: string): void {
+  db.prepare(
+    `DELETE FROM event
+     WHERE session_id = ? AND t = 'notice'
+       AND payload LIKE '%"title":"커밋·병합 검토 필요"%'`,
+  ).run(sessionId)
+}
+
 export function setSnapshot(sessionId: string, snapshot: unknown): void {
   db.prepare('UPDATE session SET snapshot = ? WHERE id = ?').run(JSON.stringify(snapshot), sessionId)
 }

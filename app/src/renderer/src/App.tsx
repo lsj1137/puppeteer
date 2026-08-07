@@ -122,6 +122,7 @@ export default function App() {
   const [appUpdate, setAppUpdate] = useState<AppUpdateState>()
   const [checkpoint, setCheckpoint] = useState<CheckpointDraft>()
   const [worktreeOpen, setWorktreeOpen] = useState<string>()
+  const [dismissedCommitNotices, setDismissedCommitNotices] = useState<Set<string>>(new Set())
   /**
    * 다음 지시를 보낼 러너. 세션마다 다를 수 있어 프로젝트 기본값과 따로 둔다.
    * 열어둔 세션이 있으면 그 세션이 쓰던 러너를 기본으로 잡는다.
@@ -279,13 +280,16 @@ export default function App() {
   })()
 
   const isEmpty = !active || (view.entries.length === 0 && myApprovals.length === 0 && !view.status)
-  const commitNotice = [...view.entries]
+  const latestCommitNotice = [...view.entries]
     .reverse()
     .find(
       (entry) =>
         entry.kind === 'notice' &&
         (entry.title === '자동 커밋·병합 완료' || entry.title === '커밋·병합 검토 필요'),
     )
+  const commitNotice = latestCommitNotice && !dismissedCommitNotices.has(latestCommitNotice.id)
+    ? latestCommitNotice
+    : undefined
 
   // ── 초기 로드 ──
   useEffect(() => {
@@ -898,7 +902,12 @@ export default function App() {
         worktreeSession={
           worktreeOpen && selected?.id === worktreeOpen && selected.worktree ? selected : undefined
         }
-        onWorktreeChanged={() => void refresh(active)}
+        onWorktreeChanged={() => {
+          if (commitNotice?.kind === 'notice' && commitNotice.title === '커밋·병합 검토 필요') {
+            setDismissedCommitNotices((current) => new Set(current).add(commitNotice.id))
+          }
+          void refresh(active)
+        }}
         onCloseWorktree={() => setWorktreeOpen(undefined)}
       />
 

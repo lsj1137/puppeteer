@@ -387,7 +387,9 @@ export class SessionManager {
         status: await this.worktreeStatus(sessionId),
       }
     }
-    return commitGitWorktree(wt, message)
+    const result = await commitGitWorktree(wt, message)
+    if (result.ok) db.deleteWorktreeReviewNotices(sessionId)
+    return result
   }
 
   async rebaseWorktree(
@@ -441,7 +443,9 @@ export class SessionManager {
         status: await this.worktreeStatus(sessionId),
       }
     }
-    return mergeGitWorktree(wt)
+    const result = await mergeGitWorktree(wt)
+    if (result.ok) db.deleteWorktreeReviewNotices(sessionId)
+    return result
   }
 
   /** 지금 살아 있는 세션 (프로젝트를 넘나들며 표시하기 위해) */
