@@ -73,7 +73,7 @@ function loadRenderer(win: BrowserWindow, hash?: string): void {
   }
 }
 
-function createWindow(): BrowserWindow {
+function createWindow(getRunningSessions: () => ReturnType<SessionManager['listRunning']>): BrowserWindow {
   const icon = app.isPackaged
     ? join(process.resourcesPath, 'app-icon.png')
     : join(app.getAppPath(), 'resources', 'icon.png')
@@ -92,6 +92,28 @@ function createWindow(): BrowserWindow {
     },
   })
   mainWindow = win
+  let closeConfirmed = false
+  win.on('close', (event) => {
+    if (closeConfirmed) return
+    const running = getRunningSessions()
+    if (running.length === 0) return
+
+    event.preventDefault()
+    const response = dialog.showMessageBoxSync(win, {
+      type: 'warning',
+      title: '실행 중인 세션이 있습니다',
+      message: `${running.length}개의 세션이 아직 실행 중입니다.`,
+      detail: '지금 종료하면 실행 중인 작업이 중단될 수 있습니다.',
+      buttons: ['계속 작업', '그래도 종료'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    if (response === 1) {
+      closeConfirmed = true
+      win.close()
+    }
+  })
   if (!smokeMode && !e2eMode) win.on('ready-to-show', () => win.show())
   win.on('closed', () => { mainWindow = undefined })
 
@@ -377,7 +399,7 @@ app.whenReady().then(() => {
       sessions.resolveApproval(approvalId, decision, reason),
   )
 
-  const win = createWindow()
+  const win = createWindow(() => sessions.listRunning())
   if (!smokeMode && app.isPackaged) {
     setTimeout(() => void appUpdates.check(), 10_000)
   }
@@ -385,7 +407,7 @@ app.whenReady().then(() => {
   if (e2eMode) void runE2E(win, sessions)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(() => sessions.listRunning())
   })
 })
 

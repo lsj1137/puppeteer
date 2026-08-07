@@ -12,7 +12,7 @@ interface Props {
 
 export default function UsageSummary({ cost, limit, sessionCost, sessionTokens }: Props) {
   const [expanded, setExpanded] = useState(
-    () => localStorage.getItem('ws.usageExpanded') !== 'false',
+    () => localStorage.getItem('ws.usageExpanded') === 'true',
   )
   const percent = limit ? Math.round(limit.ratio * 100) : undefined
   const toggle = (): void => {
@@ -30,8 +30,11 @@ export default function UsageSummary({ cost, limit, sessionCost, sessionTokens }
           aria-expanded={false}
           onClick={toggle}
           title="사용량 상세 펼치기"
-          className="group flex w-full items-center gap-2 rounded px-0.5 py-1 hover:bg-surface0/50"
+          className="group grid w-full grid-cols-[auto_1fr_auto_auto] items-center gap-2 rounded px-0.5 py-1 hover:bg-surface0/50"
         >
+          <span className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-overlay1 group-hover:text-text">
+            <Gauge className="h-3.5 w-3.5" /> 사용량
+          </span>
           <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface0">
             <div
               className={`h-full rounded-full transition-all ${
