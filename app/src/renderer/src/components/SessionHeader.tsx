@@ -266,7 +266,7 @@ export function ComposerSettings({
   }
 
   return (
-    <div className={`relative min-h-6 min-w-0 transition-[margin] duration-150 ${expanded ? 'mb-1.5' : 'mb-0'}`}>
+    <div className={`relative mt-3 min-w-0 transition-[margin] duration-150 ${expanded ? 'mb-1.5' : 'mb-0'}`}>
       <div
         className={`grid min-w-0 transition-[grid-template-rows,opacity,transform] duration-150 ease-out motion-reduce:transition-none ${
           expanded
@@ -319,28 +319,20 @@ export function ComposerSettings({
               : <GitCommitHorizontal className="h-4 w-4" />}
           <span>반영 상태</span>
         </button>
-          <button
-            type="button"
-            onClick={toggleExpanded}
-            title="세션 도구 모음 접기"
-            className="ml-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-overlay1 hover:bg-surface0/60 hover:text-text"
-          >
-            <ChevronDown className="h-3.5 w-3.5" />
-          </button>
           </div>
         </div>
       </div>
 
-      {!expanded && (
-        <button
-          type="button"
-          onClick={toggleExpanded}
-          title="세션 도구 모음 펼치기"
-          className="absolute right-0 top-0 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-surface0/80 text-overlay1 shadow-sm hover:bg-surface1 hover:text-text"
-        >
-          <ChevronUp className="h-3.5 w-3.5" />
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={toggleExpanded}
+        title={expanded ? '세션 도구 모음 접기' : '세션 도구 모음 펼치기'}
+        className="absolute -top-3 right-2 z-10 flex h-3 w-10 items-center justify-center rounded-t-md border border-b-0 border-surface1 bg-surface0/90 text-overlay1 shadow-sm transition-colors hover:bg-surface1 hover:text-text"
+      >
+        {expanded
+          ? <ChevronDown className="h-3 w-3" />
+          : <ChevronUp className="h-3 w-3" />}
+      </button>
 
       {commitNotice && commitExpanded && panel !== 'commit' && (
         <button
