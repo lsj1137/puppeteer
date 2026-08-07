@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
 import type { ChangedFile, GitHistoryEntry, ProjectFileEntry, ProjectFilePreview, SessionWorktree, WorktreeStatus } from '@shared/session'
 import type { SessionView } from '../lib/session-view'
 import { clampArtifactWidth } from '../lib/session-view'
@@ -37,8 +37,8 @@ export default function ArtifactSidebar({
   onToggle,
   setWidth,
 }: Props) {
-  const [tab, setTab] = useState<'git' | 'artifacts' | 'files'>(() =>
-    (localStorage.getItem('ws.sidebarTab') as 'git' | 'artifacts' | 'files') || 'artifacts',
+  const [tab, setTab] = useState<'instructions' | 'git' | 'artifacts' | 'files'>(() =>
+    (localStorage.getItem('ws.sidebarTab') as 'instructions' | 'git' | 'artifacts' | 'files') || 'artifacts',
   )
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -105,7 +105,7 @@ export default function ArtifactSidebar({
     window.setTimeout(() => void reloadGit(), 150)
   }), [reloadGit, sessionId, tab])
 
-  const selectTab = (next: 'git' | 'artifacts' | 'files'): void => {
+  const selectTab = (next: 'instructions' | 'git' | 'artifacts' | 'files'): void => {
     setTab(next)
     localStorage.setItem('ws.sidebarTab', next)
   }
@@ -168,6 +168,7 @@ export default function ArtifactSidebar({
       <div className="flex shrink-0 items-center gap-1.5 px-2 py-2">
         <div className="flex min-w-0 items-center gap-0.5 rounded-lg bg-surface0/55 p-0.5">
         {([
+          ['instructions', ListTree, '지시', view.entries.filter((entry) => entry.kind === 'user').length],
           ['git', GitBranch, 'Git', changes.length],
           ['artifacts', PackageOpen, '아티팩트', view.artifacts.length],
           ['files', Folder, '파일', 0],
@@ -190,6 +191,33 @@ export default function ArtifactSidebar({
           <PanelRightClose className="h-3.5 w-3.5" />
         </button>
       </div>
+
+      {tab === 'instructions' && (
+        <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-3">
+          <div className="sticky top-0 z-[1] mb-1 bg-mantle/95 px-1 py-2 text-[12px] font-semibold text-subtext0 backdrop-blur">
+            지시 기록
+          </div>
+          {view.entries.some((entry) => entry.kind === 'user') ? (
+            <div className="space-y-1">
+              {view.entries.filter((entry) => entry.kind === 'user').map((entry, index) => (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => document.getElementById(`conversation-entry-${entry.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
+                  className="group flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-surface0/65"
+                >
+                  <span className="mt-0.5 shrink-0 font-mono text-[10px] text-overlay1">{index + 1}</span>
+                  <span className="line-clamp-3 min-w-0 text-[12px] leading-relaxed text-subtext1 group-hover:text-text">
+                    {entry.text}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="px-1 py-2 text-[12px] text-overlay1">아직 지시 기록이 없습니다.</div>
+          )}
+        </div>
+      )}
 
       {tab === 'git' && (
         <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-3">

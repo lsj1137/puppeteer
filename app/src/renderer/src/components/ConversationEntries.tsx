@@ -42,7 +42,7 @@ export default function ConversationEntries({
       {view.entries.map((entry) => {
         if (entry.kind === 'user') {
           return (
-            <div key={entry.id} className="min-w-0 max-w-full rounded-lg bg-surface0/50 px-3.5 py-2.5">
+            <div id={`conversation-entry-${entry.id}`} key={entry.id} className="min-w-0 max-w-full scroll-mt-6 rounded-lg bg-surface0/50 px-3.5 py-2.5">
               <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
                 나
               </div>
