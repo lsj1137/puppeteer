@@ -266,7 +266,7 @@ export function ComposerSettings({
   }
 
   return (
-    <div className={`relative mt-3 min-w-0 transition-[margin] duration-150 ${expanded ? 'mb-1.5' : 'mb-0'}`}>
+    <div className={`relative min-w-0 transition-[margin] duration-150 ${expanded ? 'mb-1.5' : 'mb-0'}`}>
       <div
         className={`grid min-w-0 transition-[grid-template-rows,opacity,transform] duration-150 ease-out motion-reduce:transition-none ${
           expanded
