@@ -327,7 +327,7 @@ export function ComposerSettings({
         type="button"
         onClick={toggleExpanded}
         title={expanded ? '세션 도구 모음 접기' : '세션 도구 모음 펼치기'}
-        className="absolute -top-5 left-1/2 z-10 flex h-3 w-12 -translate-x-1/2 items-center justify-center rounded-md border border-surface1 bg-surface0/90 text-overlay1 shadow-sm transition-colors hover:bg-surface1 hover:text-text"
+        className="absolute -top-4 left-1/2 z-10 flex h-4 w-12 -translate-x-1/2 items-center justify-center rounded-t-md border border-b-0 border-surface1 bg-base text-overlay1 transition-colors hover:bg-surface0 hover:text-text"
       >
         {expanded
           ? <ChevronDown className="h-3 w-3" />
