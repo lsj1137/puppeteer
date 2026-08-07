@@ -22,6 +22,16 @@ new file mode 100644
     expect(generateCommitMessage('').value).toBe('chore: 작업 변경 반영')
   })
 
+  it('uses the package version for a release bump', () => {
+    const result = generateCommitMessage(`diff --git a/app/package.json b/app/package.json
+--- a/app/package.json
++++ b/app/package.json
+-  "version": "0.0.3",
++  "version": "0.0.4",`)
+
+    expect(result.subject).toBe('chore: 버전 0.0.4로 갱신')
+  })
+
   it('excludes changes that were already committed on the worktree branch', () => {
     const result = generateCommitMessage(`diff --git a/old.ts b/old.ts
 --- a/old.ts

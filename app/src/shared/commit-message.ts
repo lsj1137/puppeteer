@@ -63,9 +63,16 @@ export function generateCommitMessage(diff: string): GeneratedCommitMessage {
   const addedHook = files.find(({ path, added }) => added && /\/hooks?\/use-[^/]+\.[^.]+$/.test(path))
   const testsChanged = files.some(({ path }) => /\.(test|spec)\.[^.]+$/.test(path))
   const primary = addedHook ?? files.find(({ path }) => !/\.(test|spec)\.[^.]+$/.test(path)) ?? files[0]
+  const packageVersion = source.match(/^\+\s*"version":\s*"([^\"]+)"/m)?.[1]
+  const versionChanged = Boolean(
+    packageVersion &&
+    files.some(({ path }) => /(^|\/)package\.json$/.test(path)) &&
+    source.match(/^-\s*"version":\s*"([^\"]+)"/m),
+  )
 
   let subject: string
-  if (onlyDocs) subject = `docs: ${files.length === 1 ? labelFor(primary.path) : `문서 ${files.length}개`} 갱신`
+  if (versionChanged) subject = `chore: 버전 ${packageVersion}로 갱신`
+  else if (onlyDocs) subject = `docs: ${files.length === 1 ? labelFor(primary.path) : `문서 ${files.length}개`} 갱신`
   else if (onlyTests) subject = `test: ${files.length === 1 ? labelFor(primary.path) : '회귀 테스트'} 보강`
   else if (addedHook) subject = `refactor: ${labelFor(addedHook.path)} 훅 분리`
   else if (primary.added) subject = `feat: ${labelFor(primary.path)} 추가`
