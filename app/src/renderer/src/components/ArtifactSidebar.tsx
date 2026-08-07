@@ -190,10 +190,10 @@ export default function ArtifactSidebar({
           <div className="sticky top-0 z-[1] -mx-0.5 mb-2 flex items-center gap-2 bg-mantle/95 px-1 py-2 backdrop-blur">
             <GitBranch className="h-4 w-4 shrink-0 text-teal" />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] font-semibold text-text">
+              <div className="truncate text-[13px] font-semibold text-text">
                 {worktree?.branch ?? view.snapshot?.branch ?? 'Git'}
               </div>
-              <div className="truncate font-mono text-[10px] text-overlay1">
+              <div className="truncate font-mono text-[11px] text-overlay1">
                 {worktreeStatus?.baseBranch ? `${worktreeStatus.baseBranch} 기준` : view.snapshot?.head}
               </div>
             </div>
@@ -209,7 +209,7 @@ export default function ArtifactSidebar({
 
           {worktreeStatus && (
             <div className="mb-3 rounded-lg bg-base/55 p-2.5">
-              <div className="flex flex-wrap gap-1.5 text-[10px]">
+              <div className="flex flex-wrap gap-1.5 text-[11px]">
                 <span className={`rounded px-1.5 py-0.5 ${worktreeStatus.dirty ? 'bg-yellow/15 text-yellow' : 'bg-surface0 text-subtext0'}`}>
                   변경 {worktreeStatus.dirty ? '있음' : '없음'}
                 </span>
@@ -220,7 +220,7 @@ export default function ArtifactSidebar({
                 </span>
               </div>
               {worktreeStatus.reason && !worktreeStatus.merged && (
-                <div className="mt-2 flex gap-1.5 text-[11px] leading-relaxed text-yellow">
+                <div className="mt-2 flex gap-1.5 text-[12px] leading-relaxed text-yellow">
                   <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
                   <span>{worktreeStatus.reason}</span>
                 </div>
@@ -233,13 +233,13 @@ export default function ArtifactSidebar({
                       : worktreeStatus.integration.phase === 'completed'
                         ? <CheckCircle2 className="h-3 w-3 text-green" />
                         : <AlertTriangle className="h-3 w-3 text-yellow" />}
-                    <span className="text-[11px] font-medium text-subtext1">{worktreeStatus.integration.summary}</span>
+                    <span className="text-[12px] font-medium text-subtext1">{worktreeStatus.integration.summary}</span>
                   </div>
-                  <div className="mt-1 text-[10px] text-overlay1">
+                  <div className="mt-1 text-[11px] text-overlay1">
                     {worktreeStatus.integration.mode === 'auto' ? '자동 병합' : '병합 제안'} · {new Date(worktreeStatus.integration.updatedAt).toLocaleString()}
                   </div>
                   {worktreeStatus.integration.detail && (
-                    <div className="mt-1.5 whitespace-pre-wrap break-words rounded bg-crust/40 px-2 py-1.5 font-mono text-[10px] text-overlay1">
+                    <div className="mt-1.5 whitespace-pre-wrap break-words rounded bg-crust/40 px-2 py-1.5 font-mono text-[11px] text-overlay1">
                       {worktreeStatus.integration.detail}
                     </div>
                   )}
@@ -250,7 +250,7 @@ export default function ArtifactSidebar({
 
           {changes.length > 0 && (
             <>
-              <div className="mb-1 text-[11px] font-medium text-subtext0">
+              <div className="mb-1 text-[12px] font-medium text-subtext0">
                 세션 시작 이후 변경 {changes.length}건
               </div>
               <div className="max-h-28 overflow-auto">
@@ -258,10 +258,10 @@ export default function ArtifactSidebar({
                   <button
                     key={change.path}
                     onClick={() => void onOpenDiff(change.path)}
-                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] hover:bg-surface0"
+                    className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[13px] hover:bg-surface0"
                   >
                     <span
-                      className={`shrink-0 font-mono text-[11px] font-bold ${
+                      className={`shrink-0 font-mono text-[12px] font-bold ${
                         change.status === '??'
                           ? 'text-green'
                           : change.status === 'D'
@@ -280,7 +280,7 @@ export default function ArtifactSidebar({
             </>
           )}
 
-          <div className="mb-1 mt-3 flex items-center gap-1.5 text-[11px] font-medium text-subtext0">
+          <div className="mb-1 mt-3 flex items-center gap-1.5 text-[12px] font-medium text-subtext0">
             <GitCommitHorizontal className="h-3.5 w-3.5" /> 최근 커밋
           </div>
           {history.length > 0 ? (
@@ -288,22 +288,22 @@ export default function ArtifactSidebar({
               {history.map((commit) => (
                 <div key={commit.hash} className="relative pb-3 last:pb-0">
                   <span className="absolute -left-[16.5px] top-1.5 h-1.5 w-1.5 rounded-full bg-overlay0 ring-2 ring-mantle" />
-                  <div className="break-words text-[11px] leading-snug text-subtext1">{commit.subject}</div>
-                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-overlay1">
+                  <div className="break-words text-[12px] leading-snug text-subtext1">{commit.subject}</div>
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[11px] text-overlay1">
                     <span className="shrink-0 font-mono text-sapphire">{commit.shortHash}</span>
                     <span className="truncate">{commit.author}</span>
                     <span className="ml-auto shrink-0">{formatHistoryDate(commit.authoredAt)}</span>
                   </div>
                   {commit.refs.length > 0 && (
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {commit.refs.map((ref) => <span key={ref} className="rounded bg-teal/10 px-1 py-0.5 font-mono text-[9px] text-teal">{ref}</span>)}
+                      {commit.refs.map((ref) => <span key={ref} className="rounded bg-teal/10 px-1 py-0.5 font-mono text-[10px] text-teal">{ref}</span>)}
                     </div>
                   )}
                 </div>
               ))}
             </div>
           ) : !gitLoading && (
-            <div className="text-[11px] text-overlay1">표시할 커밋 이력이 없습니다.</div>
+            <div className="text-[12px] text-overlay1">표시할 커밋 이력이 없습니다.</div>
           )}
         </div>
       )}
