@@ -48,11 +48,13 @@ export default function ConversationEntries({
       {view.entries.map((entry) => {
         if (entry.kind === 'user') {
           return (
-            <div key={entry.id} className="rounded-lg bg-surface0/50 px-3.5 py-2.5">
+            <div key={entry.id} className="min-w-0 max-w-full rounded-lg bg-surface0/50 px-3.5 py-2.5">
               <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
                 나
               </div>
-              <div className="whitespace-pre-wrap text-sm text-text">{entry.text}</div>
+              <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm text-text [overflow-wrap:anywhere]">
+                {entry.text}
+              </div>
             </div>
           )
         }
@@ -116,7 +118,7 @@ export default function ConversationEntries({
           )
         }
         return (
-          <div key={entry.id} className="px-0.5">
+          <div key={entry.id} className="min-w-0 max-w-full px-0.5">
             {entry.segments.map((segment, index) => {
               if (segment.type === 'md') return <Markdown key={index}>{segment.text}</Markdown>
               const artifact = view.artifacts.find(({ id }) => id === segment.artifactId)

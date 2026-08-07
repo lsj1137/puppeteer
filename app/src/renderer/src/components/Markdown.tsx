@@ -20,7 +20,7 @@ const components: Components = {
   del: ({ children }) => <del className="text-overlay1">{children}</del>,
 
   a: ({ children, href }) => (
-    <a href={href} className="text-blue underline decoration-blue/40 hover:decoration-blue">
+    <a href={href} className="break-words text-blue underline decoration-blue/40 [overflow-wrap:anywhere] hover:decoration-blue">
       {children}
     </a>
   ),
@@ -54,7 +54,7 @@ const components: Components = {
     if (!isBlock) {
       return (
         <code
-          className="rounded bg-surface0 px-1 py-0.5 font-mono text-[1em] text-peach"
+          className="break-words rounded bg-surface0 px-1 py-0.5 font-mono text-[1em] text-peach [overflow-wrap:anywhere]"
           {...props}
         >
           {children}
@@ -70,7 +70,7 @@ const components: Components = {
 
 export default function Markdown({ children }: { children: string }) {
   return (
-    <div className="text-sm">
+    <div className="min-w-0 max-w-full break-words text-sm [overflow-wrap:anywhere]">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {children}
       </ReactMarkdown>
