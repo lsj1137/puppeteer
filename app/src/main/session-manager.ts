@@ -480,10 +480,7 @@ export class SessionManager {
         t: 'notice',
         level: 'warning',
         title: '승인 요청 시간 초과',
-        text:
-          `${routedReq.tool} 승인 요청이 응답 대기 시간을 넘겨 자동으로 닫혔습니다.\n` +
-          'CLI에는 해당 작업이 거절/보류되었다고 전달했습니다.\n\n' +
-          summarizeApproval(routedReq.input),
+        text: `${routedReq.tool} 요청을 건너뛰었습니다.`,
       })
       return
     }
@@ -786,11 +783,6 @@ export class SessionManager {
     db.appendEvent(sessionId, event)
     this.getWindow()?.webContents.send('session:event', { sessionId, event })
   }
-}
-
-function summarizeApproval(input: unknown): string {
-  const text = JSON.stringify(input, null, 2)
-  return text.length <= 600 ? text : `${text.slice(0, 600)}\n…`
 }
 
 function integrationStatus(status: WorktreeStatus): NonNullable<WorktreeIntegrationReport['status']> {

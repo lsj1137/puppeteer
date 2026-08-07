@@ -156,6 +156,7 @@ export default function App() {
     addDiffArtifact,
     failSessionView,
     forgetSessionView,
+    dismissWorktreeReviewNotices,
     restoreSessionView,
   } = useSessionViews(active, refresh)
 
@@ -905,6 +906,7 @@ export default function App() {
         onWorktreeChanged={() => {
           if (commitNotice?.kind === 'notice' && commitNotice.title === '커밋·병합 검토 필요') {
             setDismissedCommitNotices((current) => new Set(current).add(commitNotice.id))
+            if (activeSession) dismissWorktreeReviewNotices(activeSession)
           }
           void refresh(active)
         }}

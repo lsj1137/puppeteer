@@ -10,6 +10,7 @@ interface UseSessionViewsResult {
   addDiffArtifact: (sessionId: string, path: string) => Promise<string>
   failSessionView: (sessionId: string, reason: string) => void
   forgetSessionView: (sessionId: string) => void
+  dismissWorktreeReviewNotices: (sessionId: string) => void
   restoreSessionView: (sessionId: string) => Promise<void>
 }
 
@@ -84,11 +85,24 @@ export function useSessionViews(
     })
   }, [])
 
+  const dismissWorktreeReviewNotices = useCallback((sessionId: string): void => {
+    setViews((current) => {
+      const view = current[sessionId]
+      if (!view) return current
+      const entries = view.entries.filter(
+        (entry) => entry.kind !== 'notice' || entry.title !== '커밋·병합 검토 필요',
+      )
+      if (entries.length === view.entries.length) return current
+      return { ...current, [sessionId]: { ...view, entries } }
+    })
+  }, [])
+
   return {
     views,
     addDiffArtifact,
     failSessionView,
     forgetSessionView,
+    dismissWorktreeReviewNotices,
     restoreSessionView,
   }
 }
