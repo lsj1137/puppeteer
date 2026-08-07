@@ -13,7 +13,6 @@ import {
   Monitor,
   Pencil,
   Plus,
-  Settings2,
   ShieldAlert,
   Terminal,
   X,
@@ -267,7 +266,7 @@ export function ComposerSettings({
   }
 
   return (
-    <div className={`relative min-w-0 transition-[margin] duration-150 ${expanded ? 'mb-1.5' : 'mb-0'}`}>
+    <div className={`relative min-h-6 min-w-0 transition-[margin] duration-150 ${expanded ? 'mb-1.5' : 'mb-0'}`}>
       <div
         className={`grid min-w-0 transition-[grid-template-rows,opacity,transform] duration-150 ease-out motion-reduce:transition-none ${
           expanded
@@ -324,7 +323,7 @@ export function ComposerSettings({
             type="button"
             onClick={toggleExpanded}
             title="세션 도구 모음 접기"
-            className="ml-0.5 rounded-md p-1 text-overlay1 hover:bg-surface0/60 hover:text-text"
+            className="ml-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-overlay1 hover:bg-surface0/60 hover:text-text"
           >
             <ChevronDown className="h-3.5 w-3.5" />
           </button>
@@ -337,10 +336,9 @@ export function ComposerSettings({
           type="button"
           onClick={toggleExpanded}
           title="세션 도구 모음 펼치기"
-          className="absolute bottom-0 left-1 z-10 flex translate-y-0.5 items-center gap-1 rounded-t-md bg-surface0/55 px-1.5 py-0.5 text-[10px] text-overlay1 hover:bg-surface0 hover:text-text"
+          className="absolute right-0 top-0 z-10 flex h-6 w-6 items-center justify-center rounded-md bg-surface0/80 text-overlay1 shadow-sm hover:bg-surface1 hover:text-text"
         >
-          <Settings2 className="h-3 w-3" />
-          <ChevronUp className="h-3 w-3" />
+          <ChevronUp className="h-3.5 w-3.5" />
         </button>
       )}
 
