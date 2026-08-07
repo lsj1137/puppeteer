@@ -9,6 +9,7 @@ import {
   abortWorktreeRebase,
   commitProjectMemory,
   commitWorktree,
+  gitHistory,
   mergeWorktree,
   removeWorktree,
   rebaseWorktree,
@@ -59,6 +60,20 @@ afterEach(async () => {
 })
 
 describe('worktree merge', () => {
+  it('returns recent commits with metadata for the Git sidebar', async () => {
+    const { worktreePath } = await fixture()
+
+    const history = await gitHistory(worktreePath)
+
+    expect(history[0]).toMatchObject({
+      subject: 'initial',
+      author: 'Agent Workspace Test',
+    })
+    expect(history[0]?.hash).toMatch(/^[0-9a-f]{40}$/)
+    expect(history[0]?.shortHash).toMatch(/^[0-9a-f]+$/)
+    expect(history[0]?.authoredAt).toContain('T')
+  })
+
   it('commits only approved project Memory files and leaves unrelated changes untouched', async () => {
     const { origin } = await fixture()
     await writeFile(join(origin, 'AGENTS.md'), 'approved memory\n')

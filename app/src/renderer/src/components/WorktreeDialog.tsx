@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Check,
   CheckCircle2,
-  ChevronDown,
   Copy,
   FileDiff,
   FolderOpen,
@@ -47,7 +46,6 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   const [diff, setDiff] = useState<string>()
   const [diffLoading, setDiffLoading] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [integrationOpen, setIntegrationOpen] = useState(false)
 
   const reload = useCallback(async (): Promise<WorktreeStatus | undefined> => {
     setLoading(true)
@@ -307,106 +305,12 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
         </div>
 
         <div className="space-y-4 px-5 py-4">
-          <div className="grid grid-cols-[110px_minmax(0,1fr)] gap-x-3 gap-y-2 text-[12px]">
-            <span className="text-overlay1">작업 브랜치</span>
+          <div className="flex items-center gap-2 rounded-md bg-base/45 px-3 py-2 text-[11px]">
             <span className="truncate font-mono text-subtext1">{worktree.branch}</span>
-            <span className="text-overlay1">원본 브랜치</span>
+            <span className="text-overlay0">→</span>
             <span className="truncate font-mono text-subtext1">{baseBranch ?? '확인 불가'}</span>
-            <span className="text-overlay1">현재 원본 브랜치</span>
-            <span className="truncate font-mono text-subtext1">
-              {loading ? '확인 중...' : (status?.currentBranch ?? '확인 불가')}
-            </span>
-            <span className="text-overlay1">커밋 상태</span>
-            <span className="text-subtext1">{commitLabel}</span>
+            <span className="ml-auto shrink-0 text-overlay1">{commitLabel}</span>
           </div>
-
-          {status?.integration && (
-            <div
-              className={`rounded-md border ${
-                status.integration.phase === 'completed'
-                  ? 'border-green/50 bg-green/10'
-                  : status.integration.phase === 'needs-review'
-                    ? 'border-yellow/60 bg-yellow/10'
-                    : ['checking', 'committing', 'merging'].includes(status.integration.phase)
-                      ? 'border-blue/50 bg-blue/10'
-                      : 'border-surface2 bg-surface0/60'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => setIntegrationOpen((open) => !open)}
-                className="flex w-full items-center gap-2 px-3 py-2.5 text-left"
-              >
-                {['checking', 'committing', 'merging'].includes(status.integration.phase) ? (
-                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-blue" />
-                ) : status.integration.phase === 'completed' ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green" />
-                ) : status.integration.phase === 'needs-review' ? (
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-yellow" />
-                ) : (
-                  <Check className="h-3.5 w-3.5 shrink-0 text-overlay1" />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="text-[11px] font-semibold text-subtext0">마지막 자동 반영</div>
-                    <span className="rounded bg-surface1 px-1.5 py-0.5 text-[10px] font-semibold text-text">
-                      {integrationPhaseLabel(status.integration.phase)}
-                    </span>
-                  </div>
-                  <div className="mt-0.5 truncate text-[12px] font-medium text-text">
-                    {status.integration.summary}
-                  </div>
-                </div>
-                <ChevronDown
-                  className={`h-3.5 w-3.5 shrink-0 text-overlay1 transition-transform ${integrationOpen ? 'rotate-180' : ''}`}
-                />
-              </button>
-
-              {integrationOpen && (
-                <div className="space-y-2 border-t border-surface1/70 px-3 py-2.5 text-[11px] leading-relaxed text-overlay1">
-                  <div className="grid grid-cols-[72px_minmax(0,1fr)] gap-x-2 gap-y-1">
-                    <span>처리 단계</span>
-                    <span className="font-medium text-subtext1">
-                      {integrationPhaseLabel(status.integration.phase)}
-                    </span>
-                    <span>방식</span>
-                    <span className="text-subtext1">
-                      {status.integration.mode === 'auto' ? '자동 병합' : '병합 제안'}
-                    </span>
-                    <span>마지막 확인</span>
-                    <span className="text-subtext1">
-                      {new Date(status.integration.updatedAt).toLocaleString()}
-                    </span>
-                    <span>Worktree</span>
-                    <span className="break-all font-mono text-subtext1">
-                      {status.integration.worktreePath}
-                    </span>
-                  </div>
-                  {status.integration.status && (
-                    <div className="flex flex-wrap gap-1.5">
-                      <span className="rounded bg-surface0 px-1.5 py-0.5">
-                        변경 {status.integration.status.dirty ? '있음' : '없음'}
-                      </span>
-                      <span className="rounded bg-surface0 px-1.5 py-0.5">
-                        미병합 커밋 {status.integration.status.hasCommits ? '있음' : '없음'}
-                      </span>
-                      <span className="rounded bg-surface0 px-1.5 py-0.5">
-                        ahead {status.integration.status.ahead} · behind {status.integration.status.behind}
-                      </span>
-                      <span className="rounded bg-surface0 px-1.5 py-0.5">
-                        fast-forward {status.integration.status.canMerge ? '가능' : '불가'}
-                      </span>
-                    </div>
-                  )}
-                  {status.integration.detail && (
-                    <div className="whitespace-pre-wrap rounded bg-crust/50 px-2 py-1.5 font-mono text-subtext0">
-                      {status.integration.detail}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
 
           <div className="flex gap-2">
             <button
@@ -679,21 +583,4 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       )}
     </div>
   )
-}
-
-function integrationPhaseLabel(phase: NonNullable<WorktreeStatus['integration']>['phase']): string {
-  switch (phase) {
-    case 'checking':
-      return '상태 확인 중'
-    case 'committing':
-      return '커밋 중'
-    case 'merging':
-      return '병합 중'
-    case 'completed':
-      return '반영 완료'
-    case 'needs-review':
-      return '검토 필요'
-    case 'skipped':
-      return '변경 없음'
-  }
 }

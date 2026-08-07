@@ -4,6 +4,7 @@ import { dirname, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   GitSnapshot,
+  GitHistoryEntry,
   WorktreeCommitResult,
   WorktreeCleanupResult,
   WorktreeConflictFile,
@@ -53,6 +54,37 @@ async function git(cwd: string, args: string[]): Promise<string> {
     maxBuffer: 8 * 1024 * 1024,
   })
   return stdout
+}
+
+/** 사이드바에서 사용할 최근 Git 이력. 구분 문자를 써서 로케일과 공백에 영향받지 않게 파싱한다. */
+export async function gitHistory(cwd: string, limit = 50): Promise<GitHistoryEntry[]> {
+  const count = Math.max(1, Math.min(limit, 200))
+  try {
+    const output = await git(cwd, [
+      'log',
+      `-${count}`,
+      '--date=iso-strict',
+      '--decorate=short',
+      '--pretty=format:%H%x1f%h%x1f%s%x1f%an%x1f%aI%x1f%D%x1e',
+    ])
+    return output
+      .split('\x1e')
+      .map((row) => row.trim())
+      .filter(Boolean)
+      .map((row) => {
+        const [hash = '', shortHash = '', subject = '', author = '', authoredAt = '', decorations = ''] = row.split('\x1f')
+        return {
+          hash,
+          shortHash,
+          subject,
+          author,
+          authoredAt,
+          refs: decorations.split(',').map((ref) => ref.trim()).filter(Boolean),
+        }
+      })
+  } catch {
+    return []
+  }
 }
 
 async function gitWithError(cwd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {

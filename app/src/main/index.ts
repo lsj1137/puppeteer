@@ -10,7 +10,7 @@ import { route } from './router'
 import * as memory from './memory'
 import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
-import { commitProjectMemory, isRepo, projectMemoryDirty } from './git'
+import { commitProjectMemory, gitHistory, isRepo, projectMemoryDirty } from './git'
 import { initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
 import { AppUpdateManager } from './app-update'
@@ -397,6 +397,9 @@ app.whenReady().then(() => {
       return { path, size: 0, reason: 'unreadable' as const }
     }
   })
+  ipcMain.handle('project:gitHistory', (_e, path: string, limit?: number) =>
+    gitHistory(path, limit),
+  )
   ipcMain.handle('session:changes', (_e, id: string) => sessions.changes(id))
 
   // 이미지 첨부 — 세션이 접근 가능한 프로젝트 내부 경로에 저장 (기획서 10장)

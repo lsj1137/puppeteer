@@ -812,6 +812,11 @@ export default function App() {
           selectedId={selectedArtifact}
           onSelect={setSelectedArtifact}
           onOpenDiff={openDiff}
+          sessionId={selected?.id}
+          worktree={selected?.worktree}
+          onManageWorktree={() => {
+            if (selected?.worktree) setWorktreeOpen(selected.id)
+          }}
           onToggle={toggleArtifacts}
           rootPath={selected?.worktree?.path ?? active}
         />

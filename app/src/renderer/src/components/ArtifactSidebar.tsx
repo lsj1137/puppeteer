@@ -1,6 +1,6 @@
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
-import { ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, PackageOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
-import type { ChangedFile, ProjectFileEntry, ProjectFilePreview } from '@shared/session'
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
+import type { ChangedFile, GitHistoryEntry, ProjectFileEntry, ProjectFilePreview, SessionWorktree, WorktreeStatus } from '@shared/session'
 import type { SessionView } from '../lib/session-view'
 import { clampArtifactWidth } from '../lib/session-view'
 import ArtifactPanel from './ArtifactPanel'
@@ -13,7 +13,10 @@ interface Props {
   view: SessionView
   width: number
   rootPath?: string
+  sessionId?: string
+  worktree?: SessionWorktree | null
   onOpenDiff: (path: string) => void | Promise<void>
+  onManageWorktree: () => void
   onSelect: (id: string) => void
   onToggle: () => void
   setWidth: Dispatch<SetStateAction<number>>
@@ -26,7 +29,10 @@ export default function ArtifactSidebar({
   view,
   width,
   rootPath,
+  sessionId,
+  worktree,
   onOpenDiff,
+  onManageWorktree,
   onSelect,
   onToggle,
   setWidth,
@@ -38,6 +44,24 @@ export default function ArtifactSidebar({
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [gitRepository, setGitRepository] = useState(false)
   const [preview, setPreview] = useState<ProjectFilePreview>()
+  const [history, setHistory] = useState<GitHistoryEntry[]>([])
+  const [worktreeStatus, setWorktreeStatus] = useState<WorktreeStatus>()
+  const [gitLoading, setGitLoading] = useState(false)
+
+  const reloadGit = useCallback(async (): Promise<void> => {
+    if (!rootPath) return
+    setGitLoading(true)
+    try {
+      const [nextHistory, nextStatus] = await Promise.all([
+        window.api.gitHistory(rootPath, 60),
+        sessionId && worktree ? window.api.worktreeStatus(sessionId) : Promise.resolve(undefined),
+      ])
+      setHistory(nextHistory)
+      setWorktreeStatus(nextStatus)
+    } finally {
+      setGitLoading(false)
+    }
+  }, [rootPath, sessionId, worktree])
 
   useEffect(() => {
     setPreview(undefined)
@@ -64,6 +88,16 @@ export default function ArtifactSidebar({
     })
     return () => { cancelled = true }
   }, [changes, open, rootPath, tab])
+
+  useEffect(() => {
+    if (!open || tab !== 'git' || !rootPath) return
+    void reloadGit()
+  }, [changes, open, reloadGit, rootPath, tab])
+
+  useEffect(() => window.api.onSessionEvent(({ sessionId: changedId, event }) => {
+    if (tab !== 'git' || changedId !== sessionId || event.t !== 'status' || event.status !== 'completed') return
+    window.setTimeout(() => void reloadGit(), 150)
+  }), [reloadGit, sessionId, tab])
 
   const selectTab = (next: 'git' | 'artifacts' | 'files'): void => {
     setTab(next)
@@ -152,18 +186,71 @@ export default function ArtifactSidebar({
       </div>
 
       {tab === 'git' && (
-        <div className="min-h-0 flex-1 overflow-auto px-2.5 py-3">
-          {view.snapshot && (
-            <div className="mb-2 flex items-center gap-1.5 pl-0.5 text-[11px]">
-              <span className="rounded bg-surface0 px-1.5 py-0.5 text-subtext1">
-                {view.snapshot.branch}
-              </span>
-              <span className="font-mono text-overlay1">{view.snapshot.head}</span>
+        <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-3">
+          <div className="sticky top-0 z-[1] -mx-0.5 mb-2 flex items-center gap-2 bg-mantle/95 px-1 py-2 backdrop-blur">
+            <GitBranch className="h-4 w-4 shrink-0 text-teal" />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[12px] font-semibold text-text">
+                {worktree?.branch ?? view.snapshot?.branch ?? 'Git'}
+              </div>
+              <div className="truncate font-mono text-[10px] text-overlay1">
+                {worktreeStatus?.baseBranch ? `${worktreeStatus.baseBranch} 기준` : view.snapshot?.head}
+              </div>
+            </div>
+            <button type="button" onClick={() => void reloadGit()} disabled={gitLoading} title="Git 상태 새로고침" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-40">
+              <RefreshCw className={`h-3.5 w-3.5 ${gitLoading ? 'animate-spin' : ''}`} />
+            </button>
+            {worktree && sessionId && (
+              <button type="button" onClick={onManageWorktree} title="커밋·병합 관리" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
+                <Settings2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {worktreeStatus && (
+            <div className="mb-3 rounded-lg bg-base/55 p-2.5">
+              <div className="flex flex-wrap gap-1.5 text-[10px]">
+                <span className={`rounded px-1.5 py-0.5 ${worktreeStatus.dirty ? 'bg-yellow/15 text-yellow' : 'bg-surface0 text-subtext0'}`}>
+                  변경 {worktreeStatus.dirty ? '있음' : '없음'}
+                </span>
+                <span className="rounded bg-surface0 px-1.5 py-0.5 text-subtext0">ahead {worktreeStatus.ahead}</span>
+                <span className="rounded bg-surface0 px-1.5 py-0.5 text-subtext0">behind {worktreeStatus.behind}</span>
+                <span className={`rounded px-1.5 py-0.5 ${worktreeStatus.canMerge ? 'bg-green/15 text-green' : 'bg-surface0 text-overlay1'}`}>
+                  fast-forward {worktreeStatus.canMerge ? '가능' : '불가'}
+                </span>
+              </div>
+              {worktreeStatus.reason && !worktreeStatus.merged && (
+                <div className="mt-2 flex gap-1.5 text-[11px] leading-relaxed text-yellow">
+                  <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                  <span>{worktreeStatus.reason}</span>
+                </div>
+              )}
+              {worktreeStatus.integration && (
+                <div className="mt-2 border-t border-surface0 pt-2">
+                  <div className="flex items-center gap-1.5">
+                    {['checking', 'committing', 'merging'].includes(worktreeStatus.integration.phase)
+                      ? <Loader2 className="h-3 w-3 animate-spin text-blue" />
+                      : worktreeStatus.integration.phase === 'completed'
+                        ? <CheckCircle2 className="h-3 w-3 text-green" />
+                        : <AlertTriangle className="h-3 w-3 text-yellow" />}
+                    <span className="text-[11px] font-medium text-subtext1">{worktreeStatus.integration.summary}</span>
+                  </div>
+                  <div className="mt-1 text-[10px] text-overlay1">
+                    {worktreeStatus.integration.mode === 'auto' ? '자동 병합' : '병합 제안'} · {new Date(worktreeStatus.integration.updatedAt).toLocaleString()}
+                  </div>
+                  {worktreeStatus.integration.detail && (
+                    <div className="mt-1.5 whitespace-pre-wrap break-words rounded bg-crust/40 px-2 py-1.5 font-mono text-[10px] text-overlay1">
+                      {worktreeStatus.integration.detail}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
+
           {changes.length > 0 && (
             <>
-              <div className="mb-1 text-[11px] text-overlay1">
+              <div className="mb-1 text-[11px] font-medium text-subtext0">
                 세션 시작 이후 변경 {changes.length}건
               </div>
               <div className="max-h-28 overflow-auto">
@@ -192,8 +279,31 @@ export default function ArtifactSidebar({
               </div>
             </>
           )}
-          {!view.snapshot && changes.length === 0 && (
-            <div className="text-[12px] text-overlay1">표시할 Git 변경이 없습니다</div>
+
+          <div className="mb-1 mt-3 flex items-center gap-1.5 text-[11px] font-medium text-subtext0">
+            <GitCommitHorizontal className="h-3.5 w-3.5" /> 최근 커밋
+          </div>
+          {history.length > 0 ? (
+            <div className="relative ml-1 border-l border-surface1 pl-3">
+              {history.map((commit) => (
+                <div key={commit.hash} className="relative pb-3 last:pb-0">
+                  <span className="absolute -left-[16.5px] top-1.5 h-1.5 w-1.5 rounded-full bg-overlay0 ring-2 ring-mantle" />
+                  <div className="break-words text-[11px] leading-snug text-subtext1">{commit.subject}</div>
+                  <div className="mt-1 flex min-w-0 items-center gap-1.5 text-[10px] text-overlay1">
+                    <span className="shrink-0 font-mono text-sapphire">{commit.shortHash}</span>
+                    <span className="truncate">{commit.author}</span>
+                    <span className="ml-auto shrink-0">{formatHistoryDate(commit.authoredAt)}</span>
+                  </div>
+                  {commit.refs.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {commit.refs.map((ref) => <span key={ref} className="rounded bg-teal/10 px-1 py-0.5 font-mono text-[9px] text-teal">{ref}</span>)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : !gitLoading && (
+            <div className="text-[11px] text-overlay1">표시할 커밋 이력이 없습니다.</div>
           )}
         </div>
       )}
@@ -276,4 +386,14 @@ function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
   return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatHistoryDate(value: string): string {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  }
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }

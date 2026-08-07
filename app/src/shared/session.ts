@@ -205,6 +205,15 @@ export interface ProjectFilePreview {
   reason?: 'binary' | 'too-large' | 'unreadable'
 }
 
+export interface GitHistoryEntry {
+  hash: string
+  shortHash: string
+  subject: string
+  author: string
+  authoredAt: string
+  refs: string[]
+}
+
 export interface ProjectStat {
   path: string
   runnerId: string | null

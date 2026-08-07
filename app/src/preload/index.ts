@@ -4,6 +4,7 @@ import type {
   ApprovalDecision,
   ApprovalRequest,
   ChangedFile,
+  GitHistoryEntry,
   CostTotals,
   ProjectStat,
   ProjectFileEntry,
@@ -187,6 +188,8 @@ const api = {
   listProjectFiles: (path: string): Promise<ProjectFileEntry[]> =>
     ipcRenderer.invoke('project:files', path),
   isGitRepository: (path: string): Promise<boolean> => ipcRenderer.invoke('project:isGit', path),
+  gitHistory: (path: string, limit = 50): Promise<GitHistoryEntry[]> =>
+    ipcRenderer.invoke('project:gitHistory', path, limit),
   readProjectFile: (root: string, path: string): Promise<ProjectFilePreview> =>
     ipcRenderer.invoke('project:readFile', root, path),
   listChanges: (sessionId: string): Promise<ChangedFile[]> =>
