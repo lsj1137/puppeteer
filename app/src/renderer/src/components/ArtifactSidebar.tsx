@@ -1,9 +1,10 @@
 import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, PackageOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
-import type { ChangedFile, ProjectFileEntry } from '@shared/session'
+import type { ChangedFile, ProjectFileEntry, ProjectFilePreview } from '@shared/session'
 import type { SessionView } from '../lib/session-view'
 import { clampArtifactWidth } from '../lib/session-view'
 import ArtifactPanel from './ArtifactPanel'
+import Code from './Code'
 
 interface Props {
   changes: ChangedFile[]
@@ -35,6 +36,22 @@ export default function ArtifactSidebar({
   )
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [gitRepository, setGitRepository] = useState(false)
+  const [preview, setPreview] = useState<ProjectFilePreview>()
+
+  useEffect(() => {
+    setPreview(undefined)
+    if (!rootPath) return setGitRepository(false)
+    let cancelled = false
+    void window.api.isGitRepository(rootPath).then((value) => {
+      if (cancelled) return
+      setGitRepository(value)
+      if (!value && tab === 'git') selectTab('artifacts')
+    }).catch(() => {
+      if (!cancelled) setGitRepository(false)
+    })
+    return () => { cancelled = true }
+  }, [rootPath, tab])
 
   useEffect(() => {
     if (!open || tab !== 'files' || !rootPath) return
@@ -108,17 +125,18 @@ export default function ArtifactSidebar({
         title="드래그로 폭 조절 · 더블클릭으로 초기화"
         className="absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-lavender/40"
       />
-      <div className="flex shrink-0 items-center border-b border-surface0 px-1.5 pt-1.5">
+      <div className="flex shrink-0 items-center gap-1.5 px-2 py-2">
+        <div className="flex min-w-0 items-center gap-0.5 rounded-lg bg-surface0/55 p-0.5">
         {([
           ['git', GitBranch, 'Git', changes.length],
           ['artifacts', PackageOpen, '아티팩트', view.artifacts.length],
           ['files', Folder, '파일', 0],
-        ] as const).map(([id, Icon, label, count]) => (
+        ] as const).filter(([id]) => id !== 'git' || gitRepository).map(([id, Icon, label, count]) => (
           <button
             key={id}
             onClick={() => selectTab(id)}
-            className={`flex min-w-0 items-center gap-1.5 rounded-t-md px-2.5 py-2 text-[11px] ${
-              tab === id ? 'bg-base text-text' : 'text-overlay1 hover:bg-surface0/60 hover:text-subtext1'
+            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] transition-colors ${
+              tab === id ? 'bg-surface1 text-text shadow-sm' : 'text-overlay1 hover:text-subtext1'
             }`}
           >
             <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -126,8 +144,9 @@ export default function ArtifactSidebar({
             {count > 0 && <span className="text-[10px] text-overlay1">{count}</span>}
           </button>
         ))}
+        </div>
         <span className="flex-1" />
-        <button onClick={onToggle} title="패널 접기" className="mb-1 rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text">
+        <button onClick={onToggle} title="패널 접기" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
           <PanelRightClose className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -182,7 +201,8 @@ export default function ArtifactSidebar({
         <ArtifactPanel artifacts={view.artifacts} selectedId={selectedId} onSelect={onSelect} />
       )}
       {tab === 'files' && (
-        <div className="min-h-0 flex-1 overflow-auto p-1.5">
+        <div className="flex min-h-0 flex-1 flex-col px-1.5 pb-1.5">
+          <div className={`${preview ? 'max-h-[42%]' : 'flex-1'} min-h-0 overflow-auto rounded-lg bg-base/40 p-1`}>
           {files.length === 0 && <div className="p-2 text-[12px] text-overlay1">표시할 파일이 없습니다</div>}
           {files.filter((entry) => {
             const parts = entry.path.split('/')
@@ -195,15 +215,23 @@ export default function ArtifactSidebar({
               <button
                 key={entry.path}
                 type="button"
-                disabled={entry.kind === 'file'}
-                onClick={() => setCollapsed((current) => {
-                  const next = new Set(current)
-                  if (next.has(entry.path)) next.delete(entry.path)
-                  else next.add(entry.path)
-                  return next
-                })}
+                onClick={() => {
+                  if (entry.kind === 'directory') {
+                    setCollapsed((current) => {
+                      const next = new Set(current)
+                      if (next.has(entry.path)) next.delete(entry.path)
+                      else next.add(entry.path)
+                      return next
+                    })
+                    return
+                  }
+                  if (!rootPath) return
+                  void window.api.readProjectFile(rootPath, entry.path).then(setPreview)
+                }}
                 title={entry.path}
-                className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[12px] text-subtext1 hover:bg-surface0/60 disabled:cursor-default"
+                className={`flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-[12px] hover:bg-surface0/60 ${
+                  preview?.path === entry.path ? 'bg-surface0 text-text' : 'text-subtext1'
+                }`}
                 style={{ paddingLeft: 6 + depth * 14 }}
               >
                 {entry.kind === 'directory' ? (
@@ -215,8 +243,37 @@ export default function ArtifactSidebar({
               </button>
             )
           })}
+          </div>
+          {preview && (
+            <div className="mt-1.5 flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg bg-base/70">
+              <div className="flex items-center gap-2 px-2.5 py-2">
+                <File className="h-3.5 w-3.5 shrink-0 text-sapphire" />
+                <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-subtext1">{preview.path}</span>
+                <span className="shrink-0 text-[10px] text-overlay1">{formatBytes(preview.size)}</span>
+              </div>
+              <div className="min-h-0 flex-1 overflow-auto px-1.5 pb-1.5">
+                {preview.content !== undefined ? (
+                  <Code code={preview.content} language={preview.path.split('.').at(-1)} lineNumbers />
+                ) : (
+                  <div className="rounded-md bg-surface0/50 p-3 text-[11px] text-overlay1">
+                    {preview.reason === 'binary'
+                      ? '바이너리 파일은 미리볼 수 없습니다.'
+                      : preview.reason === 'too-large'
+                        ? '1MB보다 큰 파일은 미리보기를 제공하지 않습니다.'
+                        : '파일을 읽을 수 없습니다.'}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </aside>
   )
+}
+
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
 }

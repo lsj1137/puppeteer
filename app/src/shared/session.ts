@@ -198,6 +198,13 @@ export interface ProjectFileEntry {
   kind: 'file' | 'directory'
 }
 
+export interface ProjectFilePreview {
+  path: string
+  size: number
+  content?: string
+  reason?: 'binary' | 'too-large' | 'unreadable'
+}
+
 export interface ProjectStat {
   path: string
   runnerId: string | null

@@ -215,8 +215,7 @@ export function ComposerSettings({
   onNew: () => void
 }) {
   return (
-    <div className="mb-2 flex min-h-7 items-center gap-1.5">
-      <AgentPicker {...agentProps} />
+    <div className="mb-2 flex min-h-7 min-w-0 items-center gap-1.5 overflow-visible">
       {activeRunner ? (
         <button
           disabled={runnerLocked}
@@ -240,6 +239,7 @@ export function ComposerSettings({
           실행 환경 선택
         </button>
       )}
+      <AgentPicker {...agentProps} />
     </div>
   )
 }

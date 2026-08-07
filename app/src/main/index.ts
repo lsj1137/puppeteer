@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
-import { join, extname, resolve } from 'node:path'
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { join, extname, resolve, sep } from 'node:path'
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { detectRunners } from './runner-detect'
 import { SessionManager } from './session-manager'
@@ -10,6 +10,7 @@ import { route } from './router'
 import * as memory from './memory'
 import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
+import { isRepo } from './git'
 import { initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
 import { AppUpdateManager } from './app-update'
@@ -73,7 +74,7 @@ function loadRenderer(win: BrowserWindow, hash?: string): void {
   }
 }
 
-function createWindow(getRunningSessions: () => ReturnType<SessionManager['listRunning']>): BrowserWindow {
+function createWindow(getActiveWorkCount: () => number): BrowserWindow {
   const icon = app.isPackaged
     ? join(process.resourcesPath, 'app-icon.png')
     : join(app.getAppPath(), 'resources', 'icon.png')
@@ -95,14 +96,14 @@ function createWindow(getRunningSessions: () => ReturnType<SessionManager['listR
   let closeConfirmed = false
   win.on('close', (event) => {
     if (closeConfirmed) return
-    const running = getRunningSessions()
-    if (running.length === 0) return
+    const activeCount = getActiveWorkCount()
+    if (activeCount === 0) return
 
     event.preventDefault()
     const response = dialog.showMessageBoxSync(win, {
       type: 'warning',
       title: '실행 중인 세션이 있습니다',
-      message: `${running.length}개의 세션이 아직 실행 중입니다.`,
+      message: `${activeCount}개의 작업이 아직 실행 중입니다.`,
       detail: '지금 종료하면 실행 중인 작업이 중단될 수 있습니다.',
       buttons: ['계속 작업', '그래도 종료'],
       defaultId: 0,
@@ -290,12 +291,12 @@ app.whenReady().then(() => {
     route(instruction, runner, cwd),
   )
   ipcMain.handle('project:reveal', (_e, path: string) => shell.openPath(path))
-  ipcMain.handle('project:files', (_e, root: string) => {
-    const canonical = (path: string): string => {
+  const canonicalProjectPath = (path: string): string => {
       const value = resolve(path)
       return process.platform === 'win32' ? value.toLocaleLowerCase() : value
-    }
-    const target = canonical(root)
+  }
+  const assertProjectRoot = (root: string): void => {
+    const target = canonicalProjectPath(root)
     const projects = db.listProjects()
     const roots = projects.flatMap((project) => [
       project.path,
@@ -303,9 +304,28 @@ app.whenReady().then(() => {
         session.worktree?.path ? [session.worktree.path] : [],
       ),
     ])
-    if (!roots.some((path) => canonical(path) === target)) {
+    if (!roots.some((path) => canonicalProjectPath(path) === target)) {
       throw new Error('등록되지 않은 프로젝트 경로입니다.')
     }
+  }
+  const projectFilePath = (root: string, path: string): string => {
+    assertProjectRoot(root)
+    const base = resolve(root)
+    const full = resolve(base, path)
+    const canonicalBase = canonicalProjectPath(base)
+    const canonicalFull = canonicalProjectPath(full)
+    if (canonicalFull !== canonicalBase && !canonicalFull.startsWith(canonicalBase + sep)) {
+      throw new Error('프로젝트 밖의 파일은 읽을 수 없습니다.')
+    }
+    return full
+  }
+
+  ipcMain.handle('project:isGit', (_e, root: string) => {
+    assertProjectRoot(root)
+    return isRepo(root)
+  })
+  ipcMain.handle('project:files', (_e, root: string) => {
+    assertProjectRoot(root)
 
     const ignored = new Set(['.git', 'node_modules', 'dist', 'dist_electron', 'out', '.next', 'coverage'])
     const entries: { path: string; kind: 'file' | 'directory' }[] = []
@@ -328,6 +348,18 @@ app.whenReady().then(() => {
     }
     visit(root)
     return entries
+  })
+  ipcMain.handle('project:readFile', (_e, root: string, path: string) => {
+    const full = projectFilePath(root, path)
+    try {
+      const size = statSync(full).size
+      if (size > 1024 * 1024) return { path, size, reason: 'too-large' as const }
+      const data = readFileSync(full)
+      if (data.includes(0)) return { path, size, reason: 'binary' as const }
+      return { path, size, content: data.toString('utf8') }
+    } catch {
+      return { path, size: 0, reason: 'unreadable' as const }
+    }
   })
   ipcMain.handle('session:changes', (_e, id: string) => sessions.changes(id))
 
@@ -399,7 +431,7 @@ app.whenReady().then(() => {
       sessions.resolveApproval(approvalId, decision, reason),
   )
 
-  const win = createWindow(() => sessions.listRunning())
+  const win = createWindow(() => sessions.activeWorkCount())
   if (!smokeMode && app.isPackaged) {
     setTimeout(() => void appUpdates.check(), 10_000)
   }
@@ -407,7 +439,7 @@ app.whenReady().then(() => {
   if (e2eMode) void runE2E(win, sessions)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(() => sessions.listRunning())
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(() => sessions.activeWorkCount())
   })
 })
 

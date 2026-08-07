@@ -453,6 +453,11 @@ export class SessionManager {
     }))
   }
 
+  /** CLI 실행과 완료 후 자동 반영을 모두 포함한 종료 보호 대상 작업 수. */
+  activeWorkCount(): number {
+    return new Set([...this.sessions.keys(), ...this.integratingWorktrees]).size
+  }
+
   resolveApproval(approvalId: string, decision: ApprovalDecision, reason?: string): void {
     db.decideApproval(approvalId, decision)
     this.broker.resolve(approvalId, decision, reason)

@@ -94,7 +94,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
   }, [onSubmitToSession, queuedPrompt, runningSessionIds])
 
   return (
-    <div className="col-start-2 row-start-3 bg-mantle p-2.5">
+    <div className="col-start-2 row-start-3 min-w-0 overflow-x-hidden bg-mantle p-2.5">
       {showRunnerPicker && <RunnerPicker runners={runners} onChoose={onChooseRunner} />}
       <AttachmentStrip
         attachments={attachments}

@@ -7,6 +7,7 @@ import type {
   CostTotals,
   ProjectStat,
   ProjectFileEntry,
+  ProjectFilePreview,
   DetectedRunner,
   RouteResult,
   FetchedAgent,
@@ -185,6 +186,9 @@ const api = {
   revealProject: (path: string): Promise<string> => ipcRenderer.invoke('project:reveal', path),
   listProjectFiles: (path: string): Promise<ProjectFileEntry[]> =>
     ipcRenderer.invoke('project:files', path),
+  isGitRepository: (path: string): Promise<boolean> => ipcRenderer.invoke('project:isGit', path),
+  readProjectFile: (root: string, path: string): Promise<ProjectFilePreview> =>
+    ipcRenderer.invoke('project:readFile', root, path),
   listChanges: (sessionId: string): Promise<ChangedFile[]> =>
     ipcRenderer.invoke('session:changes', sessionId),
   fileDiff: (sessionId: string, path: string): Promise<string> =>

@@ -553,7 +553,7 @@ export default function App() {
 
   return (
     <div
-      className="grid h-full grid-rows-[auto_1fr_auto] bg-base text-text"
+      className="grid h-full min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden bg-base text-text"
       style={{ gridTemplateColumns: `264px 1fr ${artifactsOpen ? artifactW : 40}px` }}
     >
       {/* ── Rail ─────────────────────────────────── */}
@@ -709,7 +709,7 @@ export default function App() {
         onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 8)}
         onWheel={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
         onTouchMove={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
-        className="col-start-2 row-start-2 flex flex-col overflow-auto px-5 py-4"
+        className="col-start-2 row-start-2 flex min-w-0 flex-col overflow-y-auto overflow-x-hidden px-5 py-4 [overflow-wrap:anywhere]"
       >
         {/* 위로 스크롤됐을 때만 페이드를 띄운다. 항상 띄우면 첫 메시지를 가린다. */}
         <div
