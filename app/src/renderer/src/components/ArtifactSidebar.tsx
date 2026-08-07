@@ -136,7 +136,7 @@ export default function ArtifactSidebar({
             key={id}
             onClick={() => selectTab(id)}
             className={`flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] transition-colors ${
-              tab === id ? 'bg-surface1 text-text shadow-sm' : 'text-overlay1 hover:text-subtext1'
+              tab === id ? 'bg-base/85 text-text shadow-sm' : 'text-overlay1 hover:text-subtext1'
             }`}
           >
             <Icon className="h-3.5 w-3.5 shrink-0" />
