@@ -127,6 +127,8 @@ function migrate(): void {
   addColumn('session', 'agent_name', 'TEXT')
   addColumn('session', 'worktree', 'TEXT')
   addColumn('session', 'worktree_cleaned', 'INTEGER NOT NULL DEFAULT 0')
+  addColumn('session', 'sort_order', 'INTEGER')
+  addColumn('session', 'hidden', 'INTEGER NOT NULL DEFAULT 0')
   addColumn('project', 'sort_order', 'INTEGER')
   addColumn('project', 'alias', 'TEXT')
   db.exec(`
@@ -136,6 +138,15 @@ function migrate(): void {
     )
     UPDATE project
     SET sort_order = (SELECT position FROM ranked WHERE ranked.path = project.path)
+    WHERE sort_order IS NULL
+  `)
+  db.exec(`
+    WITH ranked AS (
+      SELECT id, ROW_NUMBER() OVER (PARTITION BY project_path ORDER BY started_at DESC) - 1 AS position
+      FROM session
+    )
+    UPDATE session
+    SET sort_order = (SELECT position FROM ranked WHERE ranked.id = session.id)
     WHERE sort_order IS NULL
   `)
 
@@ -253,6 +264,54 @@ export function renameProject(path: string, alias: string): StoredProject | unde
   return listProjects().find((project) => project.path === path)
 }
 
+export function projectWorktrees(path: string): SessionWorktree[] {
+  const rows = db.prepare('SELECT worktree FROM session WHERE project_path = ? AND worktree IS NOT NULL')
+    .all(path) as unknown as { worktree: string }[]
+  return rows.flatMap(({ worktree }) => {
+    try {
+      return [JSON.parse(worktree) as SessionWorktree]
+    } catch {
+      return []
+    }
+  })
+}
+
+/** 프로젝트가 이동했을 때 기존 세션과 worktree의 원본 참조를 함께 바꾼다. */
+export function relinkProject(oldPath: string, newPath: string): StoredProject {
+  if (oldPath === newPath) {
+    const current = listProjects().find((project) => project.path === oldPath)
+    if (!current) throw new Error('등록된 프로젝트를 찾지 못했습니다.')
+    return current
+  }
+  if (listProjects().some((project) => project.path === newPath)) {
+    throw new Error('선택한 폴더는 이미 프로젝트로 등록되어 있습니다.')
+  }
+
+  const worktrees = projectWorktrees(oldPath)
+  db.exec('BEGIN')
+  try {
+    db.prepare('UPDATE project SET path = ?, last_used_at = ? WHERE path = ?').run(newPath, now(), oldPath)
+    db.prepare('UPDATE session SET project_path = ? WHERE project_path = ?').run(newPath, oldPath)
+    const updateWorktree = db.prepare('UPDATE session SET worktree = ? WHERE worktree = ?')
+    for (const worktree of worktrees) {
+      updateWorktree.run(JSON.stringify({ ...worktree, origin: newPath }), JSON.stringify(worktree))
+    }
+
+    const oldMemoryPrefix = `file:${join(oldPath, 'AGENTS.md')}`
+    const newMemoryPrefix = `file:${join(newPath, 'AGENTS.md')}`
+    db.prepare('UPDATE memory_edit SET entry_id = ? WHERE entry_id = ?').run(newMemoryPrefix, oldMemoryPrefix)
+    db.prepare('UPDATE memory_proposal SET entry_id = ? WHERE entry_id = ?').run(newMemoryPrefix, oldMemoryPrefix)
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+
+  const project = listProjects().find((item) => item.path === newPath)
+  if (!project) throw new Error('프로젝트 경로를 갱신하지 못했습니다.')
+  return project
+}
+
 export function removeProject(path: string): void {
   db.prepare('DELETE FROM project WHERE path = ?').run(path)
 }
@@ -278,10 +337,14 @@ export function createSession(s: {
   title: string
   agentName?: string
 }): void {
+  const first = db.prepare(
+    'SELECT COALESCE(MIN(sort_order), 0) - 1 AS position FROM session WHERE project_path = ?',
+  ).get(s.projectPath) as { position: number }
   db.prepare(
-    `INSERT INTO session (id, project_path, runner_id, title, agent_name, status, started_at)
-     VALUES (?, ?, ?, ?, ?, 'starting', ?)`,
-  ).run(s.id, s.projectPath, s.runnerId, s.title, s.agentName ?? null, now())
+    `INSERT INTO session
+       (id, project_path, runner_id, title, agent_name, status, started_at, sort_order)
+     VALUES (?, ?, ?, ?, ?, 'starting', ?, ?)`,
+  ).run(s.id, s.projectPath, s.runnerId, s.title, s.agentName ?? null, now(), first.position)
 }
 
 export function updateSession(
@@ -302,8 +365,9 @@ export function listSessions(projectPath: string, limit = 50): StoredSession[] {
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
-              worktree_cleaned AS worktreeCleaned
-       FROM session WHERE project_path = ? ORDER BY started_at DESC LIMIT ?`,
+              worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden
+       FROM session WHERE project_path = ? AND hidden = 0
+       ORDER BY sort_order ASC, started_at DESC LIMIT ?`,
     )
     .all(projectPath, limit)
     .map(hydrate) as unknown as StoredSession[]
@@ -315,7 +379,7 @@ export function getSession(id: string): StoredSession | undefined {
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
-              worktree_cleaned AS worktreeCleaned
+              worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden
        FROM session WHERE id = ?`,
     )
     .get(id) as unknown as StoredSession | undefined
@@ -333,6 +397,7 @@ function hydrate(row: unknown): unknown {
     }
   }
   r.worktreeCleaned = Boolean(r.worktreeCleaned)
+  r.hidden = Boolean(r.hidden)
   return r
 }
 
@@ -411,6 +476,40 @@ export function appendEvent(sessionId: string, event: SessionEvent): void {
     JSON.stringify(event),
     now(),
   )
+}
+
+export function listHiddenSessions(projectPath: string, limit = 50): StoredSession[] {
+  return db.prepare(
+    `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
+            runner_id AS runnerId, title, agent_name AS agentName, status,
+            cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
+            worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden
+     FROM session WHERE project_path = ? AND hidden = 1
+     ORDER BY ended_at DESC, started_at DESC LIMIT ?`,
+  ).all(projectPath, limit).map(hydrate) as unknown as StoredSession[]
+}
+
+export function reorderSessions(projectPath: string, ids: string[]): void {
+  const visible = db.prepare(
+    'SELECT id FROM session WHERE project_path = ? AND hidden = 0 ORDER BY sort_order ASC, started_at DESC LIMIT 50',
+  ).all(projectPath) as unknown as Array<{ id: string }>
+  if (visible.length !== ids.length || visible.some(({ id }) => !ids.includes(id))) {
+    throw new Error('세션 순서가 최신 상태와 다릅니다. 목록을 새로고침한 뒤 다시 시도해 주세요.')
+  }
+  db.exec('BEGIN')
+  try {
+    const update = db.prepare('UPDATE session SET sort_order = ? WHERE id = ? AND project_path = ?')
+    ids.forEach((id, index) => update.run(index, id, projectPath))
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
+export function setSessionHidden(id: string, hidden: boolean): StoredSession | undefined {
+  db.prepare('UPDATE session SET hidden = ? WHERE id = ?').run(hidden ? 1 : 0, id)
+  return getSession(id)
 }
 
 export function renameSession(id: string, title: string): StoredSession | undefined {

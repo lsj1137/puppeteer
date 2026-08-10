@@ -7,6 +7,8 @@ import {
   Flag,
   GitBranch,
   GitCommitHorizontal,
+  Eye,
+  EyeOff,
   Loader2,
   Lock,
   MessageSquarePlus,
@@ -42,6 +44,8 @@ interface SessionHeaderProps {
   activeSessionId?: string
   visibleTabs: StoredSession[]
   overflowTabs: StoredSession[]
+  allSessions: StoredSession[]
+  hiddenSessions: StoredSession[]
   running: RunningSession[]
   approvals: ApprovalRequest[]
   tabMenuOpen: boolean
@@ -50,6 +54,9 @@ interface SessionHeaderProps {
   onNewSession: () => void
   onOpenSession: (sessionId: string) => void
   onRenameSession: (sessionId: string, title: string) => void | Promise<void>
+  onReorderSessions: (ids: string[]) => void | Promise<void>
+  onHideSession: (session: StoredSession) => void | Promise<void>
+  onRestoreSession: (session: StoredSession) => void | Promise<void>
   onDeleteSession: (session: StoredSession) => void
   selectedSession?: StoredSession
   onOpenWorktree: (sessionId: string) => void
@@ -63,6 +70,8 @@ export default function SessionHeader({
   activeSessionId,
   visibleTabs,
   overflowTabs,
+  allSessions,
+  hiddenSessions,
   running,
   approvals,
   tabMenuOpen,
@@ -71,6 +80,9 @@ export default function SessionHeader({
   onNewSession,
   onOpenSession,
   onRenameSession,
+  onReorderSessions,
+  onHideSession,
+  onRestoreSession,
   onDeleteSession,
   selectedSession,
   onOpenWorktree,
@@ -80,6 +92,8 @@ export default function SessionHeader({
   const worktreeCleaned = Boolean(selectedSession?.worktreeCleaned && !worktree)
   const [editingSessionId, setEditingSessionId] = useState<string>()
   const [sessionTitleDraft, setSessionTitleDraft] = useState('')
+  const [draggingSessionId, setDraggingSessionId] = useState<string>()
+  const [dropSessionId, setDropSessionId] = useState<string>()
 
   const beginRename = (session: StoredSession): void => {
     setEditingSessionId(session.id)
@@ -111,6 +125,35 @@ export default function SessionHeader({
           return (
             <div
               key={session.id}
+              draggable={editingSessionId !== session.id}
+              onDragStart={(event) => {
+                setDraggingSessionId(session.id)
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', session.id)
+              }}
+              onDragOver={(event) => {
+                if (!draggingSessionId || draggingSessionId === session.id) return
+                event.preventDefault()
+                setDropSessionId(session.id)
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                const source = draggingSessionId ?? event.dataTransfer.getData('text/plain')
+                const ids = allSessions.map(({ id }) => id)
+                const from = ids.indexOf(source)
+                const to = ids.indexOf(session.id)
+                if (from >= 0 && to >= 0 && from !== to) {
+                  const [moved] = ids.splice(from, 1)
+                  if (moved) ids.splice(to, 0, moved)
+                  void onReorderSessions(ids)
+                }
+                setDraggingSessionId(undefined)
+                setDropSessionId(undefined)
+              }}
+              onDragEnd={() => {
+                setDraggingSessionId(undefined)
+                setDropSessionId(undefined)
+              }}
               onClick={() => onOpenSession(session.id)}
               onDoubleClick={(event) => {
                 event.stopPropagation()
@@ -118,6 +161,8 @@ export default function SessionHeader({
               }}
               title={session.title ?? ''}
               className={`group flex min-w-0 max-w-[220px] flex-1 cursor-pointer items-center gap-1.5 rounded-t-lg py-1.5 pl-3 pr-1.5 text-[13px] ${
+                dropSessionId === session.id ? 'ring-1 ring-inset ring-sapphire/70' : ''
+              } ${draggingSessionId === session.id ? 'opacity-50' : ''} ${
                 active ? 'bg-base text-text' : 'text-subtext0 hover:bg-surface0/60'
               }`}
             >
@@ -159,6 +204,20 @@ export default function SessionHeader({
                   <Pencil className="h-3 w-3" />
                 </button>
               )}
+              {!live && !waiting && (
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    void onHideSession(session)
+                  }}
+                  title="세션 숨기기"
+                  className={`rounded p-0.5 text-overlay1 hover:bg-surface0 hover:text-subtext1 ${
+                    active ? '' : 'invisible group-hover:visible'
+                  }`}
+                >
+                  <EyeOff className="h-3 w-3" />
+                </button>
+              )}
               <button
                 onClick={(event) => {
                   event.stopPropagation()
@@ -175,15 +234,15 @@ export default function SessionHeader({
           )
         })}
 
-        {overflowTabs.length > 0 && (
+        {(overflowTabs.length > 0 || hiddenSessions.length > 0) && (
           <div className="relative shrink-0">
             <button
               onClick={onToggleTabMenu}
-              title={`세션 ${overflowTabs.length}개 더`}
+              title={`다른 세션 ${overflowTabs.length + hiddenSessions.length}개`}
               className="flex items-center gap-1 rounded-t-lg px-2 py-1.5 text-[12px] text-subtext0 hover:bg-surface0/60 hover:text-text"
             >
               <ChevronDown className="h-3.5 w-3.5" />
-              {overflowTabs.length}
+              {overflowTabs.length + hiddenSessions.length}
             </button>
             {tabMenuOpen && (
               <>
@@ -202,6 +261,24 @@ export default function SessionHeader({
                       <span className="truncate">{session.title || '새 세션'}</span>
                     </button>
                   ))}
+                  {hiddenSessions.length > 0 && (
+                    <div className="mt-1 border-t border-surface0 pt-1">
+                      <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-overlay1">
+                        숨긴 세션
+                      </div>
+                      {hiddenSessions.map((session) => (
+                        <button
+                          key={session.id}
+                          onClick={() => void onRestoreSession(session)}
+                          className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[12px] text-subtext0 hover:bg-surface0 hover:text-text"
+                        >
+                          <Eye className="h-3.5 w-3.5 shrink-0" />
+                          <span className="flex-1 truncate">{session.title || '새 세션'}</span>
+                          <span className="text-[10px] text-overlay1">복원</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </>
             )}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FolderPlus, Loader2, Monitor, Pencil, ShieldAlert, Terminal, Trash2 } from 'lucide-react'
+import { FolderPlus, Loader2, Monitor, Pencil, RefreshCw, ShieldAlert, Terminal, Trash2 } from 'lucide-react'
 import type {
   ApprovalRequest,
   DetectedRunner,
@@ -22,6 +22,7 @@ interface Props {
   onOpenApproval: (approval: ApprovalRequest) => void | Promise<void>
   onPickFolder: () => void | Promise<void>
   onRenameProject: (path: string, alias: string) => void | Promise<void>
+  onRelinkProject: (path: string) => void | Promise<void>
   onReorderProjects: (paths: string[]) => void
   onSelectProject: (path: string) => void | Promise<void>
 }
@@ -42,6 +43,7 @@ export default function WorkspaceLists(props: Props) {
     onOpenApproval,
     onPickFolder,
     onRenameProject,
+    onRelinkProject,
     onReorderProjects,
     onSelectProject,
   } = props
@@ -196,6 +198,16 @@ export default function WorkspaceLists(props: Props) {
                   {live > 0 && (
                     <span className="shrink-0 rounded bg-green/20 px-1 text-[11px] text-green">{live}</span>
                   )}
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void onRelinkProject(project.path)
+                    }}
+                    className="hidden rounded p-0.5 text-overlay1 hover:bg-sapphire/15 hover:text-sapphire group-hover:block"
+                    title="이동한 프로젝트 폴더 재연결"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
                   <button
                     onClick={(event) => {
                       event.stopPropagation()

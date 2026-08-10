@@ -151,3 +151,13 @@ textarea { resize: none; }
 }
 .shiki-wrap .diff-hunk span { color: var(--color-subtext0) !important; }
 .shiki-wrap .diff-file span { color: var(--color-overlay1) !important; font-weight: 600; }
+@keyframes completion-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}

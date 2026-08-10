@@ -17,21 +17,22 @@ import type {
 } from '@shared/session'
 
 const exec = promisify(execFile)
-const worktreeMutationQueues = new Map<string, Promise<void>>()
+const repositoryMutationQueues = new Map<string, Promise<void>>()
 
-/** 같은 worktree의 add/commit이 겹쳐 index.lock을 두고 경쟁하지 않게 한다. */
-async function serializeWorktreeMutation<T>(cwd: string, task: () => Promise<T>): Promise<T> {
-  const previous = worktreeMutationQueues.get(cwd) ?? Promise.resolve()
+/** 같은 저장소의 Memory·worktree 커밋·병합이 index/refs lock을 두고 경쟁하지 않게 한다. */
+async function serializeRepositoryMutation<T>(origin: string, task: () => Promise<T>): Promise<T> {
+  const key = process.platform === 'win32' ? resolve(origin).toLowerCase() : resolve(origin)
+  const previous = repositoryMutationQueues.get(key) ?? Promise.resolve()
   let release!: () => void
   const current = new Promise<void>((resolve) => { release = resolve })
   const queued = previous.catch(() => undefined).then(() => current)
-  worktreeMutationQueues.set(cwd, queued)
+  repositoryMutationQueues.set(key, queued)
   await previous.catch(() => undefined)
   try {
     return await task()
   } finally {
     release()
-    if (worktreeMutationQueues.get(cwd) === queued) worktreeMutationQueues.delete(cwd)
+    if (repositoryMutationQueues.get(key) === queued) repositoryMutationQueues.delete(key)
   }
 }
 
@@ -99,8 +100,15 @@ async function gitWithError(cwd: string, args: string[]): Promise<{ stdout: stri
     return { stdout, stderr }
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; message?: string }
-    throw new Error((err.stderr || err.stdout || err.message || 'git 명령 실행에 실패했습니다.').trim())
+    throw new Error(formatGitError(err.stderr || err.stdout || err.message || 'git 명령 실행에 실패했습니다.'))
   }
+}
+
+export function formatGitError(raw: string): string {
+  const message = raw.trim()
+  const lock = message.match(/Unable to create ['"]([^'"]+index\.lock)['"]/i)?.[1]
+  if (!lock) return message
+  return `Git 잠금 파일 때문에 작업을 시작하지 못했습니다: ${lock}\n실행 중인 Git 작업을 먼저 종료하세요. 실행 중인 작업이 없다면 이전 Git 프로세스가 남긴 잠금 파일인지 확인한 뒤 해당 index.lock만 삭제하고 다시 시도하세요.`
 }
 
 async function unmergedFiles(cwd: string): Promise<string[]> {
@@ -125,29 +133,48 @@ export async function isRepo(cwd: string): Promise<boolean> {
   }
 }
 
-/** 사용자가 승인한 Project Memory 정본만 커밋한다. 다른 staged/working 변경은 포함하지 않는다. */
-export async function commitProjectMemory(cwd: string): Promise<{ ok: boolean; message: string }> {
-  if (!(await isRepo(cwd))) return { ok: true, message: 'Git 저장소가 아니므로 파일만 저장했습니다.' }
-  const paths = ['AGENTS.md', 'CLAUDE.md']
+/** 이동한 원본 저장소가 기존 linked worktree의 양쪽 포인터를 다시 쓰게 한다. */
+export async function repairLinkedWorktrees(
+  origin: string,
+  worktreePaths: string[],
+): Promise<{ ok: boolean; message: string }> {
+  if (worktreePaths.length === 0) return { ok: true, message: '복구할 worktree가 없습니다.' }
   try {
-    const changed = await git(cwd, ['status', '--porcelain', '--', ...paths])
-    if (!changed.trim()) return { ok: true, message: '새로 커밋할 Memory 변경이 없습니다.' }
-    await gitWithError(cwd, ['add', '--', ...paths])
-    await gitWithError(cwd, [
-      'commit',
-      '--only',
-      '-m',
-      'docs: 프로젝트 Memory 갱신',
-      '--',
-      ...paths,
-    ])
-    return { ok: true, message: '승인한 Project Memory를 원본 브랜치에 커밋했습니다.' }
+    await gitWithError(origin, ['worktree', 'repair', ...worktreePaths])
+    return { ok: true, message: `연결된 worktree ${worktreePaths.length}개를 복구했습니다.` }
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : 'Project Memory 커밋에 실패했습니다.',
+      message: error instanceof Error ? error.message : 'Git worktree 연결 복구에 실패했습니다.',
     }
   }
+}
+
+/** 사용자가 승인한 Project Memory 정본만 커밋한다. 다른 staged/working 변경은 포함하지 않는다. */
+export async function commitProjectMemory(cwd: string): Promise<{ ok: boolean; message: string }> {
+  if (!(await isRepo(cwd))) return { ok: true, message: 'Git 저장소가 아니므로 파일만 저장했습니다.' }
+  return serializeRepositoryMutation(cwd, async () => {
+    const paths = ['AGENTS.md', 'CLAUDE.md']
+    try {
+      const changed = await git(cwd, ['status', '--porcelain', '--', ...paths])
+      if (!changed.trim()) return { ok: true, message: '새로 커밋할 Memory 변경이 없습니다.' }
+      await gitWithError(cwd, ['add', '--', ...paths])
+      await gitWithError(cwd, [
+        'commit',
+        '--only',
+        '-m',
+        'docs: 프로젝트 Memory 갱신',
+        '--',
+        ...paths,
+      ])
+      return { ok: true, message: '승인한 Project Memory를 원본 브랜치에 커밋했습니다.' }
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Project Memory 커밋에 실패했습니다.',
+      }
+    }
+  })
 }
 
 export async function projectMemoryDirty(cwd: string): Promise<boolean> {
@@ -435,7 +462,7 @@ export async function commitWorktree(
   wt: SessionWorktree,
   message: string,
 ): Promise<WorktreeCommitResult> {
-  return serializeWorktreeMutation(wt.path, async () => {
+  return serializeRepositoryMutation(wt.origin, async () => {
     const title = message.trim()
     if (!title) return { ok: false, message: '커밋 메시지를 입력해 주세요.', status: await worktreeStatus(wt) }
     const subject = title.split(/\r?\n/, 1)[0]
@@ -696,38 +723,42 @@ export async function abortWorktreeRebase(wt: SessionWorktree): Promise<boolean>
 
 /** 충돌 상태를 남기지 않는 fast-forward 병합만 수행한다. */
 export async function mergeWorktree(wt: SessionWorktree): Promise<WorktreeMergeResult> {
-  const before = await worktreeStatus(wt)
-  if (!before.canMerge) {
-    return { ok: false, message: before.reason ?? '지금은 병합할 수 없습니다.', status: before }
-  }
+  return serializeRepositoryMutation(wt.origin, async () => {
+    const before = await worktreeStatus(wt)
+    if (!before.canMerge) {
+      return { ok: false, message: before.reason ?? '지금은 병합할 수 없습니다.', status: before }
+    }
 
-  try {
-    await git(wt.origin, ['merge', '--ff-only', wt.branch])
-    const status = await worktreeStatus(wt)
-    if (!status.merged || status.dirty || status.originDirty) {
+    try {
+      await gitWithError(wt.origin, ['merge', '--ff-only', wt.branch])
+      const status = await worktreeStatus(wt)
+      if (!status.merged || status.dirty || status.originDirty) {
+        return {
+          ok: false,
+          message: status.dirty
+            ? '병합 후에도 worktree 변경이 남아 있어 완료로 처리하지 않았습니다.'
+            : status.originDirty
+              ? '병합 후 원본 저장소에 커밋되지 않은 변경이 있어 완료로 처리하지 않았습니다.'
+              : '병합 결과를 확인하지 못해 완료로 처리하지 않았습니다.',
+          status,
+        }
+      }
+      return {
+        ok: true,
+        message: `${wt.branch}의 커밋을 ${wt.baseBranch}에 반영했습니다.`,
+        status,
+      }
+    } catch (error) {
+      const status = await worktreeStatus(wt)
       return {
         ok: false,
-        message: status.dirty
-          ? '병합 후에도 worktree 변경이 남아 있어 완료로 처리하지 않았습니다.'
-          : status.originDirty
-            ? '병합 후 원본 저장소에 커밋되지 않은 변경이 있어 완료로 처리하지 않았습니다.'
-            : '병합 결과를 확인하지 못해 완료로 처리하지 않았습니다.',
+        message: error instanceof Error
+          ? error.message
+          : status.reason ?? '병합 직전에 저장소 상태가 바뀌어 작업을 중단했습니다.',
         status,
       }
     }
-    return {
-      ok: true,
-      message: `${wt.branch}의 커밋을 ${wt.baseBranch}에 반영했습니다.`,
-      status,
-    }
-  } catch {
-    const status = await worktreeStatus(wt)
-    return {
-      ok: false,
-      message: status.reason ?? '병합 직전에 저장소 상태가 바뀌어 작업을 중단했습니다.',
-      status,
-    }
-  }
+  })
 }
 
 /** worktree HEAD의 실제 커밋 시각. 알림이 오래된 성공 기록인지 구분할 때 사용한다. */

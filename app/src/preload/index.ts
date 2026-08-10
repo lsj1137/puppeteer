@@ -7,6 +7,7 @@ import type {
   GitHistoryEntry,
   CostTotals,
   ProjectStat,
+  ProjectRelinkResult,
   ProjectFileEntry,
   ProjectFilePreview,
   DetectedRunner,
@@ -76,12 +77,20 @@ const api = {
   reorderProjects: (paths: string[]): Promise<void> => ipcRenderer.invoke('project:reorder', paths),
   renameProject: (path: string, alias: string): Promise<StoredProject | undefined> =>
     ipcRenderer.invoke('project:rename', path, alias),
+  relinkProject: (path: string): Promise<ProjectRelinkResult> =>
+    ipcRenderer.invoke('project:relink', path),
   removeProject: (path: string): Promise<void> => ipcRenderer.invoke('project:remove', path),
   setProjectRunner: (path: string, runnerId: string): Promise<void> =>
     ipcRenderer.invoke('project:setRunner', path, runnerId),
 
   listSessions: (projectPath: string): Promise<StoredSession[]> =>
     ipcRenderer.invoke('session:list', projectPath),
+  listHiddenSessions: (projectPath: string): Promise<StoredSession[]> =>
+    ipcRenderer.invoke('session:listHidden', projectPath),
+  reorderSessions: (projectPath: string, ids: string[]): Promise<void> =>
+    ipcRenderer.invoke('session:reorder', projectPath, ids),
+  setSessionHidden: (sessionId: string, hidden: boolean): Promise<StoredSession | undefined> =>
+    ipcRenderer.invoke('session:setHidden', sessionId, hidden),
   getSession: (sessionId: string): Promise<StoredSession | undefined> =>
     ipcRenderer.invoke('session:get', sessionId),
   renameSession: (sessionId: string, title: string): Promise<StoredSession | undefined> =>

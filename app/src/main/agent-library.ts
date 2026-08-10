@@ -241,6 +241,36 @@ function strings(v: unknown): string[] | undefined {
   return arr.length ? arr : undefined
 }
 
+/** 라이브러리 Agent에 저장된 프로젝트 및 프로젝트 내부 절대경로를 새 위치로 옮긴다. */
+export function relinkProject(oldPath: string, newPath: string): number {
+  const normalize = (value: string): string => value.replace(/\\/g, '/').replace(/\/$/, '').toLowerCase()
+  const oldKey = normalize(oldPath)
+  const replace = (value: string): string => {
+    const key = normalize(value)
+    if (key === oldKey) return newPath
+    if (!key.startsWith(`${oldKey}/`)) return value
+    return newPath + value.slice(oldPath.length)
+  }
+
+  let changed = 0
+  for (const agent of list()) {
+    const projects = agent.workspace.projects?.map(replace)
+    const readPaths = agent.workspace.readPaths?.map(replace)
+    const writePaths = agent.workspace.writePaths?.map(replace)
+    if (
+      JSON.stringify(projects) === JSON.stringify(agent.workspace.projects)
+      && JSON.stringify(readPaths) === JSON.stringify(agent.workspace.readPaths)
+      && JSON.stringify(writePaths) === JSON.stringify(agent.workspace.writePaths)
+    ) continue
+    save({
+      ...agent,
+      workspace: { ...agent.workspace, projects, readPaths, writePaths },
+    })
+    changed++
+  }
+  return changed
+}
+
 function skillStates(v: unknown): AgentDef['workspace']['skills'] {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return undefined
   const out: NonNullable<AgentDef['workspace']['skills']> = {}

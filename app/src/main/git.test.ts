@@ -9,6 +9,7 @@ import {
   abortWorktreeRebase,
   commitProjectMemory,
   commitWorktree,
+  formatGitError,
   gitHistory,
   mergeWorktree,
   removeWorktree,
@@ -60,6 +61,16 @@ afterEach(async () => {
 })
 
 describe('worktree merge', () => {
+  it('turns an index.lock failure into an actionable diagnostic', () => {
+    const message = formatGitError(
+      "fatal: Unable to create 'C:/repo/.git/worktrees/session/index.lock': File exists.",
+    )
+
+    expect(message).toContain('C:/repo/.git/worktrees/session/index.lock')
+    expect(message).toContain('실행 중인 Git 작업을 먼저 종료')
+    expect(message).toContain('해당 index.lock만 삭제')
+  })
+
   it('returns recent commits with metadata for the Git sidebar', async () => {
     const { worktreePath } = await fixture()
 

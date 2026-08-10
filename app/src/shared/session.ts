@@ -152,6 +152,15 @@ export interface StoredProject {
   sortOrder?: number | null
 }
 
+export interface ProjectRelinkResult {
+  ok: boolean
+  canceled?: boolean
+  message: string
+  oldPath: string
+  newPath?: string
+  project?: StoredProject
+}
+
 export interface StoredSession {
   /** 격리 실행 중이면 그 정보 */
   worktree?: SessionWorktree | null
@@ -167,6 +176,8 @@ export interface StoredSession {
   costUsd: number
   startedAt: number
   endedAt: number | null
+  sortOrder?: number | null
+  hidden?: boolean
 }
 
 export interface StoredEvent {

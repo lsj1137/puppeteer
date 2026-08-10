@@ -28,6 +28,9 @@ import ArtifactSidebar from './components/ArtifactSidebar'
 import WorkspaceDialogs from './components/WorkspaceDialogs'
 import AppOverlays from './components/AppOverlays'
 import SessionHeader from './components/SessionHeader'
+import SessionCompletionToasts, {
+  type SessionCompletionToast,
+} from './components/SessionCompletionToasts'
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
@@ -90,6 +93,8 @@ export default function App() {
   const [active, setActive] = useState<string>()
 
   const [sessions, setSessions] = useState<StoredSession[]>([])
+  const [hiddenSessions, setHiddenSessions] = useState<StoredSession[]>([])
+  const [completionToasts, setCompletionToasts] = useState<SessionCompletionToast[]>([])
   const [activeSession, setActiveSession] = useState<string>()
   const [running, setRunning] = useState<RunningSession[]>([])
 
@@ -154,10 +159,34 @@ export default function App() {
   )
 
   const refresh = useCallback(async (projectPath?: string) => {
-    setRunning(await window.api.listRunningSessions())
-    setCost(await window.api.costTotals())
-    if (projectPath) setSessions(await window.api.listSessions(projectPath))
+    const [nextRunning, nextCost] = await Promise.all([
+      window.api.listRunningSessions(),
+      window.api.costTotals(),
+    ])
+    setRunning(nextRunning)
+    setCost(nextCost)
+    if (projectPath) {
+      const [visible, hidden] = await Promise.all([
+        window.api.listSessions(projectPath),
+        window.api.listHiddenSessions(projectPath),
+      ])
+      setSessions(visible)
+      setHiddenSessions(hidden)
+    }
   }, [])
+  const handleSessionStatus = useCallback(async (
+    projectPath: string | undefined,
+    sessionId: string,
+    status: SessionStatus,
+  ): Promise<void> => {
+    await refresh(projectPath)
+    if (status !== 'completed') return
+    const session = await window.api.getSession(sessionId)
+    if (!session || session.hidden) return
+    setCompletionToasts((current) => current.some(({ session: item }) => item.id === session.id)
+      ? current
+      : [{ session, closing: false }, ...current])
+  }, [refresh])
   const {
     views,
     addDiffArtifact,
@@ -165,7 +194,7 @@ export default function App() {
     forgetSessionView,
     dismissWorktreeReviewNotices,
     restoreSessionView,
-  } = useSessionViews(active, refresh)
+  } = useSessionViews(active, handleSessionStatus)
 
   function toggleArtifacts(): void {
     setArtifactsOpen((v) => {
@@ -347,7 +376,11 @@ export default function App() {
 
   useEffect(() => {
     if (active) void refresh(active)
-    else setSessions([])
+    else {
+      setSessions([])
+      setHiddenSessions([])
+      void refresh()
+    }
   }, [active, refresh])
 
   const reloadAgents = useCallback(async () => {
@@ -456,7 +489,6 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [])
-
   // Alt+↑/↓ 프로젝트 이동 · Alt+←/→ 현재 프로젝트의 세션 이동
   useEffect(() => {
     const onNavigate = (event: KeyboardEvent): void => {
@@ -564,6 +596,57 @@ export default function App() {
     ))
   }
 
+  function reorderSessions(ids: string[]): void {
+    if (!active) return
+    setSessions((current) => {
+      const byId = new Map(current.map((session) => [session.id, session]))
+      return ids.flatMap((id) => byId.get(id) ? [byId.get(id)!] : [])
+    })
+    void window.api.reorderSessions(active, ids).catch(() => void refresh(active))
+  }
+
+  async function hideSession(session: StoredSession): Promise<void> {
+    if (!active) return
+    try {
+      await window.api.setSessionHidden(session.id, true)
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : '세션을 숨기지 못했습니다.')
+      return
+    }
+    dismissCompletionToast(session.id)
+    const remaining = sessions.filter(({ id }) => id !== session.id)
+    await refresh(active)
+    if (activeSession === session.id) {
+      const next = remaining[0]
+      if (next) await openSession(next.id, remaining)
+      else newSession()
+    }
+  }
+
+  async function restoreHiddenSession(session: StoredSession): Promise<void> {
+    const restored = await window.api.setSessionHidden(session.id, false)
+    if (!restored) return
+    if (active) await refresh(active)
+    setTabMenu(false)
+    await openSession(restored.id, [...sessions, restored])
+  }
+
+  const dismissCompletionToast = useCallback((sessionId: string): void => {
+    setCompletionToasts((current) => current.map((item) =>
+      item.session.id === sessionId ? { ...item, closing: true } : item,
+    ))
+    window.setTimeout(() => {
+      setCompletionToasts((current) => current.filter(({ session }) => session.id !== sessionId))
+    }, 180)
+  }, [])
+
+  useEffect(() => {
+    if (activeSession && completionToasts.some(({ session, closing }) =>
+      session.id === activeSession && !closing)) {
+      dismissCompletionToast(activeSession)
+    }
+  }, [activeSession, completionToasts, dismissCompletionToast])
+
   function reorderProjects(paths: string[]): void {
     setProjects((current) => {
       const byPath = new Map(current.map((project) => [project.path, project]))
@@ -578,6 +661,17 @@ export default function App() {
     const renamed = await window.api.renameProject(path, alias)
     if (!renamed) return
     setProjects((current) => current.map((project) => project.path === path ? renamed : project))
+  }
+
+  async function relinkProject(path: string): Promise<void> {
+    const result = await window.api.relinkProject(path)
+    if (result.canceled) return
+    if (!result.ok || !result.newPath) {
+      window.alert(result.message)
+      return
+    }
+    setProjects(await window.api.listProjects())
+    if (active === path) await selectProject(result.newPath)
   }
 
   /**
@@ -742,6 +836,7 @@ export default function App() {
           onOpenApproval={openApproval}
           onPickFolder={pickFolder}
           onRenameProject={renameProject}
+          onRelinkProject={relinkProject}
           onReorderProjects={reorderProjects}
           onSelectProject={selectProject}
         />
@@ -761,6 +856,8 @@ export default function App() {
           activeSessionId={activeSession}
           visibleTabs={visibleTabs}
           overflowTabs={overflowTabs}
+          allSessions={sessions}
+          hiddenSessions={hiddenSessions}
           running={running}
           approvals={approvals}
           tabMenuOpen={tabMenu}
@@ -769,6 +866,9 @@ export default function App() {
           onNewSession={newSession}
           onOpenSession={(sessionId) => void openSession(sessionId)}
           onRenameSession={renameSession}
+          onReorderSessions={reorderSessions}
+          onHideSession={hideSession}
+          onRestoreSession={restoreHiddenSession}
           onDeleteSession={(session) => {
             setSessionDeleteError(undefined)
             setConfirmDelSession(session)
@@ -1058,6 +1158,16 @@ export default function App() {
         onCancelAnnotation={() => setAnnotating(undefined)}
         onSaveAnnotation={(index, url) => void saveAnnotation(index, url)}
         dragOver={dragOver}
+      />
+
+      <SessionCompletionToasts
+        items={completionToasts}
+        projects={projects}
+        onDismiss={dismissCompletionToast}
+        onOpen={async (session) => {
+          dismissCompletionToast(session.id)
+          await jumpTo(session.id, session.projectPath)
+        }}
       />
     </div>
   )

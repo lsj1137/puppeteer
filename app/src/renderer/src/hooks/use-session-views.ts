@@ -4,6 +4,7 @@ import {
   reduceSessionView,
   type SessionView,
 } from '../lib/session-view'
+import type { SessionStatus } from '@shared/session'
 
 interface UseSessionViewsResult {
   views: Record<string, SessionView>
@@ -17,7 +18,7 @@ interface UseSessionViewsResult {
 /** 세션 이벤트의 실시간 수신과 DB 복원을 한 상태 저장소로 묶는다. */
 export function useSessionViews(
   projectPath: string | undefined,
-  onStatus: (projectPath?: string) => Promise<void>,
+  onStatus: (projectPath: string | undefined, sessionId: string, status: SessionStatus) => Promise<void>,
 ): UseSessionViewsResult {
   const [views, setViews] = useState<Record<string, SessionView>>({})
   const eventSequence = useRef(0)
@@ -32,7 +33,7 @@ export function useSessionViews(
           `e${eventSequence.current++}`,
         ),
       }))
-      if (event.t === 'status') void onStatus(projectPath)
+      if (event.t === 'status') void onStatus(projectPath, sessionId, event.status)
     })
   }, [onStatus, projectPath])
 

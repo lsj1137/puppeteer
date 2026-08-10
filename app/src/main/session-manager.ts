@@ -388,6 +388,13 @@ export class SessionManager {
         status: await this.worktreeStatus(sessionId),
       }
     }
+    if (this.integratingWorktrees.has(sessionId)) {
+      return {
+        ok: false,
+        message: '자동 커밋·병합을 처리 중입니다. 완료 후 다시 시도해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
     const result = await commitGitWorktree(wt, message)
     if (result.ok) db.deleteWorktreeReviewNotices(sessionId)
     return result
@@ -403,6 +410,13 @@ export class SessionManager {
       return {
         ok: false,
         message: '세션이 실행 중입니다. 작업이 끝난 뒤 원본 변경을 반영해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    if (this.integratingWorktrees.has(sessionId)) {
+      return {
+        ok: false,
+        message: '자동 커밋·병합을 처리 중입니다. 완료 후 다시 시도해 주세요.',
         status: await this.worktreeStatus(sessionId),
       }
     }
@@ -441,6 +455,13 @@ export class SessionManager {
       return {
         ok: false,
         message: '세션이 실행 중입니다. 작업이 끝난 뒤 병합해 주세요.',
+        status: await this.worktreeStatus(sessionId),
+      }
+    }
+    if (this.integratingWorktrees.has(sessionId)) {
+      return {
+        ok: false,
+        message: '자동 커밋·병합을 처리 중입니다. 완료 후 다시 시도해 주세요.',
         status: await this.worktreeStatus(sessionId),
       }
     }
@@ -636,7 +657,20 @@ export class SessionManager {
         step = nextWorktreeIntegrationStep(mode, status)
       }
 
-      if (step === 'none') return
+      if (step === 'none') {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: status.merged ? 'completed' : 'skipped',
+          summary: status.merged
+            ? '원본 반영 상태를 확인했습니다.'
+            : '자동 커밋 후 반영할 변경이 남지 않았습니다.',
+          detail: status.reason,
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(status),
+        })
+        return
+      }
       if (step === 'rebase') {
         this.setIntegrationReport(sessionId, {
           mode,
@@ -671,6 +705,21 @@ export class SessionManager {
         step = nextWorktreeIntegrationStep(mode, status)
       }
 
+      if (step === 'none') {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: status.merged ? 'completed' : 'skipped',
+          summary: status.merged
+            ? '원본 반영 상태를 확인했습니다.'
+            : '원본 변경 반영 후 별도로 병합할 변경이 남지 않았습니다.',
+          detail: status.reason,
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(status),
+        })
+        return
+      }
+
       if (step !== 'merge') {
         this.setIntegrationReport(sessionId, {
           mode,
@@ -697,7 +746,36 @@ export class SessionManager {
         updatedAt: Date.now(),
         status: integrationStatus(status),
       })
-      const merged = await mergeGitWorktree(wt)
+      let merged = await mergeGitWorktree(wt)
+      const lateStep = merged.status
+        ? nextWorktreeIntegrationStep(mode, merged.status)
+        : 'suggest'
+      if (!merged.ok && lateStep === 'rebase' && merged.status) {
+        this.setIntegrationReport(sessionId, {
+          mode,
+          phase: 'merging',
+          summary: '병합 직전 반영된 원본 변경 위로 작업 브랜치를 다시 재배치하고 있습니다.',
+          detail: merged.message,
+          worktreePath: wt.path,
+          updatedAt: Date.now(),
+          status: integrationStatus(merged.status),
+        })
+        const rebased = await rebaseGitWorktree(wt)
+        if (!rebased.ok) {
+          if (rebased.conflictFiles?.length) await abortGitWorktreeRebase(wt)
+          status = await inspectWorktree(wt)
+          merged = { ok: false, message: rebased.message, status }
+        } else {
+          if (rebased.status?.worktree) {
+            wt = rebased.status.worktree
+            db.setWorktree(sessionId, wt)
+          }
+          status = rebased.status ?? (await inspectWorktree(wt))
+          merged = nextWorktreeIntegrationStep(mode, status) === 'merge'
+            ? await mergeGitWorktree(wt)
+            : { ok: false, message: status.reason ?? '재배치 후 병합 조건을 확인하지 못했습니다.', status }
+        }
+      }
       if (!merged.ok) {
         this.setIntegrationReport(sessionId, {
           mode,

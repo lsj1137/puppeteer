@@ -1,6 +1,6 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { dirname, join, extname, resolve, sep } from 'node:path'
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { detectRunners } from './runner-detect'
 import { SessionManager } from './session-manager'
@@ -10,7 +10,7 @@ import { route } from './router'
 import * as memory from './memory'
 import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
-import { commitProjectMemory, gitHistory, isRepo, projectMemoryDirty } from './git'
+import { commitProjectMemory, gitHistory, isRepo, projectMemoryDirty, repairLinkedWorktrees } from './git'
 import { APP_USER_MODEL_ID, initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
 import { AppUpdateManager } from './app-update'
@@ -29,6 +29,11 @@ import type {
 
 const WORKTREE_INTEGRATION_SETTING = 'worktree_integration_mode'
 
+function canonicalPath(path: string): string {
+  const value = resolve(path)
+  return process.platform === 'win32' ? value.toLocaleLowerCase() : value
+}
+
 function worktreeIntegrationMode(): WorktreeIntegrationMode {
   return db.getSetting(WORKTREE_INTEGRATION_SETTING) === 'suggest' ? 'suggest' : 'auto'
 }
@@ -36,11 +41,7 @@ function worktreeIntegrationMode(): WorktreeIntegrationMode {
 function projectRootForMemoryId(id: string): string | undefined {
   if (!id.startsWith('file:')) return undefined
   const root = dirname(id.slice('file:'.length))
-  const canonical = (path: string): string => {
-    const value = resolve(path)
-    return process.platform === 'win32' ? value.toLocaleLowerCase() : value
-  }
-  return db.listProjects().some((project) => canonical(project.path) === canonical(root))
+  return db.listProjects().some((project) => canonicalPath(project.path) === canonicalPath(root))
     ? root
     : undefined
 }
@@ -247,12 +248,74 @@ app.whenReady().then(() => {
   ipcMain.handle('project:list', () => db.listProjects())
   ipcMain.handle('project:reorder', (_e, paths: string[]) => db.reorderProjects(paths))
   ipcMain.handle('project:rename', (_e, path: string, alias: string) => db.renameProject(path, alias))
+  ipcMain.handle('project:relink', async (_e, oldPath: string) => {
+    if (sessions.listRunning().some(({ projectPath }) => canonicalPath(projectPath) === canonicalPath(oldPath))) {
+      return { ok: false, oldPath, message: '실행 중인 세션을 먼저 종료해 주세요.' }
+    }
+    const picked = await dialog.showOpenDialog({
+      title: '이동한 프로젝트 폴더 선택',
+      defaultPath: dirname(oldPath),
+      properties: ['openDirectory'],
+    })
+    if (picked.canceled || !picked.filePaths[0]) {
+      return { ok: false, canceled: true, oldPath, message: '프로젝트 재연결을 취소했습니다.' }
+    }
+    const newPath = picked.filePaths[0]
+    if (!existsSync(newPath) || !statSync(newPath).isDirectory()) {
+      return { ok: false, oldPath, newPath, message: '선택한 프로젝트 폴더를 읽을 수 없습니다.' }
+    }
+
+    const worktrees = db.projectWorktrees(oldPath)
+    if (worktrees.length > 0) {
+      if (!(await isRepo(newPath))) {
+        return { ok: false, oldPath, newPath, message: '기존 worktree가 있어 새 위치의 Git 저장소를 확인해야 합니다.' }
+      }
+      const existingWorktrees = worktrees.filter(({ path }) => existsSync(path))
+      const repaired = await repairLinkedWorktrees(newPath, existingWorktrees.map(({ path }) => path))
+      if (!repaired.ok) return { ok: false, oldPath, newPath, message: repaired.message }
+    }
+
+    try {
+      const project = db.relinkProject(oldPath, newPath)
+      const agents = library.relinkProject(oldPath, newPath)
+      const missingWorktrees = worktrees.filter(({ path }) => !existsSync(path)).length
+      return {
+        ok: true,
+        oldPath,
+        newPath,
+        project,
+        message: `프로젝트와 세션 경로를 갱신했습니다.${agents ? ` Agent ${agents}개도 갱신했습니다.` : ''}${missingWorktrees ? ` 삭제된 과거 worktree ${missingWorktrees}개는 Git 복구에서 제외했습니다.` : ''}`,
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        oldPath,
+        newPath,
+        message: error instanceof Error ? error.message : '프로젝트 경로를 갱신하지 못했습니다.',
+      }
+    }
+  })
   ipcMain.handle('project:remove', (_e, path: string) => db.removeProject(path))
   ipcMain.handle('project:setRunner', (_e, path: string, runnerId: string) =>
     db.setProjectRunner(path, runnerId),
   )
 
   ipcMain.handle('session:list', (_e, projectPath: string) => db.listSessions(projectPath))
+  ipcMain.handle('session:listHidden', (_e, projectPath: string) => db.listHiddenSessions(projectPath))
+  ipcMain.handle('session:reorder', (_e, projectPath: string, ids: string[]) =>
+    db.reorderSessions(projectPath, ids),
+  )
+  ipcMain.handle('session:setHidden', (_e, sessionId: string, hidden: boolean) => {
+    const session = db.getSession(sessionId)
+    if (!session) throw new Error('세션을 찾을 수 없습니다.')
+    if (hidden && sessions.listRunning().some(({ id }) => id === sessionId)) {
+      throw new Error('실행 중인 세션은 숨길 수 없습니다.')
+    }
+    if (hidden && db.listOpenApprovals().some(({ sessionId: id }) => id === sessionId)) {
+      throw new Error('승인 대기 중인 세션은 숨길 수 없습니다.')
+    }
+    return db.setSessionHidden(sessionId, hidden)
+  })
   ipcMain.handle('session:events', (_e, sessionId: string) => db.listEvents(sessionId))
   ipcMain.handle('session:get', (_e, sessionId: string) => db.getSession(sessionId))
   ipcMain.handle('session:rename', (_e, sessionId: string, title: string) =>
