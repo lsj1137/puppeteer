@@ -158,6 +158,29 @@ function createWindow(getActiveWorkCount: () => number, onConfirmedClose: () => 
     }
   })
   applyWindowIdentity(win, icon)
+  let rendererRecoveryAttempts = 0
+  let rendererRecoveryTimer: ReturnType<typeof setTimeout> | undefined
+  let rendererStableTimer: ReturnType<typeof setTimeout> | undefined
+  const recoverRenderer = (reason: string): void => {
+    if (rendererRecoveryAttempts >= 2 || win.isDestroyed() || rendererRecoveryTimer) return
+    if (rendererStableTimer) clearTimeout(rendererStableTimer)
+    rendererRecoveryAttempts++
+    console.error(`renderer recovery ${rendererRecoveryAttempts}/2: ${reason}`)
+    rendererRecoveryTimer = setTimeout(() => {
+      rendererRecoveryTimer = undefined
+      if (!win.isDestroyed()) loadRenderer(win)
+    }, 500)
+  }
+  win.webContents.on('did-finish-load', () => {
+    if (rendererStableTimer) clearTimeout(rendererStableTimer)
+    rendererStableTimer = setTimeout(() => { rendererRecoveryAttempts = 0 }, 30_000)
+  })
+  win.webContents.on('did-fail-load', (_event, code, description, _url, isMainFrame) => {
+    if (isMainFrame && code !== -3) recoverRenderer(`load failed (${code}): ${description}`)
+  })
+  win.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason !== 'clean-exit') recoverRenderer(`render process gone: ${details.reason}`)
+  })
   if (!smokeMode && !e2eMode) win.on('ready-to-show', () => {
     applyWindowIdentity(win, icon)
     win.show()
