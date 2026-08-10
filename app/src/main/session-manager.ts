@@ -13,6 +13,7 @@ import type {
   SessionDeleteResult,
   SessionStatus,
   SessionWorktree,
+  StoredSession,
   WorktreeCommitResult,
   WorktreeCleanupResult,
   WorktreeConflictFile,
@@ -475,6 +476,13 @@ export class SessionManager {
     if (approval && !hasAnotherApproval && this.sessions.has(approval.sessionId)) {
       this.onEvent(approval.sessionId, { t: 'status', status: 'running' })
     }
+  }
+
+  renameSession(sessionId: string, title: string): StoredSession | undefined {
+    const renamed = db.renameSession(sessionId, title)
+    const live = this.sessions.get(sessionId)
+    if (live && renamed?.title) live.title = renamed.title
+    return renamed
   }
 
   private onApproval(req: ApprovalRequest): void {

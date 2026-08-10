@@ -29,6 +29,11 @@ const PROVIDER_LABEL: Record<string, string> = {
 const runnerLabel = (runner: DetectedRunner): string =>
   runnerEnvironmentLabel(runner) + (runner.version ? ` · ${runner.version}` : '')
 
+const providerBadgeClass = (provider: string): string =>
+  provider === 'codex-cli'
+    ? 'bg-green/15 text-green'
+    : 'bg-mauve/15 text-mauve'
+
 const RunnerIcon = ({ runner, className }: { runner: DetectedRunner; className?: string }) =>
   runner.kind === 'wsl' ? <Terminal className={className} /> : <Monitor className={className} />
 
@@ -44,6 +49,7 @@ interface SessionHeaderProps {
   onCloseTabMenu: () => void
   onNewSession: () => void
   onOpenSession: (sessionId: string) => void
+  onRenameSession: (sessionId: string, title: string) => void | Promise<void>
   onDeleteSession: (session: StoredSession) => void
   selectedSession?: StoredSession
   onOpenWorktree: (sessionId: string) => void
@@ -64,6 +70,7 @@ export default function SessionHeader({
   onCloseTabMenu,
   onNewSession,
   onOpenSession,
+  onRenameSession,
   onDeleteSession,
   selectedSession,
   onOpenWorktree,
@@ -71,6 +78,18 @@ export default function SessionHeader({
 }: SessionHeaderProps) {
   const worktree = selectedSession?.worktree
   const worktreeCleaned = Boolean(selectedSession?.worktreeCleaned && !worktree)
+  const [editingSessionId, setEditingSessionId] = useState<string>()
+  const [sessionTitleDraft, setSessionTitleDraft] = useState('')
+
+  const beginRename = (session: StoredSession): void => {
+    setEditingSessionId(session.id)
+    setSessionTitleDraft(session.title || '새 세션')
+  }
+  const finishRename = (session: StoredSession): void => {
+    const title = sessionTitleDraft.trim()
+    setEditingSessionId(undefined)
+    if (title && title !== session.title) void onRenameSession(session.id, title)
+  }
 
   return (
     <div className="col-start-2 col-end-4 row-start-1 z-20 flex items-end bg-mantle pl-2 pr-2 pt-1">
@@ -93,6 +112,10 @@ export default function SessionHeader({
             <div
               key={session.id}
               onClick={() => onOpenSession(session.id)}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+                beginRename(session)
+              }}
               title={session.title ?? ''}
               className={`group flex min-w-0 max-w-[220px] flex-1 cursor-pointer items-center gap-1.5 rounded-t-lg py-1.5 pl-3 pr-1.5 text-[13px] ${
                 active ? 'bg-base text-text' : 'text-subtext0 hover:bg-surface0/60'
@@ -105,7 +128,37 @@ export default function SessionHeader({
               ) : (
                 <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${statusColor(session)}`} />
               )}
-              <span className="flex-1 truncate">{session.title || '새 세션'}</span>
+              {editingSessionId === session.id ? (
+                <input
+                  autoFocus
+                  value={sessionTitleDraft}
+                  onClick={(event) => event.stopPropagation()}
+                  onChange={(event) => setSessionTitleDraft(event.target.value)}
+                  onBlur={() => finishRename(session)}
+                  onKeyDown={(event) => {
+                    event.stopPropagation()
+                    if (event.key === 'Enter') finishRename(session)
+                    if (event.key === 'Escape') setEditingSessionId(undefined)
+                  }}
+                  className="min-w-0 flex-1 rounded bg-crust/70 px-1.5 py-0.5 text-[12px] text-text outline-none ring-1 ring-sapphire/60"
+                />
+              ) : (
+                <span className="flex-1 truncate">{session.title || '새 세션'}</span>
+              )}
+              {editingSessionId !== session.id && (
+                <button
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    beginRename(session)
+                  }}
+                  title="세션 이름 변경"
+                  className={`rounded p-0.5 text-overlay1 hover:bg-surface0 hover:text-text ${
+                    active ? '' : 'invisible group-hover:visible'
+                  }`}
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
               <button
                 onClick={(event) => {
                   event.stopPropagation()
@@ -363,6 +416,9 @@ export function ComposerSettings({
             {runnerLocked && activeRunner ? (
               <div className="mb-2 flex items-center gap-2 rounded-lg bg-surface0/60 px-2.5 py-2 text-[12px] text-subtext1">
                 <RunnerIcon runner={activeRunner} className="h-4 w-4 text-sapphire" />
+                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${providerBadgeClass(activeRunner.provider)}`}>
+                  {PROVIDER_LABEL[activeRunner.provider] ?? activeRunner.provider}
+                </span>
                 <span className="min-w-0 flex-1 truncate">{runnerLabel(activeRunner)}</span>
                 <Lock className="h-3.5 w-3.5 text-overlay1" />
               </div>
@@ -379,6 +435,9 @@ export function ComposerSettings({
                     }`}
                   >
                     <RunnerIcon runner={runner} className="h-4 w-4 text-sapphire" />
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${providerBadgeClass(runner.provider)}`}>
+                      {PROVIDER_LABEL[runner.provider] ?? runner.provider}
+                    </span>
                     <span className="min-w-0 flex-1 truncate">{runnerLabel(runner)}</span>
                   </button>
                 ))}

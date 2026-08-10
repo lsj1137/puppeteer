@@ -35,9 +35,11 @@ function migrate(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS project (
       path         TEXT PRIMARY KEY,
+      alias        TEXT,
       runner_id    TEXT,
       added_at     INTEGER NOT NULL,
-      last_used_at INTEGER
+      last_used_at INTEGER,
+      sort_order   INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS session (
@@ -125,6 +127,17 @@ function migrate(): void {
   addColumn('session', 'agent_name', 'TEXT')
   addColumn('session', 'worktree', 'TEXT')
   addColumn('session', 'worktree_cleaned', 'INTEGER NOT NULL DEFAULT 0')
+  addColumn('project', 'sort_order', 'INTEGER')
+  addColumn('project', 'alias', 'TEXT')
+  db.exec(`
+    WITH ranked AS (
+      SELECT path, ROW_NUMBER() OVER (ORDER BY COALESCE(last_used_at, added_at) DESC) - 1 AS position
+      FROM project
+    )
+    UPDATE project
+    SET sort_order = (SELECT position FROM ranked WHERE ranked.path = project.path)
+    WHERE sort_order IS NULL
+  `)
 
   // 이전 버전에서 worktree를 정리하면 흔적이 모두 사라졌다. 생성 로그가 남은
   // 세션만 정리된 상태로 복구해, 재개 시 원본 폴더로 조용히 돌아가지 않게 한다.
@@ -200,17 +213,44 @@ export function setWorktreeIntegration(
 export function listProjects(): StoredProject[] {
   return db
     .prepare(
-      `SELECT path, runner_id AS runnerId, added_at AS addedAt, last_used_at AS lastUsedAt
-       FROM project ORDER BY COALESCE(last_used_at, added_at) DESC`,
+      `SELECT path, alias, runner_id AS runnerId, added_at AS addedAt, last_used_at AS lastUsedAt,
+              sort_order AS sortOrder
+       FROM project
+       ORDER BY sort_order IS NULL, sort_order ASC, COALESCE(last_used_at, added_at) DESC`,
     )
     .all() as unknown as StoredProject[]
 }
 
 export function addProject(path: string): void {
   db.prepare(
-    `INSERT INTO project (path, added_at, last_used_at) VALUES (?, ?, ?)
+    `INSERT INTO project (path, added_at, last_used_at, sort_order)
+     VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM project))
      ON CONFLICT(path) DO UPDATE SET last_used_at = excluded.last_used_at`,
   ).run(path, now(), now())
+}
+
+export function reorderProjects(paths: string[]): void {
+  const existing = listProjects().map(({ path }) => path)
+  if (paths.length !== existing.length || new Set(paths).size !== paths.length) {
+    throw new Error('프로젝트 순서가 현재 목록과 일치하지 않습니다.')
+  }
+  const known = new Set(existing)
+  if (paths.some((path) => !known.has(path))) throw new Error('등록되지 않은 프로젝트가 포함되어 있습니다.')
+  db.exec('BEGIN')
+  try {
+    const update = db.prepare('UPDATE project SET sort_order = ? WHERE path = ?')
+    paths.forEach((path, index) => update.run(index, path))
+    db.exec('COMMIT')
+  } catch (error) {
+    db.exec('ROLLBACK')
+    throw error
+  }
+}
+
+export function renameProject(path: string, alias: string): StoredProject | undefined {
+  const normalized = alias.trim()
+  db.prepare('UPDATE project SET alias = ? WHERE path = ?').run(normalized || null, path)
+  return listProjects().find((project) => project.path === path)
 }
 
 export function removeProject(path: string): void {
@@ -309,6 +349,7 @@ export function projectStats(): ProjectStat[] {
   return db
     .prepare(
       `SELECT p.path,
+              p.alias,
               p.runner_id                      AS runnerId,
               p.last_used_at                   AS lastUsedAt,
               COUNT(s.id)                      AS sessionCount,
@@ -316,7 +357,7 @@ export function projectStats(): ProjectStat[] {
               MAX(s.started_at)                AS lastSessionAt
        FROM project p
        LEFT JOIN session s ON s.project_path = p.path
-       GROUP BY p.path
+       GROUP BY p.path, p.alias
        ORDER BY COALESCE(MAX(s.started_at), p.last_used_at, p.added_at) DESC`,
     )
     .all() as unknown as ProjectStat[]
@@ -370,6 +411,13 @@ export function appendEvent(sessionId: string, event: SessionEvent): void {
     JSON.stringify(event),
     now(),
   )
+}
+
+export function renameSession(id: string, title: string): StoredSession | undefined {
+  const next = title.trim().slice(0, 120)
+  if (!next) throw new Error('세션 이름을 입력해 주세요.')
+  db.prepare('UPDATE session SET title = ? WHERE id = ?').run(next, id)
+  return getSession(id)
 }
 
 /** 수동 커밋·병합으로 해결된 과거 Worktree 검토 알림이 다시 나타나지 않게 정리한다. */

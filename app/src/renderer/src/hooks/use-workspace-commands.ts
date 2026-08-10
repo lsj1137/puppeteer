@@ -153,7 +153,7 @@ export function useWorkspaceCommands({
     ...projects.map((project) => ({
       id: `pj:${project.path}`,
       group: '프로젝트',
-      label: baseName(project.path),
+      label: project.alias || baseName(project.path),
       hint: project.path,
       icon: FolderOpen,
       run: () => onSelectProject(project.path),

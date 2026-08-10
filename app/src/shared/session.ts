@@ -144,9 +144,12 @@ export interface DetectedRunner {
 
 export interface StoredProject {
   path: string
+  /** 사용자가 지정한 표시 이름. 비어 있으면 폴더명을 사용한다. */
+  alias: string | null
   runnerId: string | null
   addedAt: number
   lastUsedAt: number | null
+  sortOrder?: number | null
 }
 
 export interface StoredSession {
@@ -216,6 +219,7 @@ export interface GitHistoryEntry {
 
 export interface ProjectStat {
   path: string
+  alias: string | null
   runnerId: string | null
   lastUsedAt: number | null
   sessionCount: number

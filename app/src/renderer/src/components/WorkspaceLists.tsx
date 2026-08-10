@@ -1,4 +1,5 @@
-import { FolderPlus, Loader2, Monitor, ShieldAlert, Terminal, Trash2 } from 'lucide-react'
+import { useState } from 'react'
+import { FolderPlus, Loader2, Monitor, Pencil, ShieldAlert, Terminal, Trash2 } from 'lucide-react'
 import type {
   ApprovalRequest,
   DetectedRunner,
@@ -18,7 +19,10 @@ interface Props {
   running: RunningSession[]
   onDropProject: (path: string) => void
   onJump: (sessionId: string, projectPath: string) => void | Promise<void>
+  onOpenApproval: (approval: ApprovalRequest) => void | Promise<void>
   onPickFolder: () => void | Promise<void>
+  onRenameProject: (path: string, alias: string) => void | Promise<void>
+  onReorderProjects: (paths: string[]) => void
   onSelectProject: (path: string) => void | Promise<void>
 }
 
@@ -35,9 +39,22 @@ export default function WorkspaceLists(props: Props) {
     running,
     onDropProject,
     onJump,
+    onOpenApproval,
     onPickFolder,
+    onRenameProject,
+    onReorderProjects,
     onSelectProject,
   } = props
+  const [draggingProject, setDraggingProject] = useState<string>()
+  const [dropTarget, setDropTarget] = useState<string>()
+  const [editingProject, setEditingProject] = useState<string>()
+  const [projectAlias, setProjectAlias] = useState('')
+
+  const finishRename = (path: string): void => {
+    void onRenameProject(path, projectAlias)
+    setEditingProject(undefined)
+  }
+
 
   return (
     <>
@@ -51,7 +68,7 @@ export default function WorkspaceLists(props: Props) {
             return (
               <button
                 key={approval.id}
-                onClick={() => void onJump(approval.sessionId, projectPath)}
+                onClick={() => void onOpenApproval(approval)}
                 className="flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] hover:bg-surface0"
               >
                 <span className="font-mono text-subtext1">{approval.tool}</span>
@@ -109,21 +126,87 @@ export default function WorkspaceLists(props: Props) {
             return (
               <div
                 key={project.path}
+                draggable
+                onDragStart={(event) => {
+                  setDraggingProject(project.path)
+                  event.dataTransfer.effectAllowed = 'move'
+                  event.dataTransfer.setData('text/plain', project.path)
+                }}
+                onDragOver={(event) => {
+                  if (!draggingProject || draggingProject === project.path) return
+                  event.preventDefault()
+                  event.dataTransfer.dropEffect = 'move'
+                  setDropTarget(project.path)
+                }}
+                onDrop={(event) => {
+                  event.preventDefault()
+                  const source = draggingProject ?? event.dataTransfer.getData('text/plain')
+                  if (!source || source === project.path) return
+                  const paths = projects.map(({ path }) => path)
+                  const from = paths.indexOf(source)
+                  const to = paths.indexOf(project.path)
+                  if (from < 0 || to < 0) return
+                  const [moved] = paths.splice(from, 1)
+                  if (!moved) return
+                  paths.splice(to, 0, moved)
+                  onReorderProjects(paths)
+                  setDraggingProject(undefined)
+                  setDropTarget(undefined)
+                }}
+                onDragEnd={() => {
+                  setDraggingProject(undefined)
+                  setDropTarget(undefined)
+                }}
                 onClick={() => void onSelectProject(project.path)}
-                className={`group cursor-pointer rounded-md px-2 py-1.5 ${
+                className={`group relative cursor-grab rounded-md px-2 py-1.5 transition active:cursor-grabbing ${
+                  dropTarget === project.path ? 'bg-sapphire/10 ring-1 ring-sapphire/70' : ''
+                } ${draggingProject === project.path ? 'scale-[1.01] bg-surface1/80 shadow-md' : ''} ${
                   active ? 'bg-surface0' : 'hover:bg-surface0/50'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <span
-                    className={`flex-1 truncate text-sm ${active ? 'text-text' : 'text-subtext1'}`}
-                    title={project.path}
-                  >
-                    {baseName(project.path)}
-                  </span>
+                  {editingProject === project.path ? (
+                    <input
+                      autoFocus
+                      value={projectAlias}
+                      onChange={(event) => setProjectAlias(event.target.value)}
+                      onClick={(event) => event.stopPropagation()}
+                      onBlur={() => finishRename(project.path)}
+                      onKeyDown={(event) => {
+                        event.stopPropagation()
+                        if (event.key === 'Enter') finishRename(project.path)
+                        if (event.key === 'Escape') setEditingProject(undefined)
+                      }}
+                      className="min-w-0 flex-1 rounded border border-surface1 bg-base px-1.5 py-0.5 text-sm text-text outline-none focus:border-sapphire"
+                      aria-label="프로젝트 별칭"
+                    />
+                  ) : (
+                    <span
+                      className={`flex-1 truncate text-sm ${active ? 'text-text' : 'text-subtext1'}`}
+                      title={project.alias ? `${project.alias}\n${project.path}` : project.path}
+                      onDoubleClick={(event) => {
+                        event.stopPropagation()
+                        setProjectAlias(project.alias ?? baseName(project.path))
+                        setEditingProject(project.path)
+                      }}
+                    >
+                      {project.alias || baseName(project.path)}
+                    </span>
+                  )}
                   {live > 0 && (
                     <span className="shrink-0 rounded bg-green/20 px-1 text-[11px] text-green">{live}</span>
                   )}
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      setProjectAlias(project.alias ?? baseName(project.path))
+                      setEditingProject(project.path)
+                    }}
+                    className="hidden rounded p-0.5 text-overlay1 hover:bg-surface1 hover:text-text group-hover:block"
+                    title="프로젝트 별칭 변경"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
                   <button
                     onClick={(event) => {
                       event.stopPropagation()

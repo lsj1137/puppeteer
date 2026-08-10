@@ -8,7 +8,6 @@ import type {
   SessionStatus,
   StoredSession,
 } from '@shared/session'
-import { approvalNavigationPath } from '../lib/navigation'
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
@@ -29,12 +28,14 @@ export default function Overview({
   statusLabel,
   onOpenProject,
   onOpenSession,
+  onOpenApproval,
 }: {
   running: RunningSession[]
   approvals: ApprovalRequest[]
   statusLabel: (s: SessionStatus) => { label: string; color: string }
   onOpenProject: (path: string) => void
   onOpenSession: (sessionId: string, projectPath: string) => void
+  onOpenApproval: (approval: ApprovalRequest) => void
 }) {
   const [projects, setProjects] = useState<ProjectStat[]>([])
   const [recent, setRecent] = useState<StoredSession[]>([])
@@ -97,7 +98,7 @@ export default function Overview({
             {approvals.map((a) => (
               <button
                 key={a.id}
-                onClick={() => onOpenSession(a.sessionId, approvalNavigationPath(a))}
+                onClick={() => onOpenApproval(a)}
                 className="flex w-full items-center gap-2 rounded-md bg-peach/10 px-3 py-2 text-left text-[13px] hover:bg-peach/15"
               >
                 <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-peach" />
@@ -125,7 +126,7 @@ export default function Overview({
                 <div className="mb-1 flex items-center gap-2">
                   <Folder className="h-4 w-4 shrink-0 text-sapphire" />
                   <span className="flex-1 truncate text-sm font-medium text-text">
-                    {baseName(p.path)}
+                    {p.alias || baseName(p.path)}
                   </span>
                   {live > 0 && (
                     <span className="shrink-0 rounded bg-green/20 px-1.5 text-[11px] text-green">

@@ -10,6 +10,7 @@ interface UseSessionRunnerOptions {
   agentName?: string
   attachments: { path: string }[]
   busy: boolean
+  defaultRunnerId?: string
   nextRunnerId?: string
   pendingPrompt?: string
   runners: DetectedRunner[]
@@ -40,6 +41,7 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
     agentName,
     attachments,
     busy,
+    defaultRunnerId,
     nextRunnerId,
     pendingPrompt,
     runners,
@@ -120,8 +122,9 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
   const submit = useCallback(
     (text: string): void => {
       if (!activeProjectPath || !text || busy) return
-      const selectedRunnerId = nextRunnerId ?? selectedSession?.runnerId ?? activeProjectRunnerId
-      if (selectedRunnerId && runners.some(({ id }) => id === selectedRunnerId)) {
+      const selectedRunnerId =
+        nextRunnerId ?? selectedSession?.runnerId ?? activeProjectRunnerId ?? defaultRunnerId
+      if (selectedRunnerId && runners.some(({ id, available }) => id === selectedRunnerId && available)) {
         void run(selectedRunnerId, text)
         return
       }
@@ -137,6 +140,7 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
       activeProjectRunnerId,
       busy,
       chooseRunner,
+      defaultRunnerId,
       nextRunnerId,
       run,
       runners,

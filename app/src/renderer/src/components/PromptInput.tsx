@@ -106,6 +106,8 @@ const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptInput(
         }}
         onKeyDown={(event) => {
           const target = event.currentTarget
+          // Alt+방향키는 전역 프로젝트·세션 탐색 단축키에 맡긴다.
+          if (event.altKey && event.key.startsWith('Arrow')) return
           if (event.key === 'ArrowUp' && target.selectionStart === 0) {
             event.preventDefault()
             event.stopPropagation()

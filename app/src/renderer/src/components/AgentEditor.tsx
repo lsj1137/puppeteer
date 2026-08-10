@@ -253,7 +253,7 @@ export default function AgentEditor({
                           : 'bg-base text-overlay1 hover:text-subtext0'
                       }`}
                     >
-                      {baseName(p.path)}
+                      {p.alias || baseName(p.path)}
                     </button>
                   )
                 })}

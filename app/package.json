@@ -49,11 +49,15 @@
       {
         "from": "resources/icon.png",
         "to": "app-icon.png"
+      },
+      {
+        "from": "resources/icon.ico",
+        "to": "app-icon.ico"
       }
     ],
     "asar": true,
     "win": {
-      "icon": "icon.png",
+      "icon": "icon.ico",
       "target": [
         {
           "target": "nsis",

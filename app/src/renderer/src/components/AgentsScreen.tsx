@@ -496,7 +496,7 @@ function ExportAgentDialog({
               {projects.map((project) => (
                 <div key={project.path} className="rounded-lg bg-base p-3">
                   <div className="truncate text-[12px] font-medium text-text" title={project.path}>
-                    {baseName(project.path)}
+                    {project.alias || baseName(project.path)}
                   </div>
                   <div className="mt-0.5 truncate font-mono text-[10px] text-overlay1">
                     {project.path}

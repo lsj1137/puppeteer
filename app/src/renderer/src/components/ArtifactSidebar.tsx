@@ -9,6 +9,7 @@ import Code from './Code'
 interface Props {
   changes: ChangedFile[]
   open: boolean
+  focusArtifactRequest: number
   selectedId?: string
   view: SessionView
   width: number
@@ -25,6 +26,7 @@ interface Props {
 export default function ArtifactSidebar({
   changes,
   open,
+  focusArtifactRequest,
   selectedId,
   view,
   width,
@@ -109,6 +111,12 @@ export default function ArtifactSidebar({
     setTab(next)
     localStorage.setItem('ws.sidebarTab', next)
   }
+
+  useEffect(() => {
+    if (focusArtifactRequest <= 0) return
+    setTab('artifacts')
+    localStorage.setItem('ws.sidebarTab', 'artifacts')
+  }, [focusArtifactRequest])
   const startResize = (event: React.PointerEvent): void => {
     event.preventDefault()
     const move = (pointer: PointerEvent): void =>

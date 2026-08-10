@@ -53,6 +53,7 @@ import { useSessionViews } from './hooks/use-session-views'
 import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
 import { useWorkspaceCommands } from './hooks/use-workspace-commands'
+import { approvalNavigationPath } from './lib/navigation'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
@@ -93,8 +94,14 @@ export default function App() {
   const [running, setRunning] = useState<RunningSession[]>([])
 
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([])
+  const approvalReturnRef = useRef<{
+    projectPath?: string
+    sessionId?: string
+    screen: 'project' | 'overview' | 'agents' | 'memory' | 'skills'
+  } | undefined>(undefined)
   const [pendingPick, setPendingPick] = useState<string>()
   const [selectedArtifact, setSelectedArtifact] = useState<string>()
+  const [artifactFocusRequest, setArtifactFocusRequest] = useState(0)
   const [confirmDrop, setConfirmDrop] = useState<string>()
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [changes, setChanges] = useState<ChangedFile[]>([])
@@ -216,6 +223,7 @@ export default function App() {
     agentName,
     attachments,
     busy,
+    defaultRunnerId,
     nextRunnerId,
     pendingPrompt: pendingPick,
     runners,
@@ -449,6 +457,38 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // Alt+↑/↓ 프로젝트 이동 · Alt+←/→ 현재 프로젝트의 세션 이동
+  useEffect(() => {
+    const onNavigate = (event: KeyboardEvent): void => {
+      if (!event.altKey || event.ctrlKey || event.metaKey || event.defaultPrevented) return
+      const projectDelta = event.code === 'ArrowUp' ? -1 : event.code === 'ArrowDown' ? 1 : 0
+      const sessionDelta = event.code === 'ArrowLeft' ? -1 : event.code === 'ArrowRight' ? 1 : 0
+      if (!projectDelta && !sessionDelta) return
+
+      if (projectDelta && projects.length > 0) {
+        event.preventDefault()
+        const current = projects.findIndex(({ path }) => path === active)
+        const start = current >= 0 ? current : projectDelta > 0 ? -1 : 0
+        const next = (start + projectDelta + projects.length) % projects.length
+        const project = projects[next]
+        if (project) void selectProject(project.path)
+        return
+      }
+
+      if (sessionDelta && sessions.length > 0 && !showHome) {
+        event.preventDefault()
+        const current = sessions.findIndex(({ id }) => id === activeSession)
+        const start = current >= 0 ? current : sessionDelta > 0 ? -1 : 0
+        const next = (start + sessionDelta + sessions.length) % sessions.length
+        const session = sessions[next]
+        if (session) void openSession(session.id)
+      }
+    }
+    // capture 단계에서 받아 입력창·오버레이의 방향키 처리보다 먼저 실행한다.
+    window.addEventListener('keydown', onNavigate, true)
+    return () => window.removeEventListener('keydown', onNavigate, true)
+  }, [active, activeSession, openSession, projects, selectProject, sessions, showHome])
+
   // ── 동작 ──
   /** 이미지 파일을 프로젝트 내부 attachments 로 저장하고 미리보기를 만든다 */
   async function attachFiles(files: FileList | File[]): Promise<void> {
@@ -478,11 +518,66 @@ export default function App() {
     if (!activeSession) return
     const id = await addDiffArtifact(activeSession, path)
     setSelectedArtifact(id)
+    setArtifactFocusRequest((request) => request + 1)
   }
 
-  function decide(id: string, decision: ApprovalDecision): void {
-    void window.api.resolveApproval(id, decision)
-    setApprovals((prev) => prev.filter((a) => a.id !== id))
+  function focusArtifact(id: string): void {
+    setSelectedArtifact(id)
+    setArtifactsOpen(true)
+    localStorage.setItem('ws.artifacts', 'open')
+    setArtifactFocusRequest((request) => request + 1)
+  }
+
+  async function openApproval(approval: ApprovalRequest): Promise<void> {
+    if (!approvalReturnRef.current && (approval.sessionId !== activeSession || screen !== 'project')) {
+      approvalReturnRef.current = { projectPath: active, sessionId: activeSession, screen }
+    }
+    await jumpTo(approval.sessionId, approvalNavigationPath(approval))
+  }
+
+  async function decide(id: string, decision: ApprovalDecision): Promise<void> {
+    const decidedApproval = approvals.find((approval) => approval.id === id)
+    await window.api.resolveApproval(id, decision)
+    const remaining = await window.api.listOpenApprovals()
+    setApprovals(remaining)
+
+    const previous = approvalReturnRef.current
+    if (!previous) return
+    if (decidedApproval && remaining.some((approval) => approval.sessionId === decidedApproval.sessionId)) {
+      return
+    }
+    approvalReturnRef.current = undefined
+    if (previous.sessionId && previous.projectPath) {
+      await jumpTo(previous.sessionId, previous.projectPath)
+    } else if (previous.projectPath) {
+      await selectProject(previous.projectPath, false)
+    }
+    setScreen(previous.screen)
+  }
+
+  async function renameSession(sessionId: string, title: string): Promise<void> {
+    const renamed = await window.api.renameSession(sessionId, title)
+    if (!renamed) return
+    setSessions((current) => current.map((session) => session.id === sessionId ? renamed : session))
+    setRunning((current) => current.map((session) =>
+      session.id === sessionId ? { ...session, title: renamed.title || title } : session,
+    ))
+  }
+
+  function reorderProjects(paths: string[]): void {
+    setProjects((current) => {
+      const byPath = new Map(current.map((project) => [project.path, project]))
+      return paths.flatMap((path) => byPath.get(path) ? [byPath.get(path)!] : [])
+    })
+    void window.api.reorderProjects(paths).catch(() => {
+      void window.api.listProjects().then(setProjects)
+    })
+  }
+
+  async function renameProject(path: string, alias: string): Promise<void> {
+    const renamed = await window.api.renameProject(path, alias)
+    if (!renamed) return
+    setProjects((current) => current.map((project) => project.path === path ? renamed : project))
   }
 
   /**
@@ -644,7 +739,10 @@ export default function App() {
           running={running}
           onDropProject={setConfirmDrop}
           onJump={jumpTo}
+          onOpenApproval={openApproval}
           onPickFolder={pickFolder}
+          onRenameProject={renameProject}
+          onReorderProjects={reorderProjects}
           onSelectProject={selectProject}
         />
 
@@ -670,6 +768,7 @@ export default function App() {
           onCloseTabMenu={() => setTabMenu(false)}
           onNewSession={newSession}
           onOpenSession={(sessionId) => void openSession(sessionId)}
+          onRenameSession={renameSession}
           onDeleteSession={(session) => {
             setSessionDeleteError(undefined)
             setConfirmDelSession(session)
@@ -713,6 +812,7 @@ export default function App() {
               statusLabel={(st) => STATUS[st]}
               onOpenProject={selectProject}
               onOpenSession={(id, path) => void jumpTo(id, path)}
+              onOpenApproval={(approval) => void openApproval(approval)}
             />
           )}
         </main>
@@ -749,7 +849,7 @@ export default function App() {
           <ConversationEntries
             view={view}
             selectedArtifact={selectedArtifact}
-            onSelectArtifact={setSelectedArtifact}
+            onSelectArtifact={focusArtifact}
             onOpenMemory={() => setScreen('memory')}
           />
 
@@ -820,6 +920,7 @@ export default function App() {
           view={view}
           changes={changes}
           selectedId={selectedArtifact}
+          focusArtifactRequest={artifactFocusRequest}
           onSelect={setSelectedArtifact}
           onOpenDiff={openDiff}
           sessionId={selected?.id}

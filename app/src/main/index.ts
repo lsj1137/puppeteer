@@ -11,7 +11,7 @@ import * as memory from './memory'
 import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
 import { commitProjectMemory, gitHistory, isRepo, projectMemoryDirty } from './git'
-import { initNotifications, setNotifyEnabled } from './notify'
+import { APP_USER_MODEL_ID, initNotifications, setNotifyEnabled } from './notify'
 import { applyUpdate, checkUpdate, fetchFromFile, fetchFromUrl } from './agent-fetch'
 import { AppUpdateManager } from './app-update'
 import type { StartSessionInput } from './session-manager'
@@ -54,8 +54,16 @@ const e2eMode = process.env['AGENT_WORKSPACE_E2E'] === '1'
 const e2eUserData = process.env['AGENT_WORKSPACE_E2E_USER_DATA']
 
 // Windows 작업표시줄은 창 icon보다 AppUserModelID로 실행 파일·바로가기 그룹 아이콘을
-// 결정한다. electron-builder의 appId와 맞춰야 Electron 기본 로고로 묶이지 않는다.
-if (process.platform === 'win32') app.setAppUserModelId('com.lsj1137.puppeteer')
+// 결정한다. 설치본은 electron-builder appId와 맞추고 개발본은 별도 그룹으로 분리한다.
+const runtimeAppUserModelId = app.isPackaged
+  ? APP_USER_MODEL_ID
+  : `${APP_USER_MODEL_ID}.dev`
+
+app.setName('Puppeteer')
+// app.getName() 이 userData 경로(<appData>/<name>)를 결정한다. 표시 이름을 바꾸면
+// 기존 프로젝트·세션 DB 를 못 읽고 빈 DB 가 새로 생기므로 위치를 명시적으로 고정한다.
+app.setPath('userData', join(app.getPath('appData'), 'agent-workspace'))
+if (process.platform === 'win32') app.setAppUserModelId(runtimeAppUserModelId)
 
 if (smokeMode && smokeUserData) app.setPath('userData', smokeUserData)
 if (e2eMode && e2eUserData) app.setPath('userData', e2eUserData)
@@ -86,10 +94,30 @@ function loadRenderer(win: BrowserWindow, hash?: string): void {
   }
 }
 
-function createWindow(getActiveWorkCount: () => number, onConfirmedClose: () => void): BrowserWindow {
-  const icon = app.isPackaged
+function appIconPath(): string {
+  if (process.platform === 'win32') {
+    return app.isPackaged
+      ? join(process.resourcesPath, 'app-icon.ico')
+      : join(app.getAppPath(), 'resources', 'icon.ico')
+  }
+  return app.isPackaged
     ? join(process.resourcesPath, 'app-icon.png')
     : join(app.getAppPath(), 'resources', 'icon.png')
+}
+
+/** 개발용 electron.exe와 설치본 모두 같은 Windows 작업표시줄 정체성을 사용한다. */
+function applyWindowIdentity(win: BrowserWindow, icon: string): void {
+  win.setIcon(icon)
+  if (process.platform !== 'win32') return
+  win.setAppDetails({
+    appId: runtimeAppUserModelId,
+    appIconPath: app.isPackaged ? process.execPath : icon,
+    appIconIndex: 0,
+  })
+}
+
+function createWindow(getActiveWorkCount: () => number, onConfirmedClose: () => void): BrowserWindow {
+  const icon = appIconPath()
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -128,7 +156,11 @@ function createWindow(getActiveWorkCount: () => number, onConfirmedClose: () => 
       win.close()
     }
   })
-  if (!smokeMode && !e2eMode) win.on('ready-to-show', () => win.show())
+  applyWindowIdentity(win, icon)
+  if (!smokeMode && !e2eMode) win.on('ready-to-show', () => {
+    applyWindowIdentity(win, icon)
+    win.show()
+  })
   win.on('closed', () => { mainWindow = undefined })
 
   // 파일 드롭이 렌더러에서 처리되지 않았을 때 창이 그 파일로 이동하는 것을 막는다
@@ -150,6 +182,7 @@ function createConflictResolverWindow(
   onClosed: () => void | Promise<void>,
 ): void {
   conflictResolvers.set(request.token, request)
+  const icon = appIconPath()
   const win = new BrowserWindow({
     width: 1500,
     height: 920,
@@ -158,13 +191,18 @@ function createConflictResolverWindow(
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0b0d10',
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
     },
   })
+  applyWindowIdentity(win, icon)
   conflictResolverWindows.set(request.sessionId, { token: request.token, win })
-  win.on('ready-to-show', () => win.show())
+  win.on('ready-to-show', () => {
+    applyWindowIdentity(win, icon)
+    win.show()
+  })
   win.on('closed', () => {
     conflictResolvers.delete(request.token)
     if (conflictResolverWindows.get(request.sessionId)?.token === request.token) {
@@ -207,6 +245,8 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('project:list', () => db.listProjects())
+  ipcMain.handle('project:reorder', (_e, paths: string[]) => db.reorderProjects(paths))
+  ipcMain.handle('project:rename', (_e, path: string, alias: string) => db.renameProject(path, alias))
   ipcMain.handle('project:remove', (_e, path: string) => db.removeProject(path))
   ipcMain.handle('project:setRunner', (_e, path: string, runnerId: string) =>
     db.setProjectRunner(path, runnerId),
@@ -215,6 +255,9 @@ app.whenReady().then(() => {
   ipcMain.handle('session:list', (_e, projectPath: string) => db.listSessions(projectPath))
   ipcMain.handle('session:events', (_e, sessionId: string) => db.listEvents(sessionId))
   ipcMain.handle('session:get', (_e, sessionId: string) => db.getSession(sessionId))
+  ipcMain.handle('session:rename', (_e, sessionId: string, title: string) =>
+    sessions.renameSession(sessionId, title),
+  )
   ipcMain.handle('approval:open', () => db.listOpenApprovals())
   ipcMain.handle('overview:stats', () => ({
     projects: db.projectStats(),

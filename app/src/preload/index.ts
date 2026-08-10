@@ -73,6 +73,9 @@ const api = {
   pickProject: (): Promise<string | undefined> => ipcRenderer.invoke('project:pick'),
 
   listProjects: (): Promise<StoredProject[]> => ipcRenderer.invoke('project:list'),
+  reorderProjects: (paths: string[]): Promise<void> => ipcRenderer.invoke('project:reorder', paths),
+  renameProject: (path: string, alias: string): Promise<StoredProject | undefined> =>
+    ipcRenderer.invoke('project:rename', path, alias),
   removeProject: (path: string): Promise<void> => ipcRenderer.invoke('project:remove', path),
   setProjectRunner: (path: string, runnerId: string): Promise<void> =>
     ipcRenderer.invoke('project:setRunner', path, runnerId),
@@ -81,6 +84,8 @@ const api = {
     ipcRenderer.invoke('session:list', projectPath),
   getSession: (sessionId: string): Promise<StoredSession | undefined> =>
     ipcRenderer.invoke('session:get', sessionId),
+  renameSession: (sessionId: string, title: string): Promise<StoredSession | undefined> =>
+    ipcRenderer.invoke('session:rename', sessionId, title),
   listEvents: (sessionId: string): Promise<StoredEvent[]> =>
     ipcRenderer.invoke('session:events', sessionId),
   listOpenApprovals: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke('approval:open'),

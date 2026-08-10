@@ -69,6 +69,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     onSubmitToSession,
   } = props
   const [queuedPrompt, setQueuedPrompt] = useState<{ text: string; sessionId: string }>()
+  const visibleQueuedPrompt = queuedPrompt?.sessionId === activeSessionId ? queuedPrompt : undefined
 
   useEffect(() => {
     if (!queuedPrompt || runningSessionIds.includes(queuedPrompt.sessionId)) return
@@ -84,10 +85,10 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
         onAnnotate={onAnnotate}
         onRemove={onRemoveAttachment}
       />
-      {queuedPrompt && (
+      {visibleQueuedPrompt && (
         <div className="mb-2 flex items-center gap-2 rounded-md border border-sapphire/25 bg-sapphire/5 px-2.5 py-1.5 text-[11px]">
           <span className="shrink-0 font-medium text-sapphire">다음 지시</span>
-          <span className="min-w-0 flex-1 truncate text-subtext1">{queuedPrompt.text}</span>
+          <span className="min-w-0 flex-1 truncate text-subtext1">{visibleQueuedPrompt.text}</span>
           <button
             type="button"
             onClick={() => setQueuedPrompt(undefined)}
@@ -134,7 +135,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
           busy={busy}
           historyKey={historyKey}
           initialHistory={promptHistory}
-          queued={Boolean(queuedPrompt)}
+          queued={Boolean(visibleQueuedPrompt)}
           onQueue={(text) => {
             if (activeSessionId) setQueuedPrompt({ text, sessionId: activeSessionId })
           }}
