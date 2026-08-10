@@ -69,7 +69,7 @@
       "artifactName": "Puppeteer-${version}-Setup-${arch}.${ext}"
     },
     "mac": {
-      "forceCodeSigning": true,
+      "forceCodeSigning": false,
       "icon": "icon.png",
       "target": [
         "dmg",

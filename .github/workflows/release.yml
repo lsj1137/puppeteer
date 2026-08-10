@@ -35,7 +35,7 @@ jobs:
             exit 1
           fi
 
-      # macOS 배포 정보가 하나도 없으면 Windows 전용 Release로 진행한다.
+      # macOS signing 정보가 하나도 없으면 unsigned DMG/ZIP도 함께 게시한다.
       # 일부만 설정된 상태는 구성 오류이므로 게시 전에 실패시킨다.
       - name: Inspect macOS signing and notarization secrets
         id: macos-signing
@@ -53,7 +53,7 @@ jobs:
           done
           if [ "$count" -eq 0 ]; then
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "macOS signing is not configured; publishing a Windows-only release."
+            echo "macOS signing is not configured; publishing unsigned macOS artifacts."
           elif [ "$count" -eq 5 ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
@@ -123,7 +123,6 @@ jobs:
 
   macos:
     needs: [preflight, windows]
-    if: ${{ needs.preflight.outputs.macos-signing-ready == 'true' }}
     runs-on: macos-latest
     defaults:
       run:
@@ -146,9 +145,19 @@ jobs:
       - name: Verify
         run: npm run verify
 
+      - name: Report macOS signing mode
+        shell: bash
+        run: |
+          if [ "${{ needs.preflight.outputs.macos-signing-ready }}" = "true" ]; then
+            echo "Building signed and notarized macOS artifacts."
+          else
+            echo "Building unsigned macOS artifacts. Users must bypass Gatekeeper manually."
+          fi
+
       - name: Build universal macOS release
         run: npx electron-builder --mac dmg zip --universal --publish never
         env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ needs.preflight.outputs.macos-signing-ready == 'true' && 'true' || 'false' }}
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
