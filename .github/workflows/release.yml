@@ -154,10 +154,16 @@ jobs:
             echo "Building unsigned macOS artifacts. Users must bypass Gatekeeper manually."
           fi
 
-      - name: Build universal macOS release
+      - name: Build unsigned universal macOS release
+        if: ${{ needs.preflight.outputs.macos-signing-ready != 'true' }}
         run: npx electron-builder --mac dmg zip --universal --publish never
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ needs.preflight.outputs.macos-signing-ready == 'true' && 'true' || 'false' }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build signed universal macOS release
+        if: ${{ needs.preflight.outputs.macos-signing-ready == 'true' }}
+        run: npx electron-builder --mac dmg zip --universal --publish never
+        env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
