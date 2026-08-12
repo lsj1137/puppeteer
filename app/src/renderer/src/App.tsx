@@ -205,6 +205,9 @@ export default function App() {
   const theme = useTheme()
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  /** 새 항목이 렌더되기 직전 사용자가 하단을 보고 있었는지. state는 렌더가 늦어 ref로 즉시 보존한다. */
+  const followingBottomRef = useRef(true)
+  const previousScrollSessionRef = useRef<string>()
   const tabBarRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<PromptInputHandle>(null)
   const focusPrompt = useCallback(() => taRef.current?.focus(), [])
@@ -420,9 +423,16 @@ export default function App() {
     })
   }, [])
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
-  }, [view.entries, myApprovals.length])
+  useLayoutEffect(() => {
+    const element = scrollRef.current
+    if (!element) return
+    const changedSession = previousScrollSessionRef.current !== activeSession
+    previousScrollSessionRef.current = activeSession
+    if (!changedSession && !followingBottomRef.current) return
+    element.scrollTo({ top: element.scrollHeight })
+    followingBottomRef.current = true
+    setShowScrollToBottom(false)
+  }, [activeSession, view.entries, myApprovals.length])
 
   // 변경 파일은 세션이 바뀌거나 멈출 때 갱신한다
   useEffect(() => {
@@ -921,10 +931,10 @@ export default function App() {
         ref={scrollRef}
         onScroll={(event) => {
           const target = event.currentTarget
+          const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight
+          followingBottomRef.current = distanceFromBottom <= 48
           setScrolled(target.scrollTop > 8)
-          setShowScrollToBottom(
-            target.scrollHeight - target.scrollTop - target.clientHeight > 48,
-          )
+          setShowScrollToBottom(distanceFromBottom > 48)
         }}
         onWheel={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
         onTouchMove={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
@@ -1001,6 +1011,7 @@ export default function App() {
         <button
           type="button"
           onClick={() => {
+            followingBottomRef.current = true
             scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
           }}
           title="대화 맨 아래로"
