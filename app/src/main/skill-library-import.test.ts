@@ -25,4 +25,16 @@ describe('Skill import preview', () => {
       ignoredFrontmatter: ['license', 'metadata'],
     })
   })
+
+  it.each([
+    ['UTF-8 BOM', '\uFEFF---\nname: bom-skill\ndescription: BOM 파일\n---\n\n# 본문\n'],
+    ['outer Markdown fence', '```markdown\n---\nname: fenced-skill\ndescription: 코드펜스 파일\n---\n\n# 본문\n```'],
+  ])('accepts %s around valid frontmatter', (_label, source) => {
+    const dir = mkdtempSync(join(tmpdir(), 'puppeteer-skill-import-'))
+    dirs.push(dir)
+    const path = join(dir, 'SKILL.md')
+    writeFileSync(path, source)
+
+    expect(previewImport(path).skill.content).toBe('# 본문')
+  })
 })

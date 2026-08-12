@@ -8,6 +8,14 @@ import { applySkillStates, mergeSkillsBySpecificity } from '@shared/skills'
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
 const safeName = (name: string): boolean => /^[A-Za-z0-9가-힣_-]+$/.test(name)
 
+/** Windows 편집기의 BOM과 채팅 예시를 통째로 저장한 바깥 Markdown fence를 제거한다. */
+function normalizeSkillMarkdown(raw: string): string {
+  let normalized = raw.replace(/^\uFEFF/, '')
+  const fenced = /^\s*```(?:markdown|md)?\s*\r?\n([\s\S]*?)\r?\n```\s*$/i.exec(normalized)
+  if (fenced) normalized = fenced[1]
+  return normalized.trimStart()
+}
+
 function root(scope: SkillScope, projectPath?: string, agentName?: string): string {
   if (scope === 'project') {
     if (!projectPath) throw new Error('Project Skill에는 프로젝트가 필요합니다.')
@@ -31,7 +39,7 @@ function parseFile(
   agentName?: string,
 ): SkillDef | undefined {
   try {
-    const raw = readFileSync(path, 'utf8')
+    const raw = normalizeSkillMarkdown(readFileSync(path, 'utf8'))
     const match = FRONTMATTER.exec(raw)
     if (!match) return undefined
     const fm = (parse(match[1]) ?? {}) as Record<string, unknown>
@@ -55,7 +63,7 @@ function parseFile(
 
 /** 외부 SKILL.md를 파싱만 한다. 저장 범위와 정본 생성은 사용자가 검토한 뒤 결정한다. */
 export function previewImport(path: string): SkillImportPreview {
-  const raw = readFileSync(path, 'utf8')
+  const raw = normalizeSkillMarkdown(readFileSync(path, 'utf8'))
   const match = FRONTMATTER.exec(raw)
   if (!match) throw new Error('SKILL.md frontmatter(---)를 찾지 못했습니다.')
   const fm = (parse(match[1]) ?? {}) as Record<string, unknown>
@@ -64,10 +72,10 @@ export function previewImport(path: string): SkillImportPreview {
   if (!name) throw new Error('Skill 이름을 확인하지 못했습니다.')
   const known = new Set(['name', 'description'])
   const ignoredFrontmatter = Object.keys(fm).filter((key) => !known.has(key))
-  const normalized = raw.replace(/\\/g, '/').toLowerCase()
+  const normalizedPath = path.replace(/\\/g, '/').toLowerCase()
   return {
     sourcePath: path,
-    sourceFormat: normalized.includes('/.codex/skills/') || normalized.endsWith('/skill.md')
+    sourceFormat: normalizedPath.includes('/.codex/skills/') || normalizedPath.endsWith('/skill.md')
       ? 'codex-skill'
       : 'generic-skill',
     skill: {
