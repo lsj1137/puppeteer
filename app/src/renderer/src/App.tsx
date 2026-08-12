@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   Paperclip,
   Settings2,
+  ShieldAlert,
 } from 'lucide-react'
 import CommandPalette from './components/CommandPalette'
 import { emptyAgent } from './components/AgentEditor'
@@ -102,6 +103,7 @@ export default function App() {
   const approvalReturnRef = useRef<{
     projectPath?: string
     sessionId?: string
+    scrollTop?: number
     screen: 'project' | 'overview' | 'agents' | 'memory' | 'skills'
   } | undefined>(undefined)
   const [pendingPick, setPendingPick] = useState<string>()
@@ -208,6 +210,10 @@ export default function App() {
   /** 새 항목이 렌더되기 직전 사용자가 하단을 보고 있었는지. state는 렌더가 늦어 ref로 즉시 보존한다. */
   const followingBottomRef = useRef(true)
   const previousScrollSessionRef = useRef<string>()
+  /** 승인 처리를 위해 잠시 떠났다가 복귀할 때만 적용할 대화 위치. */
+  const pendingScrollRestoreRef = useRef<{ sessionId: string; scrollTop: number }>()
+  /** 같은 세션의 하단 승인 카드로 잠시 이동하기 전 읽던 위치. */
+  const inlineApprovalReturnRef = useRef<{ sessionId: string; scrollTop: number }>()
   const tabBarRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<PromptInputHandle>(null)
   const focusPrompt = useCallback(() => taRef.current?.focus(), [])
@@ -426,6 +432,16 @@ export default function App() {
   useLayoutEffect(() => {
     const element = scrollRef.current
     if (!element) return
+    const pendingRestore = pendingScrollRestoreRef.current
+    if (activeSession && pendingRestore?.sessionId === activeSession) {
+      pendingScrollRestoreRef.current = undefined
+      element.scrollTo({ top: pendingRestore.scrollTop })
+      const distanceFromBottom = element.scrollHeight - pendingRestore.scrollTop - element.clientHeight
+      followingBottomRef.current = distanceFromBottom <= 48
+      setShowScrollToBottom(distanceFromBottom > 48)
+      previousScrollSessionRef.current = activeSession
+      return
+    }
     const changedSession = previousScrollSessionRef.current !== activeSession
     previousScrollSessionRef.current = activeSession
     if (!changedSession && !followingBottomRef.current) return
@@ -572,7 +588,12 @@ export default function App() {
 
   async function openApproval(approval: ApprovalRequest): Promise<void> {
     if (!approvalReturnRef.current && (approval.sessionId !== activeSession || screen !== 'project')) {
-      approvalReturnRef.current = { projectPath: active, sessionId: activeSession, screen }
+      approvalReturnRef.current = {
+        projectPath: active,
+        sessionId: activeSession,
+        scrollTop: screen === 'project' ? scrollRef.current?.scrollTop : undefined,
+        screen,
+      }
     }
     await jumpTo(approval.sessionId, approvalNavigationPath(approval))
   }
@@ -581,20 +602,45 @@ export default function App() {
     const decidedApproval = approvals.find((approval) => approval.id === id)
     await window.api.resolveApproval(id, decision)
     const remaining = await window.api.listOpenApprovals()
+    const remainingInDecidedSession = Boolean(
+      decidedApproval
+      && remaining.some((approval) => approval.sessionId === decidedApproval.sessionId),
+    )
+    const inlineReturn = inlineApprovalReturnRef.current
+    if (decidedApproval && inlineReturn?.sessionId === decidedApproval.sessionId) {
+      if (!remainingInDecidedSession) {
+        inlineApprovalReturnRef.current = undefined
+        pendingScrollRestoreRef.current = inlineReturn
+      }
+      setApprovals(remaining)
+      return
+    }
     setApprovals(remaining)
 
     const previous = approvalReturnRef.current
     if (!previous) return
-    if (decidedApproval && remaining.some((approval) => approval.sessionId === decidedApproval.sessionId)) {
-      return
-    }
+    if (remainingInDecidedSession) return
     approvalReturnRef.current = undefined
     if (previous.sessionId && previous.projectPath) {
+      if (previous.scrollTop !== undefined) {
+        pendingScrollRestoreRef.current = {
+          sessionId: previous.sessionId,
+          scrollTop: previous.scrollTop,
+        }
+      }
       await jumpTo(previous.sessionId, previous.projectPath)
     } else if (previous.projectPath) {
       await selectProject(previous.projectPath, false)
     }
     setScreen(previous.screen)
+  }
+
+  function openInlineApprovals(): void {
+    const element = scrollRef.current
+    if (!activeSession || !element || myApprovals.length === 0) return
+    inlineApprovalReturnRef.current = { sessionId: activeSession, scrollTop: element.scrollTop }
+    followingBottomRef.current = true
+    element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
   }
 
   async function renameSession(sessionId: string, title: string): Promise<void> {
@@ -1005,6 +1051,18 @@ export default function App() {
           )}
         </div>
       </main>
+      )}
+
+      {!showHome && showScrollToBottom && (
+        <button
+          type="button"
+          onClick={openInlineApprovals}
+          title="하단 승인 요청 보기"
+          aria-label={`승인 요청 ${myApprovals.length}개 보기`}
+          className={`col-start-2 row-start-2 z-20 mb-14 mr-3 self-end justify-self-end items-center gap-1.5 rounded-full border border-peach/40 bg-mantle/95 px-3 py-1.5 text-[11px] font-medium text-peach shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:bg-peach/10 ${myApprovals.length > 0 ? 'flex' : 'hidden'}`}
+        >
+          <ShieldAlert className="h-3.5 w-3.5" /> 승인 요청 {myApprovals.length}
+        </button>
       )}
 
       {!showHome && showScrollToBottom && (
