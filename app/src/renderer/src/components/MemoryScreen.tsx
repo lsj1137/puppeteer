@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
+  ArrowUpToLine,
   Bot,
   Check,
   ChevronDown,
@@ -74,6 +75,11 @@ export default function MemoryScreen() {
   const [proposals, setProposals] = useState<MemoryProposal[]>([])
   const [proposalBusy, setProposalBusy] = useState<number>()
   const [proposalError, setProposalError] = useState<string>()
+  const [promotionOpen, setPromotionOpen] = useState(false)
+  const [promotionTarget, setPromotionTarget] = useState('')
+  const [promotionText, setPromotionText] = useState('')
+  const [promotionBusy, setPromotionBusy] = useState(false)
+  const [promotionMessage, setPromotionMessage] = useState<string>()
   const [filter, setFilter] = useState('')
   /** 지금 열어둔 항목의 원본 — 저장 여부 판단용 */
   const [original, setOriginal] = useState('')
@@ -126,10 +132,47 @@ export default function MemoryScreen() {
     if (dirty && !confirm('저장하지 않은 변경이 있습니다. 버릴까요?')) return
     setSelected(e.id)
     setSaved(false)
+    setPromotionOpen(false)
+    setPromotionMessage(undefined)
     // 내용은 고른 것만 읽는다 — 자동 메모리는 100개가 넘을 수 있다
     const text = await window.api.readMemory(e.id)
     setOriginal(text)
     setDraft(text)
+  }
+
+  function openPromotion(): void {
+    const globals = entries.filter((item) => item.scope === 'global')
+    setPromotionTarget(globals[0]?.id ?? '')
+    setPromotionText(draft)
+    setPromotionMessage(undefined)
+    setPromotionOpen(true)
+  }
+
+  async function promoteToGlobal(): Promise<void> {
+    if (!entry || !promotionTarget || promotionBusy) return
+    setPromotionBusy(true)
+    setPromotionMessage(undefined)
+    try {
+      const result = await window.api.promoteMemoryToGlobal(
+        entry.id,
+        promotionTarget,
+        promotionText,
+      )
+      if (!result.ok) {
+        setPromotionMessage(result.message ?? '전역 Memory에 추가하지 못했습니다.')
+        return
+      }
+      setEntries((items) =>
+        items.map((item) =>
+          item.id === promotionTarget ? { ...item, exists: true, updatedAt: Date.now() } : item,
+        ),
+      )
+      setPromotionMessage(
+        result.added === false ? '이미 같은 내용이 전역 Memory에 있습니다.' : '전역 Memory에 복사했습니다.',
+      )
+    } finally {
+      setPromotionBusy(false)
+    }
   }
 
   async function save(): Promise<void> {
@@ -307,6 +350,17 @@ export default function MemoryScreen() {
               </div>
             </div>
 
+            {entry.scope !== 'global' && (
+              <button
+                onClick={openPromotion}
+                disabled={entries.every((item) => item.scope !== 'global')}
+                className="flex shrink-0 items-center gap-1 rounded-lg bg-sapphire/10 px-3 py-1.5 text-[12px] font-medium text-sapphire hover:bg-sapphire/20 disabled:opacity-40"
+                title="선택한 내용을 전역 Memory에 복사"
+              >
+                <ArrowUpToLine className="h-3.5 w-3.5" /> 전역으로 승격
+              </button>
+            )}
+
             {saved ? (
               <span className="flex shrink-0 items-center gap-1 py-1.5 text-[12px] text-green">
                 <Check className="h-3.5 w-3.5" /> 저장됨
@@ -395,11 +449,78 @@ export default function MemoryScreen() {
             </div>
           )}
 
+          {promotionOpen && entry.scope !== 'global' && (
+            <section className="mb-2 min-w-0 rounded-lg bg-sapphire/8 p-3 ring-1 ring-sapphire/20">
+              <div className="mb-2 flex items-start gap-2">
+                <ArrowUpToLine className="mt-0.5 h-4 w-4 shrink-0 text-sapphire" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-[12px] font-medium text-text">전역 Memory로 승격</div>
+                  <div className="mt-0.5 text-[11px] leading-relaxed text-overlay1">
+                    원본은 그대로 두고 아래에서 고른 내용만 전역 정본 끝에 추가합니다.
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPromotionOpen(false)}
+                  className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text"
+                  title="닫기"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <label className="mb-2 block text-[11px] text-subtext0">
+                대상 실행환경
+                <select
+                  value={promotionTarget}
+                  onChange={(event) => {
+                    setPromotionTarget(event.target.value)
+                    setPromotionMessage(undefined)
+                  }}
+                  className="mt-1 block w-full rounded-md bg-mantle px-2.5 py-2 text-[12px] text-text outline-none ring-1 ring-surface1 focus:ring-sapphire/40"
+                >
+                  {entries.filter((item) => item.scope === 'global').map((item) => (
+                    <option key={item.id} value={item.id}>{item.label} · {item.location}</option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-[11px] text-subtext0">
+                추가할 내용
+                <textarea
+                  value={promotionText}
+                  onChange={(event) => {
+                    setPromotionText(event.target.value)
+                    setPromotionMessage(undefined)
+                  }}
+                  spellCheck={false}
+                  className="mt-1 min-h-32 w-full resize-y rounded-md bg-mantle p-2.5 font-mono text-[12px] leading-relaxed text-text outline-none ring-1 ring-surface1 focus:ring-sapphire/40"
+                />
+              </label>
+
+              <div className="mt-2 flex items-center gap-2">
+                {promotionMessage && (
+                  <span className="min-w-0 flex-1 text-[11px] text-subtext0">{promotionMessage}</span>
+                )}
+                <button
+                  onClick={() => void promoteToGlobal()}
+                  disabled={!promotionTarget || !promotionText.trim() || promotionBusy}
+                  className="ml-auto flex shrink-0 items-center gap-1 rounded-md bg-sapphire/20 px-3 py-1.5 text-[11px] font-medium text-sapphire hover:bg-sapphire/30 disabled:opacity-40"
+                >
+                  {promotionBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUpToLine className="h-3.5 w-3.5" />}
+                  전역에 추가
+                </button>
+              </div>
+            </section>
+          )}
+
           <textarea
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void save()
+              if ((e.metaKey || e.ctrlKey) && (e.key.toLowerCase() === 's' || e.key === 'Enter')) {
+                e.preventDefault()
+                void save()
+              }
             }}
             spellCheck={false}
             placeholder="이 범위에서 늘 기억해야 할 것을 적습니다."
@@ -410,7 +531,7 @@ export default function MemoryScreen() {
             <span>{draft.length.toLocaleString()}자</span>
             {entry.updatedAt && <span>파일 수정 {when(entry.updatedAt)}</span>}
             {history.length > 0 && <span>앱에서 {history.length}번 변경 · 최근 {when(history[0].at)}</span>}
-            <span className="ml-auto">Ctrl + Enter 로 저장</span>
+            <span className="ml-auto">Ctrl + S 또는 Ctrl + Enter로 저장</span>
           </div>
         </div>
       ) : (

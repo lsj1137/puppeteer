@@ -16,6 +16,7 @@ import {
   rebaseWorktree,
   resolveWorktreeConflicts,
   worktreeConflictFile,
+  worktreeConnection,
   worktreeDiff,
   worktreeStatus,
 } from './git'
@@ -61,6 +62,14 @@ afterEach(async () => {
 })
 
 describe('worktree merge', () => {
+  it('detects when a persisted worktree is no longer registered in the origin', async () => {
+    const { origin, worktreePath } = await fixture()
+
+    await expect(worktreeConnection(origin, worktreePath)).resolves.toBe('connected')
+    await git(origin, ['worktree', 'remove', worktreePath])
+    await expect(worktreeConnection(origin, worktreePath)).resolves.toBe('detached')
+  })
+
   it('turns an index.lock failure into an actionable diagnostic', () => {
     const message = formatGitError(
       "fatal: Unable to create 'C:/repo/.git/worktrees/session/index.lock': File exists.",

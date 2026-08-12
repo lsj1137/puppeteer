@@ -19,6 +19,11 @@ import type {
 const exec = promisify(execFile)
 const repositoryMutationQueues = new Map<string, Promise<void>>()
 
+function canonicalPath(path: string): string {
+  const normalized = resolve(path.trim()).replace(/\\/g, '/').replace(/\/$/, '')
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized
+}
+
 /** 같은 저장소의 Memory·worktree 커밋·병합이 index/refs lock을 두고 경쟁하지 않게 한다. */
 async function serializeRepositoryMutation<T>(origin: string, task: () => Promise<T>): Promise<T> {
   const key = process.platform === 'win32' ? resolve(origin).toLowerCase() : resolve(origin)
@@ -55,6 +60,30 @@ async function git(cwd: string, args: string[]): Promise<string> {
     maxBuffer: 8 * 1024 * 1024,
   })
   return stdout
+}
+
+/** DB에 저장된 worktree가 원본 Git 등록과 실제 작업 폴더 양쪽에서 유효한지 확인한다. */
+export async function worktreeConnection(
+  origin: string,
+  dir: string,
+): Promise<'connected' | 'detached' | 'unavailable'> {
+  let originCommon: string
+  try {
+    originCommon = await git(origin, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+  } catch {
+    return 'unavailable'
+  }
+
+  try {
+    const worktreeCommon = await git(dir, [
+      'rev-parse',
+      '--path-format=absolute',
+      '--git-common-dir',
+    ])
+    return canonicalPath(originCommon) === canonicalPath(worktreeCommon) ? 'connected' : 'detached'
+  } catch {
+    return 'detached'
+  }
 }
 
 /** 사이드바에서 사용할 최근 Git 이력. 구분 문자를 써서 로케일과 공백에 영향받지 않게 파싱한다. */

@@ -181,6 +181,12 @@ const api = {
   readMemory: (id: string): Promise<string> => ipcRenderer.invoke('memory:read', id),
   saveMemory: (id: string, content: string): Promise<boolean> =>
     ipcRenderer.invoke('memory:save', id, content),
+  promoteMemoryToGlobal: (
+    sourceId: string,
+    targetId: string,
+    content: string,
+  ): Promise<{ ok: boolean; added?: boolean; message?: string }> =>
+    ipcRenderer.invoke('memory:promoteGlobal', sourceId, targetId, content),
   memoryHistory: (entryId?: string): Promise<MemoryEdit[]> =>
     ipcRenderer.invoke('memory:history', entryId),
   memoryProposals: (): Promise<MemoryProposal[]> => ipcRenderer.invoke('memory:proposals'),

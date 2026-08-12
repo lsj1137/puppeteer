@@ -142,6 +142,30 @@ export function save(id: string, content: string): boolean {
   return true
 }
 
+export type MemoryPromotionResult =
+  | { ok: true; added: boolean }
+  | { ok: false; message: string }
+
+/** 원본은 유지하고 사용자가 고른 내용만 Global Memory 정본에 추가한다. */
+export function promoteToGlobal(
+  source: MemoryEntry,
+  target: MemoryEntry,
+  content: string,
+): MemoryPromotionResult {
+  if (source.scope === 'global') return { ok: false, message: '전역 Memory는 승격할 수 없습니다.' }
+  if (target.scope !== 'global') return { ok: false, message: '대상은 전역 Memory여야 합니다.' }
+
+  const addition = content.trim()
+  if (!addition) return { ok: false, message: '전역에 추가할 내용을 입력하세요.' }
+
+  const current = read(target.id)
+  if (current.includes(addition)) return { ok: true, added: false }
+  const next = current.trimEnd() ? `${current.trimEnd()}\n\n${addition}\n` : `${addition}\n`
+  return save(target.id, next)
+    ? { ok: true, added: true }
+    : { ok: false, message: '전역 Memory 파일을 저장하지 못했습니다.' }
+}
+
 /** 승인 시점의 최신 정본에 추가한다. 제안 당시 사본으로 덮어쓰지 않는다. */
 export function applyProposal(proposal: MemoryProposal): boolean {
   const current = read(proposal.entryId)

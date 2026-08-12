@@ -1,4 +1,5 @@
-import { Bell, Download, GitMerge, HelpCircle, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
+import { useState } from 'react'
+import { Bell, Download, GitMerge, HelpCircle, ImagePlus, Keyboard, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
 import type { DetectedRunner, WorktreeIntegrationMode } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import type { AppUpdateState } from '@shared/app-update'
@@ -58,6 +59,8 @@ export default function Settings({
   hasRunningSessions: boolean
   onClose: () => void
 }) {
+  const [showHelp, setShowHelp] = useState(false)
+
   const Row = ({
     label,
     hint,
@@ -100,7 +103,9 @@ export default function Settings({
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-crust/60 p-6 backdrop-blur-[2px]"
       onKeyDown={(e) => {
-        if (e.key === 'Escape') onClose()
+        if (e.key !== 'Escape') return
+        if (showHelp) setShowHelp(false)
+        else onClose()
       }}
     >
       <div className="flex max-h-full w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface0">
@@ -279,6 +284,17 @@ export default function Settings({
               )}
             </div>
           </Row>
+
+          <Row label="도움말">
+            <button
+              type="button"
+              onClick={() => setShowHelp(true)}
+              className="flex items-center gap-2 rounded-md bg-base px-3 py-2 text-[12px] text-subtext1 ring-1 ring-transparent hover:bg-surface0/70 hover:text-text hover:ring-surface1"
+            >
+              <HelpCircle className="h-4 w-4 text-sapphire" />
+              사용 팁과 단축키 보기
+            </button>
+          </Row>
         </div>
 
         <div className="px-5 pb-5 pt-3 text-[11px] leading-relaxed text-overlay1">
@@ -286,6 +302,74 @@ export default function Settings({
           씁니다 — 앱 없이 CLI 를 직접 실행해도 같은 설정이 적용됩니다.
         </div>
       </div>
+
+      {showHelp && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-crust/75 p-6 backdrop-blur-[3px]"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setShowHelp(false)
+          }}
+        >
+          <section className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
+            <header className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
+              <HelpCircle className="mt-1 h-4 w-4 shrink-0 text-sapphire" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-[16px] font-semibold text-text">Puppeteer 사용 팁</h2>
+                <p className="mt-0.5 text-[11px] text-overlay1">Esc 또는 바깥 영역을 누르면 닫힙니다.</p>
+              </div>
+              <button onClick={() => setShowHelp(false)} title="닫기" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+            <div className="grid min-h-0 gap-3 overflow-y-auto p-5 sm:grid-cols-2">
+              <HelpGroup icon={Keyboard} title="입력과 실행" tips={[
+                ['Enter', '지시 실행 · 실행 중이면 다음 지시 예약'],
+                ['Shift + Enter', '입력창 줄바꿈'],
+                ['↑ / ↓', '이전 지시 탐색'],
+                ['Ctrl + Space', '명령 팔레트 열기'],
+              ]} />
+              <HelpGroup icon={ImagePlus} title="이미지 첨부" tips={[
+                ['', '이미지를 앱 위로 드래그해 놓기'],
+                ['', '클립보드 이미지를 입력창에 붙여넣기'],
+                ['', '전송 전 미리보기에서 제거하거나 표시 추가'],
+              ]} />
+              <HelpGroup icon={Keyboard} title="빠른 이동" tips={[
+                ['Alt + ↑ / ↓', '프로젝트 이동'],
+                ['Alt + ← / →', '세션 이동'],
+                ['', '프로젝트와 세션 탭을 드래그해 순서 변경'],
+              ]} />
+              <HelpGroup icon={Keyboard} title="저장과 승인" tips={[
+                ['Ctrl/Cmd + S', 'Memory 저장'],
+                ['Space', '이번만 허용'],
+                ['Enter', '이 세션 동안 허용'],
+                ['Esc', '승인 거부'],
+              ]} />
+            </div>
+          </section>
+        </div>
+      )}
     </div>
+  )
+}
+
+function HelpGroup({ icon: Icon, title, tips }: {
+  icon: typeof Keyboard
+  title: string
+  tips: Array<[string, string]>
+}): React.ReactElement {
+  return (
+    <section className="rounded-xl bg-base/70 p-3.5 ring-1 ring-surface0">
+      <div className="mb-2.5 flex items-center gap-2 text-[12px] font-semibold text-text">
+        <Icon className="h-4 w-4 text-sapphire" /> {title}
+      </div>
+      <div className="space-y-2">
+        {tips.map(([keys, text]) => (
+          <div key={`${keys}-${text}`} className="flex items-start gap-2 text-[11px] leading-relaxed text-subtext0">
+            {keys ? <kbd className="shrink-0 rounded bg-surface0 px-1.5 py-0.5 font-mono text-[10px] text-subtext1 ring-1 ring-surface1">{keys}</kbd> : <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-overlay1" />}
+            <span>{text}</span>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }

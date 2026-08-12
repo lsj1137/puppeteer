@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, app } from 'electron'
+import { BrowserWindow, Notification } from 'electron'
 import { execFile } from 'node:child_process'
 import type { ApprovalRequest, SessionStatus } from '@shared/session'
 
@@ -20,9 +20,8 @@ export const APP_USER_MODEL_ID = 'com.lsj1137.puppeteer'
 
 export function initNotifications(win: () => BrowserWindow | undefined): void {
   getWindow = win
-  // Windows 는 AppUserModelId 가 없으면 알림이 조용히 무시된다.
-  // 개발 중에는 electron.exe 가 잡히므로 명시적으로 지정한다.
-  if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID)
+  // AppUserModelID는 창 생성 전에 index.ts에서 환경에 맞게 한 번 설정한다.
+  // 여기서 다시 설정하면 개발용 ID가 설치본 ID로 덮여 작업표시줄 그룹이 섞인다.
 }
 
 export function setNotifyEnabled(v: boolean): void {

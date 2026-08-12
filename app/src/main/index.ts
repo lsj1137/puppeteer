@@ -112,7 +112,8 @@ function applyWindowIdentity(win: BrowserWindow, icon: string): void {
   if (process.platform !== 'win32') return
   win.setAppDetails({
     appId: runtimeAppUserModelId,
-    appIconPath: app.isPackaged ? process.execPath : icon,
+    // 실행 파일 리소스나 Windows 아이콘 캐시에 기대지 않고 동봉 ICO를 명시한다.
+    appIconPath: icon,
     appIconIndex: 0,
   })
 }
@@ -406,6 +407,17 @@ app.whenReady().then(() => {
     }
     return saved
   })
+  ipcMain.handle(
+    'memory:promoteGlobal',
+    async (_e, sourceId: string, targetId: string, content: string) => {
+      const runners = await detectRunners()
+      const entries = memory.list(runners, db.listProjects().map((project) => project.path))
+      const source = entries.find((entry) => entry.id === sourceId)
+      const target = entries.find((entry) => entry.id === targetId)
+      if (!source || !target) return { ok: false, message: 'Memory 항목을 다시 불러오세요.' }
+      return memory.promoteToGlobal(source, target, content)
+    },
+  )
   ipcMain.handle('checkpoint:build', (_e, sessionId: string) => buildCheckpoint(sessionId))
   ipcMain.handle('memory:history', (_e, entryId?: string) => db.memoryEdits(entryId))
   ipcMain.handle('memory:proposals', () => db.memoryProposals())

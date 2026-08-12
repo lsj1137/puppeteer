@@ -46,6 +46,7 @@ import {
   worktreeDiff as readWorktreeDiff,
   worktreeConflictFile as readWorktreeConflictFile,
   worktreeDirty,
+  worktreeConnection,
   worktreeStatus as inspectWorktree,
 } from './git'
 import { notifyApproval, notifyStatus } from './notify'
@@ -132,14 +133,31 @@ export class SessionManager {
 
     /** 새 세션은 기본 격리한다. 정리한 격리 세션은 현재 원본 HEAD에서 다시 격리한다. */
     let worktree = (prev?.worktree ?? undefined) as SessionWorktree | undefined
-    const recreateCleanedWorktree = Boolean(prev?.worktreeCleaned && !prev.worktree)
+    let detachedWorktreePath: string | undefined
+    if (worktree) {
+      const connection = await worktreeConnection(worktree.origin, worktree.path)
+      if (connection === 'unavailable') {
+        throw new Error('원본 Git 저장소에서 worktree 연결 상태를 확인하지 못했습니다. 경로와 Git 상태를 확인해 주세요.')
+      }
+      if (connection === 'detached') {
+        detachedWorktreePath = worktree.path
+        db.setWorktree(id, null)
+        worktree = undefined
+      }
+    }
+    const recreateCleanedWorktree = Boolean(
+      !worktree && (prev?.worktreeCleaned || detachedWorktreePath),
+    )
     if (
       !worktree &&
       shouldCreateWorktree(input.isolate, Boolean(prev), recreateCleanedWorktree)
     ) {
       const originSnapshot = await snapshot(input.cwd)
-      const dir = join(app.getPath('userData'), 'worktrees', id)
-      const branch = worktreeBranchName(id, recreateCleanedWorktree ? Date.now() : undefined)
+      const recreatedAt = recreateCleanedWorktree ? Date.now() : undefined
+      // 연결이 끊긴 기존 폴더는 사용자 파일이 남아 있을 수 있으므로 덮거나 지우지 않는다.
+      const dirName = recreatedAt === undefined ? id : `${id}-${recreatedAt.toString(36)}`
+      const dir = join(app.getPath('userData'), 'worktrees', dirName)
+      const branch = worktreeBranchName(id, recreatedAt)
       const made = await addWorktree(input.cwd, dir, branch)
       if (made) {
         worktree = { ...made, origin: input.cwd }
@@ -153,9 +171,11 @@ export class SessionManager {
         if (recreateCleanedWorktree) {
           this.persistAndSend(id, {
             t: 'notice',
-            level: 'info',
+            level: detachedWorktreePath ? 'warning' : 'info',
             title: '새 Worktree 생성',
-            text: '정리된 세션을 이어가기 위해 현재 원본 HEAD에서 새 worktree를 만들었습니다.',
+            text: detachedWorktreePath
+              ? `Git 연결이 끊긴 기존 폴더는 보존하고 현재 원본 HEAD에서 새 worktree를 만들었습니다. 기존 경로: ${detachedWorktreePath}`
+              : '정리된 세션을 이어가기 위해 현재 원본 HEAD에서 새 worktree를 만들었습니다.',
           })
         }
         const excluded =
@@ -309,6 +329,20 @@ export class SessionManager {
       return {
         ok: false,
         message: '세션이 실행 중이라 worktree를 정리할 수 없습니다. 작업을 중지하거나 완료한 뒤 다시 시도해 주세요.',
+      }
+    }
+    const connection = await worktreeConnection(wt.origin, wt.path)
+    if (connection === 'unavailable') {
+      return {
+        ok: false,
+        message: '원본 Git 저장소에서 worktree 연결 상태를 확인하지 못했습니다. 경로와 Git 상태를 확인해 주세요.',
+      }
+    }
+    if (connection === 'detached') {
+      db.setWorktree(sessionId, null)
+      return {
+        ok: true,
+        message: `Git 연결이 이미 끊어진 worktree 기록을 정리했습니다. 기존 폴더는 보존했습니다: ${wt.path}`,
       }
     }
     const result = await removeWorktree(wt.origin, wt.path, wt.branch, force)
