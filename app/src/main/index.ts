@@ -447,6 +447,16 @@ app.whenReady().then(() => {
   ipcMain.handle('skill:list', () =>
     skills.list(db.listProjects().map((project) => project.path), library.list().map((agent) => agent.name)),
   )
+  ipcMain.handle('skill:importFile', async (): Promise<import('@shared/session').SkillImportPreview | undefined> => {
+    const result = await dialog.showOpenDialog({
+      title: 'Codex 또는 공통 SKILL.md 선택',
+      filters: [{ name: 'Skill Markdown', extensions: ['md'] }],
+      properties: ['openFile'],
+    })
+    return result.canceled || !result.filePaths[0]
+      ? undefined
+      : skills.previewImport(result.filePaths[0])
+  })
   const assertSkillTarget = (skill: SkillDef): void => {
     if (skill.scope === 'project' && !db.listProjects().some((p) => p.path === skill.projectPath)) {
       throw new Error('등록되지 않은 프로젝트에는 Skill을 저장할 수 없습니다.')

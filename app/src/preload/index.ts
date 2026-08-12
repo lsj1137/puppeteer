@@ -18,6 +18,7 @@ import type {
   MemoryEdit,
   MemoryProposal,
   SkillDef,
+  SkillImportPreview,
   CheckpointDraft,
   RunningSession,
   SessionEvent,
@@ -195,6 +196,8 @@ const api = {
   rejectMemoryProposal: (id: number): Promise<void> =>
     ipcRenderer.invoke('memory:proposal:reject', id),
   listSkills: (): Promise<SkillDef[]> => ipcRenderer.invoke('skill:list'),
+  importSkillFromFile: (): Promise<SkillImportPreview | undefined> =>
+    ipcRenderer.invoke('skill:importFile'),
   saveSkill: (skill: SkillDef): Promise<SkillDef> => ipcRenderer.invoke('skill:save', skill),
   deleteSkill: (skill: SkillDef): Promise<void> => ipcRenderer.invoke('skill:delete', skill),
   routeInstruction: (instruction: string, runner: DetectedRunner, cwd: string): Promise<RouteResult> =>

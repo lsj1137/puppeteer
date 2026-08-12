@@ -286,6 +286,14 @@ export interface SkillDef {
   agentName?: string
 }
 
+/** 외부 SKILL.md를 정본으로 저장하기 전 보여주는 무손실 검토 결과. */
+export interface SkillImportPreview {
+  sourcePath: string
+  sourceFormat: 'codex-skill' | 'generic-skill'
+  skill: Pick<SkillDef, 'name' | 'description' | 'content'>
+  ignoredFrontmatter: string[]
+}
+
 export interface AgentSource {
   url: string
   /** 마지막으로 반영한 원본의 해시. 이게 달라지면 업데이트가 있는 것이다. */

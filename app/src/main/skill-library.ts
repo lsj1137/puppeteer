@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import { parse, stringify } from 'yaml'
-import type { AgentDef, SkillDef, SkillScope, SkillState } from '@shared/session'
+import type { AgentDef, SkillDef, SkillImportPreview, SkillScope, SkillState } from '@shared/session'
 import { applySkillStates, mergeSkillsBySpecificity } from '@shared/skills'
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/
@@ -50,6 +50,32 @@ function parseFile(
     }
   } catch {
     return undefined
+  }
+}
+
+/** 외부 SKILL.md를 파싱만 한다. 저장 범위와 정본 생성은 사용자가 검토한 뒤 결정한다. */
+export function previewImport(path: string): SkillImportPreview {
+  const raw = readFileSync(path, 'utf8')
+  const match = FRONTMATTER.exec(raw)
+  if (!match) throw new Error('SKILL.md frontmatter(---)를 찾지 못했습니다.')
+  const fm = (parse(match[1]) ?? {}) as Record<string, unknown>
+  const fallback = path.split(/[\\/]/).slice(-2, -1)[0] ?? ''
+  const name = String(fm.name ?? fallback).trim()
+  if (!name) throw new Error('Skill 이름을 확인하지 못했습니다.')
+  const known = new Set(['name', 'description'])
+  const ignoredFrontmatter = Object.keys(fm).filter((key) => !known.has(key))
+  const normalized = raw.replace(/\\/g, '/').toLowerCase()
+  return {
+    sourcePath: path,
+    sourceFormat: normalized.includes('/.codex/skills/') || normalized.endsWith('/skill.md')
+      ? 'codex-skill'
+      : 'generic-skill',
+    skill: {
+      name,
+      description: String(fm.description ?? ''),
+      content: (match[2] ?? '').trim(),
+    },
+    ignoredFrontmatter,
   }
 }
 

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, FileCode2, Plus, Trash2 } from 'lucide-react'
-import type { AgentDef, SkillDef, SkillScope, StoredProject } from '@shared/session'
+import { Check, FileCode2, FileInput, Plus, Trash2, X } from 'lucide-react'
+import type { AgentDef, SkillDef, SkillImportPreview, SkillScope, StoredProject } from '@shared/session'
 
 const empty = (scope: SkillScope, projectPath?: string, agentName?: string): SkillDef => ({
   id: '',
@@ -25,6 +25,10 @@ export default function SkillsScreen({
   const [draft, setDraft] = useState<SkillDef>()
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string>()
+  const [importPreview, setImportPreview] = useState<SkillImportPreview>()
+  const [importScope, setImportScope] = useState<SkillScope>('global')
+  const [importProject, setImportProject] = useState('')
+  const [importAgent, setImportAgent] = useState('')
 
   const load = useCallback(async () => setSkills(await window.api.listSkills()), [])
   useEffect(() => { void load() }, [load])
@@ -78,6 +82,32 @@ export default function SkillsScreen({
     await load()
   }
 
+  async function pickImport(): Promise<void> {
+    try {
+      const preview = await window.api.importSkillFromFile()
+      if (!preview) return
+      setImportPreview(preview)
+      setImportScope('global')
+      setImportProject(projects[0]?.path ?? '')
+      setImportAgent(agents[0]?.name ?? '')
+      setError(undefined)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  function reviewImport(): void {
+    if (!importPreview) return
+    const projectPath = importScope === 'project' ? importProject : undefined
+    const agentName = importScope === 'agent' ? importAgent : undefined
+    setSelected(undefined)
+    setDraft({
+      ...empty(importScope, projectPath, agentName),
+      ...importPreview.skill,
+    })
+    setImportPreview(undefined)
+  }
+
   const field = 'w-full rounded-lg bg-base px-3 py-2 text-[13px] text-text outline-none ring-1 ring-transparent focus:ring-lavender/40'
   const groupTone = (key: string): string => {
     if (key === 'global') return 'bg-sapphire/15 text-sapphire ring-sapphire/20'
@@ -89,7 +119,12 @@ export default function SkillsScreen({
     <div className="flex h-full min-h-0">
       <aside className="w-72 shrink-0 overflow-auto border-r border-surface0 p-3">
         <div className="mb-3">
-          <h1 className="text-[16px] font-semibold text-text">Skills</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="min-w-0 flex-1 text-[16px] font-semibold text-text">Skills</h1>
+            <button onClick={() => void pickImport()} title="SKILL.md 가져오기" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
+              <FileInput className="h-4 w-4" />
+            </button>
+          </div>
           <p className="mt-1 text-[11px] leading-relaxed text-overlay1">Agent가 재사용하는 작업 절차입니다. 같은 이름은 Agent › Project › Global 순으로 우선합니다.</p>
         </div>
         {groups.map((group) => (
@@ -133,6 +168,53 @@ export default function SkillsScreen({
         </main>
       ) : (
         <main className="flex flex-1 items-center justify-center text-[12px] text-overlay1">왼쪽의 + 버튼으로 Skill을 만들거나 기존 Skill을 선택하세요.</main>
+      )}
+
+      {importPreview && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-crust/70 p-6 backdrop-blur-[2px]">
+          <section className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
+            <header className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
+              <FileInput className="mt-0.5 h-5 w-5 shrink-0 text-yellow" />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-[15px] font-semibold text-text">Skill 가져오기 검토</h2>
+                <p className="mt-1 truncate font-mono text-[10px] text-overlay1">{importPreview.sourcePath}</p>
+              </div>
+              <button onClick={() => setImportPreview(undefined)} title="닫기" className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text"><X className="h-4 w-4" /></button>
+            </header>
+            <div className="min-h-0 space-y-3 overflow-y-auto p-5 text-[12px]">
+              <div className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 rounded-lg bg-base p-3">
+                <span className="text-overlay1">원본 형식</span>
+                <span className="text-text">{importPreview.sourceFormat === 'codex-skill' ? 'Codex SKILL.md' : '공통 SKILL.md'}</span>
+                <span className="text-overlay1">이름</span><span className="font-mono text-text">{importPreview.skill.name}</span>
+                <span className="text-overlay1">설명</span><span className="text-subtext1">{importPreview.skill.description || '없음'}</span>
+                <span className="text-overlay1">본문</span><span className="text-subtext1">Markdown {importPreview.skill.content.length.toLocaleString()}자 · 그대로 보존</span>
+              </div>
+
+              {importPreview.ignoredFrontmatter.length > 0 && (
+                <div className="rounded-lg bg-yellow/10 px-3 py-2 text-[11px] leading-relaxed text-yellow">
+                  Puppeteer 정본에서 사용하지 않는 frontmatter: {importPreview.ignoredFrontmatter.join(', ')}. 원본 파일은 수정하지 않습니다.
+                </div>
+              )}
+
+              <label className="block text-[11px] text-subtext0">저장 범위
+                <select value={importScope} onChange={(e) => setImportScope(e.target.value as SkillScope)} className="mt-1 w-full rounded-md bg-base px-3 py-2 text-[12px] text-text outline-none ring-1 ring-surface1">
+                  <option value="global">Global · 모든 프로젝트</option>
+                  <option value="project" disabled={projects.length === 0}>Project · 특정 프로젝트</option>
+                  <option value="agent" disabled={agents.length === 0}>Agent · 특정 에이전트</option>
+                </select>
+              </label>
+              {importScope === 'project' && <select value={importProject} onChange={(e) => setImportProject(e.target.value)} className="w-full rounded-md bg-base px-3 py-2 text-[12px] text-text outline-none ring-1 ring-surface1">{projects.map((p) => <option key={p.path} value={p.path}>{p.alias || p.path}</option>)}</select>}
+              {importScope === 'agent' && <select value={importAgent} onChange={(e) => setImportAgent(e.target.value)} className="w-full rounded-md bg-base px-3 py-2 text-[12px] text-text outline-none ring-1 ring-surface1">{agents.map((a) => <option key={a.name} value={a.name}>{a.name}</option>)}</select>}
+              <div className="rounded-lg bg-sapphire/8 px-3 py-2 text-[11px] leading-relaxed text-subtext0">
+                다음 단계에서 이름·설명·본문을 다시 편집한 뒤 저장합니다. 가져오기만으로 파일을 만들거나 기존 Skill을 덮어쓰지 않습니다.
+              </div>
+            </div>
+            <footer className="flex justify-end gap-2 border-t border-surface0 px-5 py-3">
+              <button onClick={() => setImportPreview(undefined)} className="rounded-md px-3 py-1.5 text-[12px] text-overlay1 hover:bg-surface0">취소</button>
+              <button onClick={reviewImport} disabled={(importScope === 'project' && !importProject) || (importScope === 'agent' && !importAgent)} className="rounded-md bg-lavender/20 px-3 py-1.5 text-[12px] font-medium text-lavender hover:bg-lavender/30 disabled:opacity-40">편집기로 가져오기</button>
+            </footer>
+          </section>
+        </div>
       )}
     </div>
   )
