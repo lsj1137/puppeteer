@@ -126,7 +126,8 @@ describe('buildRunnerCommand', () => {
     expect(command.args.slice(0, 3)).toEqual(['/d', '/s', '/c'])
     expect(command.windowsVerbatimArguments).toBe(true)
     expect(command.args[3]).toContain('claude.cmd')
-    expect(command.args[3]).toContain(escapeWindowsCmdArgument('한글 요청 & "quoted"'))
+    expect(command.args[3]).not.toContain('한글 요청')
+    expect(buildClaudePrompt({ prompt: '한글 요청 & "quoted"' })).toBe('한글 요청 & "quoted"')
     const settings = cliArgs[cliArgs.indexOf('--settings') + 1]
     expect(settings).toContain('Bash|PowerShell|Write|Edit|NotebookEdit')
     expect(command.args[3]).toContain(escapeWindowsCmdArgument(settings))
