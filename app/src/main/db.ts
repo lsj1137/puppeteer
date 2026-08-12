@@ -224,7 +224,13 @@ export function setWorktreeIntegration(
 export function listProjects(): StoredProject[] {
   return db
     .prepare(
-      `SELECT path, alias, runner_id AS runnerId, added_at AS addedAt, last_used_at AS lastUsedAt,
+      `SELECT path, alias,
+              COALESCE(project.runner_id, (
+                SELECT runner_id FROM session
+                WHERE project_path = project.path AND runner_id IS NOT NULL
+                ORDER BY started_at DESC LIMIT 1
+              )) AS runnerId,
+              added_at AS addedAt, last_used_at AS lastUsedAt,
               sort_order AS sortOrder
        FROM project
        ORDER BY sort_order IS NULL, sort_order ASC, COALESCE(last_used_at, added_at) DESC`,

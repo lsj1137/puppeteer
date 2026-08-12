@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
-import type { Readable } from 'node:stream'
+import type { Readable, Writable } from 'node:stream'
 import type { DetectedRunner, SessionEvent } from '@shared/session'
 
 export interface StartOptions {
@@ -45,7 +45,7 @@ const GATED_TOOLS = 'Bash|PowerShell|Write|Edit|NotebookEdit'
  * 이벤트 형태는 CLI 2.1.220 실측 기준 (spike/REPORT.md).
  */
 export class ClaudeCliAdapter {
-  private child?: ChildProcessByStdio<null, Readable, Readable>
+  private child?: ChildProcessByStdio<Writable, Readable, Readable>
   private stdoutBuf = ''
   private stderrBuf = ''
   /** message.id 별로 이미 내보낸 텍스트 — 중복 방출 방지 */
@@ -57,17 +57,19 @@ export class ClaudeCliAdapter {
 
   start(opts: StartOptions): void {
     const cliArgs = buildClaudeArgs(opts)
+    const prompt = buildClaudePrompt(opts)
     const { command, args, windowsVerbatimArguments } = this.buildCommand(opts, cliArgs)
 
     this.emit({ t: 'status', status: 'starting' })
 
-    // stdin 은 반드시 닫는다. 열어두면 CLI 가 3초 대기 후 경고를 낸다.
+    // 긴 사용자·시스템 지침을 Windows→WSL 명령행에 싣지 않는다. 명령행 한도를 넘으면
+    // wsl.exe가 시작되기도 전에 spawn ENAMETOOLONG이 발생하므로 stdin으로 전달한다.
     // spawn 은 동기 throw 를 낼 수 있다(예: .cmd 직접 실행 시 EINVAL).
     // 그대로 두면 IPC 가 거부되고 화면에 아무것도 뜨지 않으므로 반드시 이벤트로 바꾼다.
     try {
       this.child = spawn(command, args, {
         cwd: opts.runner.kind === 'wsl' ? undefined : opts.cwd,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         windowsVerbatimArguments,
       })
@@ -75,6 +77,11 @@ export class ClaudeCliAdapter {
       this.settle('failed', `실행 실패: ${(err as Error).message} (${command})`)
       return
     }
+
+    this.child.stdin.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EPIPE') this.settle('failed', error.message)
+    })
+    this.child.stdin.end(prompt)
 
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (chunk: string) => this.onStdout(chunk))
@@ -428,19 +435,15 @@ export function buildClaudeArgs(
     | 'hookCommand'
     | 'prompt'
     | 'resumeSessionId'
-    | 'systemPrompt'
   >,
 ): string[] {
   const cliArgs = [
     '-p',
-    opts.prompt,
     '--output-format',
     'stream-json',
     '--verbose',
   ]
   if (opts.resumeSessionId) cliArgs.push('--resume', opts.resumeSessionId)
-  if (opts.systemPrompt) cliArgs.push('--append-system-prompt', opts.systemPrompt)
-
   // 에이전트는 앱 라이브러리에서 관리하므로 정의를 인라인으로 넘긴다.
   // 파일을 러너 홈(.claude/agents)에 배치할 필요가 없다 — WSL/Windows 홈이 다르다.
   if (opts.agentsJson) cliArgs.push('--agents', opts.agentsJson)
@@ -468,4 +471,13 @@ export function buildClaudeArgs(
   }
 
   return cliArgs
+}
+
+/** Windows 명령행 한도와 무관하게 stdin으로 보낼 Claude 입력 전문. */
+export function buildClaudePrompt(
+  opts: Pick<StartOptions, 'prompt' | 'systemPrompt'>,
+): string {
+  return opts.systemPrompt
+    ? `${opts.systemPrompt}\n\n---\n\n${opts.prompt}`
+    : opts.prompt
 }

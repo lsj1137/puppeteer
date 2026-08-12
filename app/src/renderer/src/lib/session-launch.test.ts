@@ -32,4 +32,13 @@ describe('resolveSessionLaunch', () => {
       continueSessionId: undefined,
     })
   })
+
+  it('resumes a legacy session whose runner id was not persisted', () => {
+    expect(resolveSessionLaunch('runner-a', 'app-session', session(null, 'cli-1'), 'C:\\repo')).toEqual({
+      path: 'C:\\repo',
+      sameRunner: true,
+      resumeCliSessionId: 'cli-1',
+      continueSessionId: 'app-session',
+    })
+  })
 })

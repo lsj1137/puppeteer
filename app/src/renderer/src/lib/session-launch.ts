@@ -17,7 +17,9 @@ export function resolveSessionLaunch(
   cwd?: string,
 ): SessionLaunch {
   const path = sessionRunPath(cwd, selectedSession?.projectPath, activeProjectPath)
-  const sameRunner = !selectedSession || selectedSession.runnerId === runnerId
+  // 구버전 세션은 runner_id가 비어 있을 수 있다. 프로젝트에서 복구한 실행환경을
+  // 선택했다면 새 대화를 만들지 않고 기존 CLI 세션을 그대로 재개한다.
+  const sameRunner = !selectedSession || !selectedSession.runnerId || selectedSession.runnerId === runnerId
   const resumeCliSessionId = sameRunner ? (selectedSession?.cliSessionId ?? undefined) : undefined
   return {
     path,

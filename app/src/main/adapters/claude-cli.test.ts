@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { DetectedRunner } from '@shared/session'
 import {
   buildClaudeArgs,
+  buildClaudePrompt,
   buildRunnerCommand,
   escapeWindowsCmdArgument,
 } from './claude-cli'
@@ -23,10 +24,9 @@ function runner(overrides: Partial<DetectedRunner> = {}): DetectedRunner {
 }
 
 describe('buildClaudeArgs', () => {
-  it('starts a new stream-json session with the prompt first', () => {
+  it('keeps the potentially long prompt out of process arguments', () => {
     expect(buildClaudeArgs({ prompt: 'hello' })).toEqual([
       '-p',
-      'hello',
       '--output-format',
       'stream-json',
       '--verbose',
@@ -44,9 +44,8 @@ describe('buildClaudeArgs', () => {
       disallowedTools: ['Bash'],
     })
 
-    expect(args.slice(0, 7)).toEqual([
+    expect(args.slice(0, 6)).toEqual([
       '-p',
-      'continue this',
       '--output-format',
       'stream-json',
       '--verbose',
@@ -70,6 +69,14 @@ describe('buildClaudeArgs', () => {
       command: 'bash approve.sh /tmp/approvals',
       timeout: 300,
     })
+  })
+
+  it('sends system instructions and the user prompt through stdin', () => {
+    const long = '긴 지침'.repeat(20_000)
+    const prompt = buildClaudePrompt({ prompt: '계속해줘', systemPrompt: long })
+    expect(prompt.startsWith(long)).toBe(true)
+    expect(prompt.endsWith('계속해줘')).toBe(true)
+    expect(buildClaudeArgs({ prompt: long })).not.toContain(long)
   })
 })
 
