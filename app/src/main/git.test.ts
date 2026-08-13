@@ -70,6 +70,15 @@ describe('worktree merge', () => {
     await expect(worktreeConnection(origin, worktreePath)).resolves.toBe('detached')
   })
 
+  it('treats a missing worktree folder as detached even when the origin is unavailable', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'agent-workspace-missing-worktree-'))
+    roots.push(root)
+
+    await expect(
+      worktreeConnection(join(root, 'missing-origin'), join(root, 'missing-worktree')),
+    ).resolves.toBe('detached')
+  })
+
   it('turns an index.lock failure into an actionable diagnostic', () => {
     const message = formatGitError(
       "fatal: Unable to create 'C:/repo/.git/worktrees/session/index.lock': File exists.",

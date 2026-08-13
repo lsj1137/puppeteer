@@ -67,6 +67,14 @@ export async function worktreeConnection(
   origin: string,
   dir: string,
 ): Promise<'connected' | 'detached' | 'unavailable'> {
+  // 폴더가 이미 사라졌다면 원본 저장소가 이동·삭제됐더라도 DB 연결은 안전하게
+  // 해제할 수 있다. 원본부터 확인하면 이런 오래된 세션이 영구히 삭제 불가해진다.
+  try {
+    await lstat(dir)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'detached'
+  }
+
   let originCommon: string
   try {
     originCommon = await git(origin, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
