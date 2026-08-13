@@ -34,6 +34,12 @@ const parseList = (v: string): string[] | undefined => {
     .filter(Boolean)
   return arr.length ? arr : undefined
 }
+const COMMON_TOOLS = ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash'] as const
+const toggleListItem = (value: string, item: string): string => {
+  const items = parseList(value) ?? []
+  const next = items.includes(item) ? items.filter((entry) => entry !== item) : [...items, item]
+  return list(next)
+}
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
 /** 라벨 옆 물음표. 설명은 평소엔 숨고 필요할 때만 나온다. */
@@ -302,22 +308,49 @@ export default function AgentEditor({
             />
           </Row>
 
-          <Row label="도구" hint="쉼표로 구분합니다. 허용을 지정하면 그것만 쓸 수 있고, 금지는 항상 막힙니다. 예: Bash(npm test)">
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                className={field}
-                value={allowed}
-                onChange={(e) => setAllowed(e.target.value)}
-                placeholder="허용 — Read, Edit"
-                spellCheck={false}
-              />
-              <input
-                className={field}
-                value={disallowed}
-                onChange={(e) => setDisallowed(e.target.value)}
-                placeholder="금지 — WebFetch"
-                spellCheck={false}
-              />
+          <Row label="도구" hint="쉼표로 구분합니다. 허용을 지정하면 그것만 쓸 수 있고, 금지는 항상 막힙니다. 아래 버튼으로 자주 쓰는 도구를 추가하거나 해제할 수 있습니다.">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="w-8 shrink-0 text-[11px] text-overlay1">허용</span>
+                <input
+                  className={field}
+                  value={allowed}
+                  onChange={(e) => setAllowed(e.target.value)}
+                  placeholder="Read, Glob, Grep, Write, Edit"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="flex flex-wrap gap-1 pl-10">
+                {COMMON_TOOLS.map((tool) => {
+                  const active = (parseList(allowed) ?? []).includes(tool)
+                  return (
+                    <button
+                      key={tool}
+                      type="button"
+                      onClick={() => setAllowed((value) => toggleListItem(value, tool))}
+                      className={`rounded-md px-2 py-1 text-[11px] ring-1 transition ${
+                        active
+                          ? 'bg-lavender/15 text-lavender ring-lavender/30'
+                          : 'text-subtext0 ring-surface1 hover:bg-surface0 hover:text-text'
+                      }`}
+                    >
+                      {tool}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-8 shrink-0 text-[11px] text-overlay1">금지</span>
+                <input
+                  className={field}
+                  value={disallowed}
+                  onChange={(e) => setDisallowed(e.target.value)}
+                  placeholder="WebFetch, WebSearch"
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </div>
             </div>
           </Row>
 
