@@ -209,11 +209,11 @@ export default function App() {
   const scrollRef = useRef<HTMLDivElement>(null)
   /** 새 항목이 렌더되기 직전 사용자가 하단을 보고 있었는지. state는 렌더가 늦어 ref로 즉시 보존한다. */
   const followingBottomRef = useRef(true)
-  const previousScrollSessionRef = useRef<string>()
+  const previousScrollSessionRef = useRef<string | undefined>(undefined)
   /** 승인 처리를 위해 잠시 떠났다가 복귀할 때만 적용할 대화 위치. */
-  const pendingScrollRestoreRef = useRef<{ sessionId: string; scrollTop: number }>()
+  const pendingScrollRestoreRef = useRef<{ sessionId: string; scrollTop: number } | undefined>(undefined)
   /** 같은 세션의 하단 승인 카드로 잠시 이동하기 전 읽던 위치. */
-  const inlineApprovalReturnRef = useRef<{ sessionId: string; scrollTop: number }>()
+  const inlineApprovalReturnRef = useRef<{ sessionId: string; scrollTop: number } | undefined>(undefined)
   const tabBarRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<PromptInputHandle>(null)
   const focusPrompt = useCallback(() => taRef.current?.focus(), [])
