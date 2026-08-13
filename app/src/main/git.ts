@@ -129,15 +129,23 @@ async function gitWithError(cwd: string, args: string[]): Promise<{ stdout: stri
     return { stdout, stderr }
   } catch (error) {
     const err = error as { stdout?: string; stderr?: string; message?: string }
-    throw new Error(formatGitError(err.stderr || err.stdout || err.message || 'git 명령 실행에 실패했습니다.'))
+    const detail = [err.stderr, err.stdout, err.message]
+      .map((value) => value?.trim())
+      .find(Boolean)
+    throw new Error(formatGitError(detail || 'git 명령 실행에 실패했습니다.'))
   }
 }
 
 export function formatGitError(raw: string): string {
   const message = raw.trim()
   const lock = message.match(/Unable to create ['"]([^'"]+index\.lock)['"]/i)?.[1]
-  if (!lock) return message
-  return `Git 잠금 파일 때문에 작업을 시작하지 못했습니다: ${lock}\n실행 중인 Git 작업을 먼저 종료하세요. 실행 중인 작업이 없다면 이전 Git 프로세스가 남긴 잠금 파일인지 확인한 뒤 해당 index.lock만 삭제하고 다시 시도하세요.`
+  if (lock) {
+    return `Git 잠금 파일 때문에 작업을 시작하지 못했습니다: ${lock}\n실행 중인 Git 작업을 먼저 종료하세요. 실행 중인 작업이 없다면 이전 Git 프로세스가 남긴 잠금 파일인지 확인한 뒤 해당 index.lock만 삭제하고 다시 시도하세요.`
+  }
+  if (/command failed:\s*git(?:\.exe)?\b[\s\S]*\bworktree\s+remove\b/i.test(message)) {
+    return 'Git이 worktree 폴더를 제거하지 못했습니다. 해당 worktree에서 실행 중인 npm run dev·Electron·터미널을 종료하고, VS Code가 그 폴더를 열고 있다면 다른 폴더로 전환한 뒤 다시 정리해 주세요.'
+  }
+  return message
 }
 
 async function unmergedFiles(cwd: string): Promise<string[]> {

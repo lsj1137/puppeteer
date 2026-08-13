@@ -80,6 +80,16 @@ describe('worktree merge', () => {
     expect(message).toContain('해당 index.lock만 삭제')
   })
 
+  it('explains how to release a Windows worktree folder held by another process', () => {
+    const message = formatGitError(
+      'Command failed: git -c core.autocrlf=true worktree remove C:\\worktrees\\session',
+    )
+
+    expect(message).toContain('npm run dev')
+    expect(message).toContain('VS Code')
+    expect(message).toContain('다시 정리')
+  })
+
   it('returns recent commits with metadata for the Git sidebar', async () => {
     const { worktreePath } = await fixture()
 
