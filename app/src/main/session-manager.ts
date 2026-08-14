@@ -24,6 +24,7 @@ import type {
   WorktreeResolvedFile,
   WorktreeStatus,
   WorktreeIntegrationMode,
+  ProjectWorktreeModeResult,
   WorktreeIntegrationReport,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
@@ -359,6 +360,56 @@ export class SessionManager {
     return result
   }
 
+  /** 프로젝트가 Worktree 사용을 끌 때 기존 격리 작업을 모두 안전하게 정리한다. */
+  async setProjectWorktreeMode(
+    projectPath: string,
+    mode: WorktreeIntegrationMode,
+  ): Promise<ProjectWorktreeModeResult> {
+    if (mode !== 'off') {
+      const project = db.setProjectWorktreeMode(projectPath, mode)
+      return project
+        ? { ok: true, message: '프로젝트 Worktree 정책을 변경했습니다.', project }
+        : { ok: false, message: '프로젝트를 찾지 못했습니다.' }
+    }
+
+    if (this.listRunning().some(({ projectPath: path }) => path === projectPath)) {
+      return { ok: false, message: '실행 중인 세션이 있어 Worktree 사용을 끌 수 없습니다.' }
+    }
+    const entries = db.projectWorktreeSessions(projectPath)
+    const checked: Array<{ id: string; worktree: SessionWorktree; detached: boolean }> = []
+    for (const entry of entries) {
+      const connection = await worktreeConnection(entry.worktree.origin, entry.worktree.path)
+      if (connection === 'unavailable') {
+        return { ok: false, message: `Worktree 상태를 확인하지 못했습니다: ${entry.worktree.path}` }
+      }
+      if (connection === 'detached') {
+        checked.push({ ...entry, detached: true })
+        continue
+      }
+      const dirty = await worktreeDirty(entry.worktree.path)
+      const status = await inspectWorktree(entry.worktree)
+      const blocked = sessionDeletionBlockReason(dirty, status)
+      if (blocked) return { ok: false, message: `${blocked}\n${entry.worktree.path}` }
+      checked.push({ ...entry, detached: false })
+    }
+
+    for (const entry of checked) {
+      if (!entry.detached) {
+        const result = await removeWorktree(
+          entry.worktree.origin,
+          entry.worktree.path,
+          entry.worktree.branch,
+        )
+        if (!result.ok) return { ok: false, message: result.message }
+      }
+      db.setWorktree(entry.id, null)
+    }
+    const project = db.setProjectWorktreeMode(projectPath, mode)
+    return project
+      ? { ok: true, message: `Worktree ${checked.length}개를 정리하고 사용을 껐습니다.`, project }
+      : { ok: false, message: '프로젝트를 찾지 못했습니다.' }
+  }
+
   async worktreeStatus(sessionId: string): Promise<WorktreeStatus | undefined> {
     const stored = db.getSession(sessionId)
     const wt = stored?.worktree
@@ -370,7 +421,7 @@ export class SessionManager {
         ['checking', 'committing', 'merging'].includes(integration.phase) &&
         Date.now() - integration.updatedAt > 30_000,
     )
-    const mode = db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto'
+    const mode = db.projectWorktreeMode(stored.projectPath)
     const pendingStep = nextWorktreeIntegrationStep(mode, inspected)
     // 이전 버그/구버전이 dirty 상태를 "이미 반영됨"으로 skipped 저장했더라도
     // 현재 정책상 할 일이 있으면 Worktree 화면 조회 시 다시 복구한다.

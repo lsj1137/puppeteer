@@ -9,6 +9,7 @@ import type {
   CostTotals,
   ProjectStat,
   ProjectRelinkResult,
+  ProjectWorktreeModeResult,
   ProjectFileEntry,
   ProjectFilePreview,
   DetectedRunner,
@@ -82,7 +83,7 @@ const api = {
   setProjectWorktreeMode: (
     path: string,
     mode: WorktreeIntegrationMode,
-  ): Promise<StoredProject | undefined> => ipcRenderer.invoke('project:setWorktreeMode', path, mode),
+  ): Promise<ProjectWorktreeModeResult> => ipcRenderer.invoke('project:setWorktreeMode', path, mode),
   relinkProject: (path: string): Promise<ProjectRelinkResult> =>
     ipcRenderer.invoke('project:relink', path),
   removeProject: (path: string): Promise<void> => ipcRenderer.invoke('project:remove', path),

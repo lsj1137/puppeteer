@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { FolderPlus, GitBranch, Loader2, Monitor, Pencil, RefreshCw, ShieldAlert, Terminal, Trash2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { FolderOpen, FolderPlus, GitBranch, Loader2, Monitor, Pencil, ShieldAlert, Terminal, Trash2, X } from 'lucide-react'
 import type {
   ApprovalRequest,
   DetectedRunner,
@@ -10,6 +10,7 @@ import type {
 import { runnerEnvironmentLabel } from '@shared/runner'
 import { approvalNavigationPath } from '../lib/navigation'
 import { baseName } from '../lib/session-view'
+import ConfirmDialog from './ConfirmDialog'
 
 interface Props {
   activeProjectPath?: string
@@ -23,8 +24,8 @@ interface Props {
   onOpenApproval: (approval: ApprovalRequest) => void | Promise<void>
   onPickFolder: () => void | Promise<void>
   onRenameProject: (path: string, alias: string) => void | Promise<void>
-  onSetProjectWorktreeMode: (path: string, mode: WorktreeIntegrationMode) => void | Promise<void>
-  onRelinkProject: (path: string) => void | Promise<void>
+  onSetProjectWorktreeMode: (path: string, mode: WorktreeIntegrationMode) => Promise<void>
+  onRelinkProject: (path: string) => Promise<boolean>
   onReorderProjects: (paths: string[]) => void
   onSelectProject: (path: string) => void | Promise<void>
 }
@@ -54,11 +55,49 @@ export default function WorkspaceLists(props: Props) {
   const [dropTarget, setDropTarget] = useState<string>()
   const [editingProject, setEditingProject] = useState<string>()
   const [projectAlias, setProjectAlias] = useState('')
-  const [worktreeMenu, setWorktreeMenu] = useState<string>()
+  const [projectMode, setProjectMode] = useState<WorktreeIntegrationMode>('suggest')
+  const [projectError, setProjectError] = useState<string>()
+  const [projectSaving, setProjectSaving] = useState(false)
+  const [confirmProjectClose, setConfirmProjectClose] = useState(false)
+  const editing = projects.find(({ path }) => path === editingProject)
+  const projectDirty = Boolean(editing && (
+    projectAlias !== (editing.alias ?? baseName(editing.path))
+    || projectMode !== (editing.worktreeMode ?? 'suggest')
+  ))
 
-  const finishRename = (path: string): void => {
-    void onRenameProject(path, projectAlias)
-    setEditingProject(undefined)
+  const openProjectEditor = (project: StoredProject): void => {
+    setEditingProject(project.path)
+    setProjectAlias(project.alias ?? baseName(project.path))
+    setProjectMode(project.worktreeMode ?? 'suggest')
+    setProjectError(undefined)
+  }
+  const requestProjectClose = (): void => {
+    if (projectDirty) setConfirmProjectClose(true)
+    else setEditingProject(undefined)
+  }
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && editingProject && !confirmProjectClose && !projectSaving) {
+        requestProjectClose()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  const saveProject = async (): Promise<void> => {
+    if (!editing) return
+    setProjectSaving(true)
+    setProjectError(undefined)
+    try {
+      await onSetProjectWorktreeMode(editing.path, projectMode)
+      await onRenameProject(editing.path, projectAlias)
+      setEditingProject(undefined)
+    } catch (error) {
+      setProjectError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setProjectSaving(false)
+    }
   }
 
 
@@ -171,65 +210,26 @@ export default function WorkspaceLists(props: Props) {
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  {editingProject === project.path ? (
-                    <input
-                      autoFocus
-                      value={projectAlias}
-                      onChange={(event) => setProjectAlias(event.target.value)}
-                      onClick={(event) => event.stopPropagation()}
-                      onBlur={() => finishRename(project.path)}
-                      onKeyDown={(event) => {
-                        event.stopPropagation()
-                        if (event.key === 'Enter') finishRename(project.path)
-                        if (event.key === 'Escape') setEditingProject(undefined)
-                      }}
-                      className="min-w-0 flex-1 rounded border border-surface1 bg-base px-1.5 py-0.5 text-sm text-text outline-none focus:border-sapphire"
-                      aria-label="프로젝트 별칭"
-                    />
-                  ) : (
-                    <span
-                      className={`flex-1 truncate text-sm ${active ? 'text-text' : 'text-subtext1'}`}
-                      title={project.alias ? `${project.alias}\n${project.path}` : project.path}
-                      onDoubleClick={(event) => {
-                        event.stopPropagation()
-                        setProjectAlias(project.alias ?? baseName(project.path))
-                        setEditingProject(project.path)
-                      }}
-                    >
-                      {project.alias || baseName(project.path)}
-                    </span>
-                  )}
+                  <span
+                    className={`flex-1 truncate text-sm ${active ? 'text-text' : 'text-subtext1'}`}
+                    title={project.alias ? `${project.alias}\n${project.path}` : project.path}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation()
+                      openProjectEditor(project)
+                    }}
+                  >
+                    {project.alias || baseName(project.path)}
+                  </span>
                   {live > 0 && (
                     <span className="shrink-0 rounded bg-green/20 px-1 text-[11px] text-green">{live}</span>
                   )}
                   <button
                     onClick={(event) => {
                       event.stopPropagation()
-                      setWorktreeMenu((current) => current === project.path ? undefined : project.path)
+                      openProjectEditor(project)
                     }}
                     className="hidden rounded p-0.5 text-overlay1 hover:bg-surface1 hover:text-text group-hover:block"
-                    title="Worktree 방식"
-                  >
-                    <GitBranch className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      void onRelinkProject(project.path)
-                    }}
-                    className="hidden rounded p-0.5 text-overlay1 hover:bg-sapphire/15 hover:text-sapphire group-hover:block"
-                    title="이동한 프로젝트 폴더 재연결"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      setProjectAlias(project.alias ?? baseName(project.path))
-                      setEditingProject(project.path)
-                    }}
-                    className="hidden rounded p-0.5 text-overlay1 hover:bg-surface1 hover:text-text group-hover:block"
-                    title="프로젝트 별칭 변경"
+                    title="프로젝트 설정"
                   >
                     <Pencil className="h-3.5 w-3.5" />
                   </button>
@@ -262,38 +262,99 @@ export default function WorkspaceLists(props: Props) {
                         : '병합 제안'
                   }</span>
                 </div>
-                {worktreeMenu === project.path && (
-                  <div
-                    className="mt-1 rounded-md border border-surface1 bg-mantle p-1 shadow-lg"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    {([
-                      ['off', '사용 안 함', '원본 폴더에서 실행 · 자동 Git 반영 없음'],
-                      ['suggest', '병합 제안', 'Worktree 격리 · 직접 검토 후 반영'],
-                      ['auto', '자동 병합', 'Worktree 변경을 자동 커밋·안전 병합'],
-                    ] as const).map(([mode, label, description]) => (
-                      <button
-                        key={mode}
-                        type="button"
-                        onClick={() => {
-                          void onSetProjectWorktreeMode(project.path, mode)
-                          setWorktreeMenu(undefined)
-                        }}
-                        className={`block w-full rounded px-2 py-1.5 text-left ${
-                          (project.worktreeMode ?? 'suggest') === mode ? 'bg-surface1' : 'hover:bg-surface0'
-                        }`}
-                      >
-                        <span className="block text-[11px] font-medium text-text">{label}</span>
-                        <span className="block text-[10px] text-overlay1">{description}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
               </div>
             )
           })}
         </div>
       </section>
+
+      {editing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6 backdrop-blur-[2px]">
+          <section className="w-full max-w-lg overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
+            <header className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sapphire/15 text-sapphire">
+                <FolderOpen className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-[15px] font-semibold text-text">프로젝트 설정</h2>
+                <p className="mt-0.5 truncate font-mono text-[10px] text-overlay1">{editing.path}</p>
+              </div>
+              <button type="button" onClick={requestProjectClose} title="닫기" className="rounded p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
+                <X className="h-4 w-4" />
+              </button>
+            </header>
+
+            <div className="space-y-4 p-5">
+              <label className="block text-[11px] text-subtext0">
+                프로젝트 별칭
+                <input
+                  autoFocus
+                  value={projectAlias}
+                  onChange={(event) => setProjectAlias(event.target.value)}
+                  className="mt-1 w-full rounded-lg bg-base px-3 py-2 text-[13px] text-text outline-none ring-1 ring-surface1 focus:ring-sapphire/50"
+                />
+              </label>
+
+              <div>
+                <div className="mb-1.5 text-[11px] text-subtext0">Worktree 정책</div>
+                <div className="space-y-1.5">
+                  {([
+                    ['off', '사용 안 함', '다음 새 세션부터 원본 폴더에서 실행하고 자동 Git 반영을 하지 않습니다. 기존 Worktree는 안전할 때만 모두 정리합니다.'],
+                    ['suggest', '병합 제안', 'Worktree에서 격리 실행하고 커밋·병합은 사용자가 검토합니다.'],
+                    ['auto', '자동 병합', '완료된 변경을 자동 커밋하고 안전한 fast-forward만 수행합니다.'],
+                  ] as const).map(([mode, label, description]) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setProjectMode(mode)}
+                      className={`block w-full rounded-lg px-3 py-2 text-left ring-1 ${
+                        projectMode === mode
+                          ? 'bg-sapphire/10 text-text ring-sapphire/40'
+                          : 'bg-base text-subtext1 ring-transparent hover:ring-surface1'
+                      }`}
+                    >
+                      <span className="block text-[12px] font-medium">{label}</span>
+                      <span className="mt-0.5 block text-[10px] leading-relaxed text-overlay1">{description}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={projectSaving}
+                onClick={async () => {
+                  if (await onRelinkProject(editing.path)) setEditingProject(undefined)
+                }}
+                className="flex w-full items-center gap-2 rounded-lg bg-base px-3 py-2 text-left text-[12px] text-subtext1 hover:bg-surface0 hover:text-text disabled:opacity-40"
+              >
+                <FolderOpen className="h-4 w-4 text-sapphire" /> 폴더 위치 변경·재연결
+              </button>
+              {projectError && <div className="whitespace-pre-wrap rounded-lg bg-red/10 px-3 py-2 text-[11px] text-red">{projectError}</div>}
+            </div>
+
+            <footer className="flex justify-end gap-2 border-t border-surface0 px-5 py-3">
+              <button type="button" disabled={projectSaving} onClick={requestProjectClose} className="rounded-md px-3 py-1.5 text-[12px] text-overlay1 hover:bg-surface0 disabled:opacity-40">취소</button>
+              <button type="button" disabled={projectSaving} onClick={() => void saveProject()} className="rounded-md bg-sapphire/20 px-3.5 py-1.5 text-[12px] font-medium text-sapphire hover:bg-sapphire/30 disabled:opacity-40">
+                {projectSaving ? '확인 중…' : '저장'}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {confirmProjectClose && (
+        <ConfirmDialog
+          title="프로젝트 설정을 닫을까요?"
+          description="저장하지 않은 별칭 또는 Worktree 정책 변경이 사라집니다."
+          confirmLabel="저장하지 않고 닫기"
+          tone="danger"
+          onCancel={() => setConfirmProjectClose(false)}
+          onConfirm={() => {
+            setConfirmProjectClose(false)
+            setEditingProject(undefined)
+          }}
+        />
+      )}
     </>
   )
 }

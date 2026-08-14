@@ -277,11 +277,11 @@ app.whenReady().then(() => {
   ipcMain.handle('project:list', () => db.listProjects())
   ipcMain.handle('project:reorder', (_e, paths: string[]) => db.reorderProjects(paths))
   ipcMain.handle('project:rename', (_e, path: string, alias: string) => db.renameProject(path, alias))
-  ipcMain.handle('project:setWorktreeMode', (_e, path: string, mode: WorktreeIntegrationMode) => {
+  ipcMain.handle('project:setWorktreeMode', async (_e, path: string, mode: WorktreeIntegrationMode) => {
     if (mode !== 'off' && mode !== 'auto' && mode !== 'suggest') {
       throw new Error('지원하지 않는 프로젝트 Worktree 방식입니다.')
     }
-    return db.setProjectWorktreeMode(path, mode)
+    return sessions.setProjectWorktreeMode(path, mode)
   })
   ipcMain.handle('project:relink', async (_e, oldPath: string) => {
     if (sessions.listRunning().some(({ projectPath }) => canonicalPath(projectPath) === canonicalPath(oldPath))) {

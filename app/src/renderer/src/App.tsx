@@ -731,20 +731,22 @@ export default function App() {
     path: string,
     mode: WorktreeIntegrationMode,
   ): Promise<void> {
-    const updated = await window.api.setProjectWorktreeMode(path, mode)
-    if (!updated) return
-    setProjects((current) => current.map((project) => project.path === path ? updated : project))
+    const result = await window.api.setProjectWorktreeMode(path, mode)
+    if (!result.ok || !result.project) throw new Error(result.message)
+    setProjects((current) => current.map((project) => project.path === path ? result.project! : project))
+    if (active === path) await refresh(path)
   }
 
-  async function relinkProject(path: string): Promise<void> {
+  async function relinkProject(path: string): Promise<boolean> {
     const result = await window.api.relinkProject(path)
-    if (result.canceled) return
+    if (result.canceled) return false
     if (!result.ok || !result.newPath) {
       window.alert(result.message)
-      return
+      return false
     }
     setProjects(await window.api.listProjects())
     if (active === path) await selectProject(result.newPath)
+    return true
   }
 
   /**

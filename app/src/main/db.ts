@@ -371,6 +371,19 @@ export function updateSession(
   if (patch.ended) db.prepare('UPDATE session SET ended_at = ? WHERE id = ?').run(now(), id)
 }
 
+export function projectWorktreeSessions(path: string): Array<{ id: string; worktree: SessionWorktree }> {
+  const rows = db.prepare(
+    'SELECT id, worktree FROM session WHERE project_path = ? AND worktree IS NOT NULL',
+  ).all(path) as unknown as Array<{ id: string; worktree: string }>
+  return rows.map(({ id, worktree }) => {
+    try {
+      return { id, worktree: JSON.parse(worktree) as SessionWorktree }
+    } catch {
+      throw new Error(`세션 ${id}의 Worktree 기록을 읽지 못했습니다.`)
+    }
+  })
+}
+
 export function projectWorktreeMode(path: string): WorktreeIntegrationMode {
   const row = db.prepare('SELECT worktree_mode AS mode FROM project WHERE path = ?').get(path) as
     | { mode?: string }

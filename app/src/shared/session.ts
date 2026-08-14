@@ -183,6 +183,12 @@ export interface StoredSession {
   approvalMode?: ApprovalMode
 }
 
+export interface ProjectWorktreeModeResult {
+  ok: boolean
+  message: string
+  project?: StoredProject
+}
+
 export type ApprovalMode = 'ask' | 'auto'
 
 export interface StoredEvent {
