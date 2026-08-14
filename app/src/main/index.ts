@@ -469,6 +469,21 @@ app.whenReady().then(() => {
     assertSkillTarget(skill)
     return skills.save(skill)
   })
+  ipcMain.handle('skill:move', (_e, previous: SkillDef, next: SkillDef) => {
+    assertSkillTarget(next)
+    return skills.move(previous, next)
+  })
+  ipcMain.handle('skill:export', async (_e, skill: SkillDef): Promise<boolean> => {
+    assertSkillTarget(skill)
+    const result = await dialog.showSaveDialog({
+      title: 'SKILL.md 내보내기',
+      defaultPath: `${skill.name}-SKILL.md`,
+      filters: [{ name: 'Skill Markdown', extensions: ['md'] }],
+    })
+    if (result.canceled || !result.filePath) return false
+    skills.exportFile(skill, result.filePath)
+    return true
+  })
   ipcMain.handle('skill:delete', (_e, skill: SkillDef) => {
     assertSkillTarget(skill)
     skills.remove(skill)

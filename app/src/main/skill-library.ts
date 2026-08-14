@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { app } from 'electron'
 import { parse, stringify } from 'yaml'
 import type { AgentDef, SkillDef, SkillImportPreview, SkillScope, SkillState } from '@shared/session'
@@ -112,10 +112,33 @@ export function save(skill: SkillDef): SkillDef {
   const name = skill.name.trim()
   if (!safeName(name)) throw new Error('Skill 이름에 공백과 특수문자는 쓸 수 없습니다.')
   const path = join(root(skill.scope, skill.projectPath, skill.agentName), name, 'SKILL.md')
+  if (existsSync(path) && (!skill.location || resolve(skill.location) !== resolve(path))) {
+    throw new Error(`같은 범위에 «${name}» Skill이 이미 있습니다.`)
+  }
   mkdirSync(dirname(path), { recursive: true })
-  const fm = stringify({ name, description: skill.description.trim() }).trim()
-  writeFileSync(path, `---\n${fm}\n---\n\n${skill.content.trim()}\n`, 'utf8')
+  writeFileSync(path, serialize(skill, name), 'utf8')
   return { ...skill, id: idOf(skill.scope, name, skill.projectPath, skill.agentName), name, location: path }
+}
+
+function serialize(skill: Pick<SkillDef, 'name' | 'description' | 'content'>, name = skill.name.trim()): string {
+  const fm = stringify({ name, description: skill.description.trim() }).trim()
+  return `---\n${fm}\n---\n\n${skill.content.trim()}\n`
+}
+
+/** 범위 변경은 새 정본을 먼저 만든 뒤 기존 정본을 제거한다. */
+export function move(previous: SkillDef, next: SkillDef): SkillDef {
+  const saved = save({ ...next, location: '' })
+  try {
+    remove(previous)
+  } catch (error) {
+    remove(saved)
+    throw error
+  }
+  return saved
+}
+
+export function exportFile(skill: SkillDef, destination: string): void {
+  writeFileSync(destination, serialize(skill), 'utf8')
 }
 
 export function remove(skill: Pick<SkillDef, 'scope' | 'name' | 'projectPath' | 'agentName'>): void {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, FileCode2, FileInput, Plus, Trash2, X } from 'lucide-react'
+import { Check, Download, FileCode2, FileInput, Plus, Trash2, X } from 'lucide-react'
 import type { AgentDef, SkillDef, SkillImportPreview, SkillScope, StoredProject } from '@shared/session'
 
 const empty = (scope: SkillScope, projectPath?: string, agentName?: string): SkillDef => ({
@@ -32,6 +32,15 @@ export default function SkillsScreen({
 
   const load = useCallback(async () => setSkills(await window.api.listSkills()), [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (!draft || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
+      event.preventDefault()
+      void save()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  })
 
   const groups = useMemo(() => [
     { key: 'global', label: 'Global', items: skills.filter((s) => s.scope === 'global') },
@@ -63,7 +72,14 @@ export default function SkillsScreen({
   async function save(): Promise<void> {
     if (!draft) return
     try {
-      const next = await window.api.saveSkill(draft)
+      const moved = Boolean(selected) && (
+        selected.scope !== draft.scope
+        || selected.projectPath !== draft.projectPath
+        || selected.agentName !== draft.agentName
+      )
+      const next = moved && selected
+        ? await window.api.moveSkill(selected, draft)
+        : await window.api.saveSkill(draft)
       setSelected(next)
       setDraft(next)
       await load()
@@ -76,10 +92,33 @@ export default function SkillsScreen({
 
   async function remove(): Promise<void> {
     if (!selected || !confirm(`«${selected.name}» Skill을 삭제할까요?`)) return
-    await window.api.deleteSkill(selected)
-    setSelected(undefined)
-    setDraft(undefined)
-    await load()
+    try {
+      await window.api.deleteSkill(selected)
+      setSelected(undefined)
+      setDraft(undefined)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function exportSelected(): Promise<void> {
+    if (!selected) return
+    try {
+      await window.api.exportSkill(selected)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  function changeScope(scope: SkillScope): void {
+    if (!draft) return
+    setDraft({
+      ...draft,
+      scope,
+      projectPath: scope === 'project' ? (draft.projectPath || projects[0]?.path) : undefined,
+      agentName: scope === 'agent' ? (draft.agentName || agents[0]?.name) : undefined,
+    })
   }
 
   async function pickImport(): Promise<void> {
@@ -158,11 +197,28 @@ export default function SkillsScreen({
           <div className="flex items-center gap-2">
             <span className="rounded bg-yellow/10 px-2 py-1 text-[11px] uppercase text-yellow">{draft.scope}</span>
             <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-overlay1">{draft.location || '저장하면 SKILL.md 정본이 생성됩니다'}</span>
+            {selected && <button onClick={() => void exportSelected()} className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text" title="SKILL.md 내보내기"><Download className="h-4 w-4" /></button>}
             {selected && <button onClick={() => void remove()} className="rounded-md p-1.5 text-overlay1 hover:bg-red/10 hover:text-red" title="삭제"><Trash2 className="h-4 w-4" /></button>}
             {saved ? <span className="flex items-center gap-1 text-[12px] text-green"><Check className="h-3.5 w-3.5" /> 저장됨</span> : <button onClick={() => void save()} className="rounded-lg bg-lavender/20 px-3.5 py-1.5 text-[12px] font-medium text-lavender hover:bg-lavender/30">저장</button>}
           </div>
           <input value={draft.name} disabled={Boolean(selected)} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="skill-name" spellCheck={false} className={field} />
           <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="언제 이 Skill을 사용해야 하는지 한 문장으로 설명" className={field} />
+          <div className="grid grid-cols-2 gap-2">
+            <select value={draft.scope} onChange={(e) => changeScope(e.target.value as SkillScope)} className={field}>
+              <option value="global">Global · 모든 프로젝트</option>
+              <option value="project" disabled={projects.length === 0}>Project · 특정 프로젝트</option>
+              <option value="agent" disabled={agents.length === 0}>Agent · 특정 에이전트</option>
+            </select>
+            {draft.scope === 'project' ? (
+              <select value={draft.projectPath ?? ''} onChange={(e) => setDraft({ ...draft, projectPath: e.target.value })} className={field}>
+                {projects.map((project) => <option key={project.path} value={project.path}>{project.alias || project.path}</option>)}
+              </select>
+            ) : draft.scope === 'agent' ? (
+              <select value={draft.agentName ?? ''} onChange={(e) => setDraft({ ...draft, agentName: e.target.value })} className={field}>
+                {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.name}</option>)}
+              </select>
+            ) : <div className="flex items-center px-3 text-[11px] text-overlay1">모든 프로젝트와 Agent에서 사용할 수 있습니다.</div>}
+          </div>
           {error && <div className="rounded-lg bg-red/10 px-3 py-2 text-[12px] text-red">{error}</div>}
           <textarea value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} placeholder="작업 절차, 확인 사항, 완료 조건을 Markdown으로 작성합니다." spellCheck={false} className="min-h-0 flex-1 resize-none rounded-lg bg-mantle p-3 font-mono text-[13px] leading-relaxed text-text outline-none ring-1 ring-transparent focus:ring-lavender/40" />
         </main>

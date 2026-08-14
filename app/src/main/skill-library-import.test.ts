@@ -1,11 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('electron', () => ({ app: { getPath: () => tmpdir() } }))
 
-import { previewImport } from './skill-library'
+import { exportFile, move, previewImport, save } from './skill-library'
 
 const dirs: string[] = []
 afterEach(() => {
@@ -36,5 +36,55 @@ describe('Skill import preview', () => {
     writeFileSync(path, source)
 
     expect(previewImport(path).skill.content).toBe('# 본문')
+  })
+})
+
+describe('Skill management', () => {
+  it('moves a Skill to another scope without leaving the old canonical file', () => {
+    const project = mkdtempSync(join(tmpdir(), 'puppeteer-skill-project-'))
+    dirs.push(project)
+    const name = `move-${Date.now()}`
+    const global = save({
+      id: '', name, description: 'move test', content: '# body', location: '', scope: 'global',
+    })
+
+    const moved = move(global, { ...global, scope: 'project', projectPath: project })
+
+    expect(moved.scope).toBe('project')
+    expect(moved.location).toContain(project)
+    expect(() => readFileSync(global.location, 'utf8')).toThrow()
+    expect(readFileSync(moved.location, 'utf8')).toContain('# body')
+    rmSync(join(tmpdir(), 'skills', 'global', name), { recursive: true, force: true })
+  })
+
+  it('exports a canonical SKILL.md with frontmatter and body', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'puppeteer-skill-export-'))
+    dirs.push(dir)
+    const destination = join(dir, 'SKILL.md')
+
+    exportFile({
+      id: 'global:export-test', name: 'export-test', description: 'export description',
+      content: '# exported', location: '', scope: 'global',
+    }, destination)
+
+    const output = readFileSync(destination, 'utf8')
+    expect(output).toContain('name: export-test')
+    expect(output).toContain('description: export description')
+    expect(output).toContain('# exported')
+  })
+
+  it('does not overwrite a same-name Skill while moving scopes', () => {
+    const project = mkdtempSync(join(tmpdir(), 'puppeteer-skill-collision-'))
+    dirs.push(project)
+    const name = `collision-${Date.now()}`
+    const existing = save({
+      id: '', name, description: 'existing', content: '# existing', location: '',
+      scope: 'project', projectPath: project,
+    })
+
+    expect(() => save({
+      ...existing, location: '', description: 'replacement', content: '# replacement',
+    })).toThrow('이미 있습니다')
+    expect(readFileSync(existing.location, 'utf8')).toContain('# existing')
   })
 })

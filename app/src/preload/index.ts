@@ -199,6 +199,9 @@ const api = {
   importSkillFromFile: (): Promise<SkillImportPreview | undefined> =>
     ipcRenderer.invoke('skill:importFile'),
   saveSkill: (skill: SkillDef): Promise<SkillDef> => ipcRenderer.invoke('skill:save', skill),
+  moveSkill: (previous: SkillDef, next: SkillDef): Promise<SkillDef> =>
+    ipcRenderer.invoke('skill:move', previous, next),
+  exportSkill: (skill: SkillDef): Promise<boolean> => ipcRenderer.invoke('skill:export', skill),
   deleteSkill: (skill: SkillDef): Promise<void> => ipcRenderer.invoke('skill:delete', skill),
   routeInstruction: (instruction: string, runner: DetectedRunner, cwd: string): Promise<RouteResult> =>
     ipcRenderer.invoke('agent:route', instruction, runner, cwd),
