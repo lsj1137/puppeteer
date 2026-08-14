@@ -45,7 +45,6 @@ function toFetched(text: string, source: string, linkable: boolean): FetchedAgen
         projects: undefined,
         allowedTools: undefined,
         disallowedTools: undefined,
-        approvalMode: undefined,
       },
     },
     source,

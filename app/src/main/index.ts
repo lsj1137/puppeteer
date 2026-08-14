@@ -18,6 +18,7 @@ import type { StartSessionInput } from './session-manager'
 import type {
   AgentDef,
   ApprovalDecision,
+  ApprovalMode,
   DetectedRunner,
   FetchedAgent,
   SkillDef,
@@ -345,6 +346,10 @@ app.whenReady().then(() => {
   ipcMain.handle('session:rename', (_e, sessionId: string, title: string) =>
     sessions.renameSession(sessionId, title),
   )
+  ipcMain.handle('session:setApprovalMode', (_e, sessionId: string, mode: ApprovalMode) => {
+    if (mode !== 'ask' && mode !== 'auto') throw new Error('지원하지 않는 승인 모드입니다.')
+    return sessions.setApprovalMode(sessionId, mode)
+  })
   ipcMain.handle('approval:open', () => db.listOpenApprovals())
   ipcMain.handle('overview:stats', () => ({
     projects: db.projectStats(),

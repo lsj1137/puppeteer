@@ -5,6 +5,7 @@ import type { BrowserWindow } from 'electron'
 import { app } from 'electron'
 import type {
   ApprovalDecision,
+  ApprovalMode,
   ApprovalRequest,
   DetectedRunner,
   GitSnapshot,
@@ -203,13 +204,7 @@ export class SessionManager {
     const agent = input.agentName ? library.read(input.agentName) : undefined
 
     const approvalDir = join(workCwd, '.agent-workspace', 'approvals', id)
-    this.broker.attach(
-      id,
-      approvalDir,
-      agent?.workspace.approvalMode === 'auto-allowed'
-        ? (agent.workspace.allowedTools ?? [])
-        : [],
-    )
+    this.broker.attach(id, approvalDir, prev?.approvalMode === 'auto')
 
     // provider 에 맞는 어댑터를 고른다. 이벤트 계약은 같다.
     const adapter =
@@ -277,6 +272,12 @@ export class SessionManager {
 
   stop(sessionId: string): void {
     this.sessions.get(sessionId)?.adapter.stop()
+  }
+
+  setApprovalMode(sessionId: string, mode: ApprovalMode): StoredSession | undefined {
+    const session = db.setSessionApprovalMode(sessionId, mode)
+    this.broker.setAutoApprove(sessionId, mode === 'auto')
+    return session
   }
 
   /** 세션이 만든 변경 요약 (기획서 17장) */

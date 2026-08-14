@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   AgentDef,
   ApprovalDecision,
+  ApprovalMode,
   ApprovalRequest,
   ChangedFile,
   GitHistoryEntry,
@@ -96,6 +97,8 @@ const api = {
     ipcRenderer.invoke('session:get', sessionId),
   renameSession: (sessionId: string, title: string): Promise<StoredSession | undefined> =>
     ipcRenderer.invoke('session:rename', sessionId, title),
+  setSessionApprovalMode: (sessionId: string, mode: ApprovalMode): Promise<StoredSession | undefined> =>
+    ipcRenderer.invoke('session:setApprovalMode', sessionId, mode),
   listEvents: (sessionId: string): Promise<StoredEvent[]> =>
     ipcRenderer.invoke('session:events', sessionId),
   listOpenApprovals: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke('approval:open'),

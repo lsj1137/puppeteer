@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useState } from 'react'
 import { CircleStop, ImagePlus, PencilLine, X } from 'lucide-react'
-import type { DetectedRunner } from '@shared/session'
+import type { ApprovalMode, DetectedRunner } from '@shared/session'
 import PromptInput, { type PromptInputHandle } from './PromptInput'
 import { ComposerSettings } from './SessionHeader'
 import type { AgentDef } from '@shared/session'
@@ -25,6 +25,8 @@ interface Props {
   runnerLocked: boolean
   agentName?: string
   agents: AgentDef[]
+  approvalMode: ApprovalMode
+  approvalLocked: boolean
   commitNotice?: { id: string; title: string; text: string; status: 'success' | 'warning' }
   onAnnotate: (index: number) => void
   onAttachFiles: (files: FileList) => void | Promise<void>
@@ -32,6 +34,7 @@ interface Props {
   onSelectAgent: (name?: string) => void
   onEditAgent: (agent: AgentDef) => void
   onNewAgent: () => void
+  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<void>
   onRemoveAttachment: (index: number) => void
   onStop: (sessionId: string) => void | Promise<void>
   onSubmit: (text: string) => void
@@ -56,6 +59,8 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     runnerLocked,
     agentName,
     agents,
+    approvalMode,
+    approvalLocked,
     commitNotice,
     onAnnotate,
     onAttachFiles,
@@ -63,6 +68,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     onSelectAgent,
     onEditAgent,
     onNewAgent,
+    onChangeApprovalMode,
     onRemoveAttachment,
     onStop,
     onSubmit,
@@ -107,10 +113,13 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
         onChooseRunner={onChooseRunner}
         agentName={agentName}
         agents={agents}
+        approvalMode={approvalMode}
+        approvalLocked={approvalLocked}
         forceRunnerOpen={showRunnerPicker}
         onSelect={onSelectAgent}
         onEdit={onEditAgent}
         onNew={onNewAgent}
+        onChangeApprovalMode={onChangeApprovalMode}
       />
       <div className="flex items-end gap-2">
         <label

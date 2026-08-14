@@ -6,6 +6,7 @@ import type {
   MemoryProposal,
   SessionWorktree,
   ApprovalDecision,
+  ApprovalMode,
   ApprovalRequest,
   SessionEvent,
   SessionStatus,
@@ -129,6 +130,7 @@ function migrate(): void {
   addColumn('session', 'worktree_cleaned', 'INTEGER NOT NULL DEFAULT 0')
   addColumn('session', 'sort_order', 'INTEGER')
   addColumn('session', 'hidden', 'INTEGER NOT NULL DEFAULT 0')
+  addColumn('session', 'approval_mode', "TEXT NOT NULL DEFAULT 'ask'")
   addColumn('project', 'sort_order', 'INTEGER')
   addColumn('project', 'alias', 'TEXT')
   db.exec(`
@@ -365,13 +367,19 @@ export function updateSession(
   if (patch.ended) db.prepare('UPDATE session SET ended_at = ? WHERE id = ?').run(now(), id)
 }
 
+export function setSessionApprovalMode(id: string, mode: ApprovalMode): StoredSession | undefined {
+  db.prepare('UPDATE session SET approval_mode = ? WHERE id = ?').run(mode, id)
+  return getSession(id)
+}
+
 export function listSessions(projectPath: string, limit = 50): StoredSession[] {
   return db
     .prepare(
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
-              worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden
+              worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden,
+              approval_mode AS approvalMode
        FROM session WHERE project_path = ? AND hidden = 0
        ORDER BY sort_order ASC, started_at DESC LIMIT ?`,
     )
@@ -385,7 +393,8 @@ export function getSession(id: string): StoredSession | undefined {
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
-              worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden
+              worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden,
+              approval_mode AS approvalMode
        FROM session WHERE id = ?`,
     )
     .get(id) as unknown as StoredSession | undefined
@@ -404,6 +413,7 @@ function hydrate(row: unknown): unknown {
   }
   r.worktreeCleaned = Boolean(r.worktreeCleaned)
   r.hidden = Boolean(r.hidden)
+  r.approvalMode = r.approvalMode === 'auto' ? 'auto' : 'ask'
   return r
 }
 
@@ -441,7 +451,7 @@ export function recentSessions(limit = 20): StoredSession[] {
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt,
-              worktree, worktree_cleaned AS worktreeCleaned
+              worktree, worktree_cleaned AS worktreeCleaned, approval_mode AS approvalMode
        FROM session ORDER BY started_at DESC LIMIT ?`,
     )
     .all(limit)
@@ -489,7 +499,8 @@ export function listHiddenSessions(projectPath: string, limit = 50): StoredSessi
     `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
             runner_id AS runnerId, title, agent_name AS agentName, status,
             cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
-            worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden
+            worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden,
+            approval_mode AS approvalMode
      FROM session WHERE project_path = ? AND hidden = 1
      ORDER BY ended_at DESC, started_at DESC LIMIT ?`,
   ).all(projectPath, limit).map(hydrate) as unknown as StoredSession[]

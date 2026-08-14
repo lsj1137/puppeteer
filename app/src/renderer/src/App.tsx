@@ -35,6 +35,7 @@ import SessionCompletionToasts, {
 import { toggleTheme, useTheme } from './lib/theme'
 import type {
   ApprovalDecision,
+  ApprovalMode,
   ApprovalRequest,
   DetectedRunner,
   RunningSession,
@@ -652,6 +653,13 @@ export default function App() {
     ))
   }
 
+  async function changeSessionApprovalMode(mode: ApprovalMode): Promise<void> {
+    if (!activeSession) return
+    const updated = await window.api.setSessionApprovalMode(activeSession, mode)
+    if (!updated) return
+    setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))
+  }
+
   function reorderSessions(ids: string[]): void {
     if (!active) return
     setSessions((current) => {
@@ -1121,6 +1129,8 @@ export default function App() {
           runnerLocked={runnerLocked}
           agentName={agentName}
           agents={usableAgents}
+          approvalMode={selected?.approvalMode ?? 'ask'}
+          approvalLocked={Boolean(selected)}
           commitNotice={
             commitNotice?.kind === 'notice'
               ? {
@@ -1143,6 +1153,7 @@ export default function App() {
           onNewAgent={() => {
             setEditing({ agent: emptyAgent(active), isNew: true })
           }}
+          onChangeApprovalMode={changeSessionApprovalMode}
           onRemoveAttachment={(index) =>
             setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))
           }

@@ -11,6 +11,7 @@ interface Watched {
   timer: NodeJS.Timeout
   /** Allow for Session 으로 통과시킬 도구 이름 */
   sessionAllowed: Set<string>
+  autoApprove: boolean
   seen: Set<string>
 }
 
@@ -25,7 +26,7 @@ export class ApprovalBroker {
 
   constructor(private readonly onRequest: (req: ApprovalRequest) => void) {}
 
-  attach(sessionId: string, dir: string, autoAllowed: string[] = []): void {
+  attach(sessionId: string, dir: string, autoApprove = false): void {
     mkdirSync(dir, { recursive: true })
 
     // 같은 세션에 이어서 지시하면 attach 가 다시 불린다.
@@ -33,17 +34,25 @@ export class ApprovalBroker {
     const prev = this.watched.get(sessionId)
     if (prev) {
       prev.dir = dir
-      for (const tool of autoAllowed) prev.sessionAllowed.add(tool)
+      prev.autoApprove = autoApprove
       return
     }
 
     this.watched.set(sessionId, {
       dir,
       sessionId,
-      sessionAllowed: new Set(autoAllowed),
+      sessionAllowed: new Set(),
+      autoApprove,
       seen: new Set(),
       timer: setInterval(() => this.poll(sessionId), 200),
     })
+  }
+
+  setAutoApprove(sessionId: string, enabled: boolean): void {
+    const watched = this.watched.get(sessionId)
+    if (!watched) return
+    watched.autoApprove = enabled
+    if (!enabled) watched.sessionAllowed.clear()
   }
 
   detach(sessionId: string): void {
@@ -128,8 +137,8 @@ export class ApprovalBroker {
       const cwd: string = hook.cwd ?? ''
 
       // Allow for Session 으로 이미 허용한 도구는 묻지 않는다
-      if (w.sessionAllowed.has(tool)) {
-        this.write(w.dir, base, 'allow', '세션 허용됨')
+      if (w.autoApprove || w.sessionAllowed.has(tool)) {
+        this.write(w.dir, base, 'allow', w.autoApprove ? '세션 자동 승인' : '세션 허용됨')
         continue
       }
 

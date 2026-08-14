@@ -16,10 +16,11 @@ import {
   Pencil,
   Plus,
   ShieldAlert,
+  ShieldCheck,
   Terminal,
   X,
 } from 'lucide-react'
-import type { AgentDef, ApprovalRequest, DetectedRunner, RunningSession, StoredSession } from '@shared/session'
+import type { AgentDef, ApprovalMode, ApprovalRequest, DetectedRunner, RunningSession, StoredSession } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -337,11 +338,14 @@ export function ComposerSettings({
   commitNotice,
   agentName,
   agents,
+  approvalMode,
+  approvalLocked,
   forceRunnerOpen,
   onChooseRunner,
   onSelect,
   onEdit,
   onNew,
+  onChangeApprovalMode,
 }: {
   activeRunner?: DetectedRunner
   runnerLocked: boolean
@@ -350,15 +354,18 @@ export function ComposerSettings({
   onChooseRunner: (runnerId: string) => void | Promise<void>
   agentName?: string
   agents: AgentDef[]
+  approvalMode: ApprovalMode
+  approvalLocked: boolean
   forceRunnerOpen: boolean
   onSelect: (name?: string) => void
   onEdit: (agent: AgentDef) => void
   onNew: () => void
+  onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<void>
 }) {
   const [expanded, setExpanded] = useState(
     () => localStorage.getItem('ws.composerContextExpanded') !== 'false',
   )
-  const [panel, setPanel] = useState<'runner' | 'agent' | 'commit'>()
+  const [panel, setPanel] = useState<'runner' | 'agent' | 'approval' | 'commit'>()
   const [commitExpanded, setCommitExpanded] = useState(false)
 
   useEffect(() => {
@@ -390,7 +397,7 @@ export function ComposerSettings({
     })
   }
 
-  const togglePanel = (next: 'runner' | 'agent' | 'commit'): void => {
+  const togglePanel = (next: 'runner' | 'agent' | 'approval' | 'commit'): void => {
     setPanel((current) => current === next ? undefined : next)
     if (next === 'commit') setCommitExpanded(false)
   }
@@ -428,6 +435,19 @@ export function ComposerSettings({
           >
             <Bot className="h-3.5 w-3.5 shrink-0 text-mauve" />
             <span className="truncate">{agentName ?? '에이전트 없음'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => togglePanel('approval')}
+            disabled={!approvalLocked}
+            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 ${
+              panel === 'approval' ? 'bg-surface0 text-text' : 'text-subtext0 hover:bg-surface0/60'
+            }`}
+          >
+            {approvalMode === 'auto'
+              ? <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-yellow" />
+              : <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-sapphire" />}
+            <span>{approvalMode === 'auto' ? '자동 승인' : '승인 확인'}</span>
           </button>
 
         <button
@@ -569,6 +589,25 @@ export function ComposerSettings({
               <Plus className="h-3.5 w-3.5" /> 새 에이전트
             </button>
           </div>
+          )}
+          {panel === 'approval' && (
+            <div className="absolute bottom-full left-0 z-40 mb-1.5 w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
+              <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">이 세션의 승인 모드</div>
+              <button
+                onClick={() => { void Promise.resolve(onChangeApprovalMode('ask')); setPanel(undefined) }}
+                className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${approvalMode === 'ask' ? 'bg-surface1' : 'hover:bg-surface0'}`}
+              >
+                <span className="block text-[12px] font-medium text-text">매번 확인</span>
+                <span className="mt-0.5 block text-[10px] text-overlay1">도구 실행 전에 승인 요청을 표시합니다.</span>
+              </button>
+              <button
+                onClick={() => { void Promise.resolve(onChangeApprovalMode('auto')); setPanel(undefined) }}
+                className={`w-full rounded-lg px-3 py-2 text-left ${approvalMode === 'auto' ? 'bg-yellow/15 ring-1 ring-yellow/30' : 'hover:bg-surface0'}`}
+              >
+                <span className="block text-[12px] font-medium text-yellow">자동 승인</span>
+                <span className="mt-0.5 block text-[10px] leading-relaxed text-overlay1">이 세션의 모든 도구 요청을 자동 승인합니다. 신뢰할 수 있는 작업에서만 사용하세요.</span>
+              </button>
+            </div>
           )}
           {panel === 'commit' && (
             <div className="absolute bottom-full right-0 z-40 mb-1.5 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-surface1 bg-mantle p-3 shadow-xl">
