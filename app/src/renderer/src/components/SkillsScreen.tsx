@@ -72,12 +72,12 @@ export default function SkillsScreen({
   async function save(): Promise<void> {
     if (!draft) return
     try {
-      const moved = Boolean(selected) && (
+      const moved = selected !== undefined && (
         selected.scope !== draft.scope
         || selected.projectPath !== draft.projectPath
         || selected.agentName !== draft.agentName
       )
-      const next = moved && selected
+      const next = moved
         ? await window.api.moveSkill(selected, draft)
         : await window.api.saveSkill(draft)
       setSelected(next)
