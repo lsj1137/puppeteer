@@ -304,18 +304,13 @@ export default function Settings({
       </div>
 
       {showHelp && (
-        <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-crust/75 p-6 backdrop-blur-[3px]"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setShowHelp(false)
-          }}
-        >
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-crust/75 p-6 backdrop-blur-[3px]">
           <section className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
             <header className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
               <HelpCircle className="mt-1 h-4 w-4 shrink-0 text-sapphire" />
               <div className="min-w-0 flex-1">
                 <h2 className="text-[16px] font-semibold text-text">Puppeteer 사용 팁</h2>
-                <p className="mt-0.5 text-[11px] text-overlay1">Esc 또는 바깥 영역을 누르면 닫힙니다.</p>
+                <p className="mt-0.5 text-[11px] text-overlay1">Esc 또는 닫기 버튼으로 닫습니다.</p>
               </div>
               <button onClick={() => setShowHelp(false)} title="닫기" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
                 <X className="h-4 w-4" />

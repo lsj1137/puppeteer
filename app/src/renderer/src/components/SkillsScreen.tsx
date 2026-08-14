@@ -34,6 +34,10 @@ export default function SkillsScreen({
   useEffect(() => { void load() }, [load])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && importPreview) {
+        setImportPreview(undefined)
+        return
+      }
       if (!draft || !(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 's') return
       event.preventDefault()
       void save()

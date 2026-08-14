@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Bot, Copy, Check, Flag, X } from 'lucide-react'
 import type { AgentDef, CheckpointDraft, DetectedRunner } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
+import ConfirmDialog from './ConfirmDialog'
 
 const PROVIDER_LABEL: Record<string, string> = {
   'claude-cli': 'Claude',
@@ -35,6 +36,20 @@ export default function Checkpoint({
   const [runnerId, setRunnerId] = useState(runners[0]?.id ?? '')
   const [agentName, setAgentName] = useState<string>()
   const [copied, setCopied] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const dirty = body !== draft.body || runnerId !== (runners[0]?.id ?? '') || agentName !== undefined
+  const requestClose = (): void => {
+    if (dirty) setConfirmClose(true)
+    else onClose()
+  }
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !confirmClose) requestClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   const runner = runners.find((r) => r.id === runnerId)
   /** 고른 실행 환경에서 쓸 수 있는 에이전트만 */
@@ -62,7 +77,7 @@ export default function Checkpoint({
             <div className="mt-0.5 truncate text-[17px] text-text">{draft.title || '세션 인계'}</div>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             title="닫기"
             className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text"
           >
@@ -154,7 +169,7 @@ export default function Checkpoint({
           </button>
           <span className="flex-1" />
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="rounded-lg px-3 py-1.5 text-[12px] text-subtext0 hover:bg-surface0 hover:text-text"
           >
             취소
@@ -168,6 +183,16 @@ export default function Checkpoint({
           </button>
         </div>
       </div>
+      {confirmClose && (
+        <ConfirmDialog
+          title="체크포인트 편집을 닫을까요?"
+          description="수정한 인계 내용과 실행 설정이 사라집니다."
+          confirmLabel="저장하지 않고 닫기"
+          tone="danger"
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={onClose}
+        />
+      )}
     </div>
   )
 }

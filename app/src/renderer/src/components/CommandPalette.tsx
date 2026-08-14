@@ -74,10 +74,7 @@ export default function CommandPalette({
   let lastGroup = ''
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-crust/70 p-6 pt-[12vh]"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-crust/70 p-6 pt-[12vh]">
       <div
         className="flex max-h-[70vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-surface1 bg-mantle shadow-2xl"
         onClick={(e) => e.stopPropagation()}

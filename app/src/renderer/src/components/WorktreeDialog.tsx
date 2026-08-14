@@ -276,16 +276,8 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           : `원본보다 ${status?.ahead ?? 0}개 앞섬`
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6"
-      onClick={() => {
-        if (!busy) onClose()
-      }}
-    >
-      <div
-        className="max-h-[calc(100vh-3rem)] w-full max-w-lg overflow-auto rounded-lg border border-surface1 bg-mantle shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6">
+      <div className="max-h-[calc(100vh-3rem)] w-full max-w-lg overflow-auto rounded-lg border border-surface1 bg-mantle shadow-2xl">
         <div className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal/15 text-teal">
             <GitBranch className="h-4 w-4" />

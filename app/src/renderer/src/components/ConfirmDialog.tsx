@@ -32,14 +32,8 @@ export default function ConfirmDialog({
   const danger = tone === 'danger'
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6"
-      onClick={onCancel}
-    >
-      <div
-        className="w-full max-w-md rounded-xl border border-surface1 bg-mantle p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6">
+      <div className="w-full max-w-md rounded-xl border border-surface1 bg-mantle p-5 shadow-2xl">
         <div className="mb-3 flex items-start gap-3">
           <div
             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${

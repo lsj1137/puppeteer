@@ -454,6 +454,14 @@ function ExportAgentDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
 
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !busy) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
+
   async function exportTo(
     projectPath: string,
     format: 'claude-agent' | 'codex-skill',
@@ -486,12 +494,7 @@ function ExportAgentDialog({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-crust/60 p-6 backdrop-blur-[2px]"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-crust/60 p-6 backdrop-blur-[2px]">
       <div className="flex max-h-[min(32rem,calc(100vh-3rem))] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
         <div className="px-5 pb-3 pt-5">
           <div className="text-[11px] uppercase tracking-[0.14em] text-overlay1">

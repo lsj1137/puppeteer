@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Bot, HelpCircle, Trash2, X } from 'lucide-react'
 import type { AgentDef, ProviderId, SkillDef, SkillState, StoredProject } from '@shared/session'
+import ConfirmDialog from './ConfirmDialog'
 
 const PROVIDERS: { id: ProviderId; label: string }[] = [
   { id: 'claude-cli', label: 'Claude' },
@@ -108,6 +109,7 @@ export default function AgentEditor({
   const [disallowed, setDisallowed] = useState(list(agent.workspace.disallowedTools))
   const [error, setError] = useState<string>()
   const [confirmDel, setConfirmDel] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
   const [skills, setSkills] = useState<SkillDef[]>([])
   useEffect(() => { void window.api.listSkills().then(setSkills) }, [])
   const skillNames = useMemo(
@@ -127,6 +129,29 @@ export default function AgentEditor({
 
   const set = <K extends keyof AgentDef>(k: K, v: AgentDef[K]): void =>
     setDraft((d) => ({ ...d, [k]: v }))
+
+  const initialForm = useMemo(() => JSON.stringify({
+    draft: agent,
+    scope: agent.workspace.projects ?? [],
+    providers: agent.workspace.providers ?? [],
+    allowed: list(agent.workspace.allowedTools),
+    disallowed: list(agent.workspace.disallowedTools),
+  }), [agent])
+  const currentForm = JSON.stringify({ draft, scope, providers, allowed, disallowed })
+  const dirty = currentForm !== initialForm
+  const requestClose = (): void => {
+    if (dirty) setConfirmClose(true)
+    else onClose()
+  }
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape' || confirmClose) return
+      requestClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   async function save(): Promise<void> {
     const name = draft.name.trim()
@@ -213,7 +238,7 @@ export default function AgentEditor({
                 </button>
               ))}
             <button
-              onClick={onClose}
+              onClick={requestClose}
               title="닫기"
               className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text"
             >
@@ -405,7 +430,7 @@ export default function AgentEditor({
             </span>
           )}
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="rounded-lg px-3 py-1.5 text-[12px] text-subtext0 hover:bg-surface0 hover:text-text"
           >
             취소
@@ -418,6 +443,16 @@ export default function AgentEditor({
           </button>
         </div>
       </div>
+      {confirmClose && (
+        <ConfirmDialog
+          title="저장하지 않은 변경사항이 있습니다"
+          description="지금 닫으면 Agent 편집 내용이 사라집니다."
+          confirmLabel="저장하지 않고 닫기"
+          tone="danger"
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={onClose}
+        />
+      )}
     </div>
   )
 }

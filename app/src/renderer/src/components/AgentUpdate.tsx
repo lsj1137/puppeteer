@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, GitCompare, X } from 'lucide-react'
 import type { AgentDef, UpdateCheck } from '@shared/session'
 import Code from './Code'
@@ -30,6 +30,14 @@ export default function AgentUpdate({
   const [grant, setGrant] = useState<string[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !busy) onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, onClose])
 
   if (!fetched) return null
 

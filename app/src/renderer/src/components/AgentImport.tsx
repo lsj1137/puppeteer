@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AlertTriangle, Bot, FileUp, Link2, Loader2, X } from 'lucide-react'
 import type { AgentDef, FetchedAgent, StoredProject } from '@shared/session'
+import ConfirmDialog from './ConfirmDialog'
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
 
@@ -35,6 +36,7 @@ export default function AgentImport({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const [fetched, setFetched] = useState<FetchedAgent>()
+  const [confirmClose, setConfirmClose] = useState(false)
 
   // ── 검토 단계에서 사용자가 다시 정하는 값 ──
   const [name, setName] = useState('')
@@ -48,6 +50,19 @@ export default function AgentImport({
   const flags = fetched
     ? FLAGS.filter((f) => f.re.test(fetched.agent.instructions)).map((f) => f.label)
     : []
+  const dirty = Boolean(url.trim() || fetched)
+  const requestClose = (): void => {
+    if (dirty) setConfirmClose(true)
+    else onClose()
+  }
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !confirmClose) requestClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
 
   function accept(f: FetchedAgent): void {
     setFetched(f)
@@ -108,7 +123,7 @@ export default function AgentImport({
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={requestClose}
             className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text"
           >
             <X className="h-4 w-4" />
@@ -316,6 +331,16 @@ export default function AgentImport({
           </div>
         )}
       </div>
+      {confirmClose && (
+        <ConfirmDialog
+          title="가져오기를 닫을까요?"
+          description="검토 중인 Agent와 선택한 설정이 사라집니다."
+          confirmLabel="가져오기 닫기"
+          tone="danger"
+          onCancel={() => setConfirmClose(false)}
+          onConfirm={onClose}
+        />
+      )}
     </div>
   )
 }
