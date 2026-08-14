@@ -130,6 +130,10 @@ const api = {
     projectPath: string,
     format: 'claude-agent' | 'codex-skill' = 'claude-agent',
   ): Promise<string | undefined> => ipcRenderer.invoke('agent:export', name, projectPath, format),
+  exportAgentAnywhere: (
+    name: string,
+    format: 'claude-agent' | 'codex-skill' = 'claude-agent',
+  ): Promise<string | undefined> => ipcRenderer.invoke('agent:exportAnywhere', name, format),
   fetchAgentFromUrl: (url: string): Promise<FetchedAgent> =>
     ipcRenderer.invoke('agent:fetchUrl', url),
   fetchAgentFromFile: (): Promise<FetchedAgent | undefined> => ipcRenderer.invoke('agent:fetchFile'),

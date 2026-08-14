@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { app } from 'electron'
 import { parse, stringify } from 'yaml'
 import type { AgentDef, AgentSource, ProviderId } from '@shared/session'
@@ -111,6 +111,27 @@ export function exportTo(
   mkdirSync(dir, { recursive: true })
   const path = join(dir, `${name}.md`)
   writeFileSync(path, serialize(agent), 'utf8')
+  return path
+}
+
+/** 파일 선택 대화상자 등에서 고른 임의 위치로 Agent를 내보낸다. */
+export function exportFile(
+  name: string,
+  path: string,
+  format: AgentExportFormat = 'claude-agent',
+): string | undefined {
+  const agent = read(name)
+  if (!agent) return undefined
+  mkdirSync(dirname(path), { recursive: true })
+  if (format === 'codex-skill') {
+    const frontmatter = stringify({
+      name: agent.name,
+      description: agent.description,
+    }).trim()
+    writeFileSync(path, `---\n${frontmatter}\n---\n\n${agent.instructions.trim()}\n`, 'utf8')
+  } else {
+    writeFileSync(path, serialize(agent), 'utf8')
+  }
   return path
 }
 

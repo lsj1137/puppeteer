@@ -452,6 +452,7 @@ function ExportAgentDialog({
   onClose: () => void
 }) {
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
 
   async function exportTo(
     projectPath: string,
@@ -459,9 +460,26 @@ function ExportAgentDialog({
   ): Promise<void> {
     if (busy) return
     setBusy(true)
+    setError(undefined)
     try {
       await window.api.exportAgent(agentName, projectPath, format)
       onClose()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function exportAnywhere(format: 'claude-agent' | 'codex-skill'): Promise<void> {
+    if (busy) return
+    setBusy(true)
+    setError(undefined)
+    try {
+      const path = await window.api.exportAgentAnywhere(agentName, format)
+      if (path) onClose()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
       setBusy(false)
     }
@@ -489,7 +507,7 @@ function ExportAgentDialog({
         <div className="min-h-0 flex-1 overflow-auto px-5 pb-2">
           {projects.length === 0 ? (
             <div className="rounded-lg bg-base px-3 py-4 text-center text-[12px] text-overlay1">
-              먼저 프로젝트를 등록해 주세요.
+              등록된 프로젝트가 없습니다. 아래에서 원하는 위치를 직접 선택할 수 있습니다.
             </div>
           ) : (
             <div className="space-y-2">
@@ -529,6 +547,31 @@ function ExportAgentDialog({
               ))}
             </div>
           )}
+
+          <div className="mt-3 rounded-lg border border-surface0 p-3">
+            <div className="text-[11px] font-medium text-subtext0">원하는 위치에 내보내기</div>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void exportAnywhere('claude-agent')}
+                className="rounded-md bg-surface0/60 px-2.5 py-2 text-left hover:bg-surface1 disabled:opacity-40"
+              >
+                <div className="text-[12px] font-medium text-text">Agent Markdown</div>
+                <div className="mt-0.5 text-[10px] text-overlay1">파일 위치 직접 선택</div>
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void exportAnywhere('codex-skill')}
+                className="rounded-md bg-surface0/60 px-2.5 py-2 text-left hover:bg-surface1 disabled:opacity-40"
+              >
+                <div className="text-[12px] font-medium text-text">Codex Skill</div>
+                <div className="mt-0.5 text-[10px] text-overlay1">상위 폴더 직접 선택</div>
+              </button>
+            </div>
+          </div>
+          {error && <div className="mt-2 text-[11px] text-red">내보내기 실패: {error}</div>}
         </div>
 
         <div className="flex justify-end px-5 pb-5 pt-3">

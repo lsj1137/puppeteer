@@ -380,6 +380,27 @@ app.whenReady().then(() => {
     format: library.AgentExportFormat = 'claude-agent',
   ) => library.exportTo(name, projectPath, format),
   )
+  ipcMain.handle('agent:exportAnywhere', async (
+    _e,
+    name: string,
+    format: library.AgentExportFormat = 'claude-agent',
+  ): Promise<string | undefined> => {
+    if (format === 'codex-skill') {
+      const result = await dialog.showOpenDialog({
+        title: 'Codex Skill을 내보낼 폴더 선택',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      if (result.canceled || !result.filePaths[0]) return undefined
+      return library.exportFile(name, join(result.filePaths[0], name, 'SKILL.md'), format)
+    }
+    const result = await dialog.showSaveDialog({
+      title: 'Agent Markdown 내보내기',
+      defaultPath: `${name}.md`,
+      filters: [{ name: 'Agent Markdown', extensions: ['md'] }],
+    })
+    if (result.canceled || !result.filePath) return undefined
+    return library.exportFile(name, result.filePath, format)
+  })
   // 가져오기는 파싱만 한다. 저장은 사용자가 검토 화면에서 승인해야 일어난다.
   ipcMain.handle('agent:fetchUrl', (_e, url: string): Promise<FetchedAgent> => fetchFromUrl(url))
   ipcMain.handle('agent:fetchFile', async (): Promise<FetchedAgent | undefined> => {
