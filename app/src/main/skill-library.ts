@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve as resolvePath } from 'node:path'
 import { app } from 'electron'
 import { parse, stringify } from 'yaml'
 import type { AgentDef, SkillDef, SkillImportPreview, SkillScope, SkillState } from '@shared/session'
@@ -112,7 +112,7 @@ export function save(skill: SkillDef): SkillDef {
   const name = skill.name.trim()
   if (!safeName(name)) throw new Error('Skill 이름에 공백과 특수문자는 쓸 수 없습니다.')
   const path = join(root(skill.scope, skill.projectPath, skill.agentName), name, 'SKILL.md')
-  if (existsSync(path) && (!skill.location || resolve(skill.location) !== resolve(path))) {
+  if (existsSync(path) && (!skill.location || resolvePath(skill.location) !== resolvePath(path))) {
     throw new Error(`같은 범위에 «${name}» Skill이 이미 있습니다.`)
   }
   mkdirSync(dirname(path), { recursive: true })
