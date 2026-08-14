@@ -148,7 +148,7 @@ export default function App() {
   )
   const [notify, setNotify] = useState(() => localStorage.getItem('ws.notify') !== 'off')
   const [worktreeIntegrationMode, setWorktreeIntegrationMode] =
-    useState<WorktreeIntegrationMode>('auto')
+    useState<WorktreeIntegrationMode>('suggest')
   /** 탭바 가용 폭 — 창 크기·Artifact 폭에 따라 바뀌므로 관찰한다 */
   const [tabRoom, setTabRoom] = useState(0)
   const [confirmDelSession, setConfirmDelSession] = useState<StoredSession>()
@@ -727,6 +727,15 @@ export default function App() {
     setProjects((current) => current.map((project) => project.path === path ? renamed : project))
   }
 
+  async function setProjectWorktreeMode(
+    path: string,
+    mode: WorktreeIntegrationMode,
+  ): Promise<void> {
+    const updated = await window.api.setProjectWorktreeMode(path, mode)
+    if (!updated) return
+    setProjects((current) => current.map((project) => project.path === path ? updated : project))
+  }
+
   async function relinkProject(path: string): Promise<void> {
     const result = await window.api.relinkProject(path)
     if (result.canceled) return
@@ -900,6 +909,7 @@ export default function App() {
           onOpenApproval={openApproval}
           onPickFolder={pickFolder}
           onRenameProject={renameProject}
+          onSetProjectWorktreeMode={setProjectWorktreeMode}
           onRelinkProject={relinkProject}
           onReorderProjects={reorderProjects}
           onSelectProject={selectProject}

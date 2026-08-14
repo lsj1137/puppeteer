@@ -36,7 +36,11 @@ function canonicalPath(path: string): string {
 }
 
 function worktreeIntegrationMode(): WorktreeIntegrationMode {
-  return db.getSetting(WORKTREE_INTEGRATION_SETTING) === 'suggest' ? 'suggest' : 'auto'
+  return db.getSetting(WORKTREE_INTEGRATION_SETTING) === 'auto' ? 'auto' : 'suggest'
+}
+
+function projectWorktreeIntegrationMode(path: string): WorktreeIntegrationMode {
+  return db.projectWorktreeMode(path)
 }
 
 function projectRootForMemoryId(id: string): string | undefined {
@@ -273,6 +277,12 @@ app.whenReady().then(() => {
   ipcMain.handle('project:list', () => db.listProjects())
   ipcMain.handle('project:reorder', (_e, paths: string[]) => db.reorderProjects(paths))
   ipcMain.handle('project:rename', (_e, path: string, alias: string) => db.renameProject(path, alias))
+  ipcMain.handle('project:setWorktreeMode', (_e, path: string, mode: WorktreeIntegrationMode) => {
+    if (mode !== 'off' && mode !== 'auto' && mode !== 'suggest') {
+      throw new Error('지원하지 않는 프로젝트 Worktree 방식입니다.')
+    }
+    return db.setProjectWorktreeMode(path, mode)
+  })
   ipcMain.handle('project:relink', async (_e, oldPath: string) => {
     if (sessions.listRunning().some(({ projectPath }) => canonicalPath(projectPath) === canonicalPath(oldPath))) {
       return { ok: false, oldPath, message: '실행 중인 세션을 먼저 종료해 주세요.' }
@@ -428,7 +438,7 @@ app.whenReady().then(() => {
     const projectRoot = projectRootForMemoryId(id)
     const memoryWasClean = projectRoot ? !(await projectMemoryDirty(projectRoot)) : false
     const saved = memory.save(id, content)
-    if (saved && projectRoot && memoryWasClean && worktreeIntegrationMode() === 'auto') {
+    if (saved && projectRoot && memoryWasClean && projectWorktreeIntegrationMode(projectRoot) === 'auto') {
       await commitProjectMemory(projectRoot)
     }
     return saved
@@ -459,7 +469,7 @@ app.whenReady().then(() => {
         proposal.scope === 'project'
         && projectRoot
         && memoryWasClean
-        && worktreeIntegrationMode() === 'auto'
+        && projectWorktreeIntegrationMode(projectRoot) === 'auto'
       ) {
         // 승인이 명시된 정본 파일만 커밋한다. 실패해도 이미 적용된 Memory 승인을 되돌리지는 않는다.
         await commitProjectMemory(projectRoot)

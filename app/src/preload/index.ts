@@ -79,6 +79,10 @@ const api = {
   reorderProjects: (paths: string[]): Promise<void> => ipcRenderer.invoke('project:reorder', paths),
   renameProject: (path: string, alias: string): Promise<StoredProject | undefined> =>
     ipcRenderer.invoke('project:rename', path, alias),
+  setProjectWorktreeMode: (
+    path: string,
+    mode: WorktreeIntegrationMode,
+  ): Promise<StoredProject | undefined> => ipcRenderer.invoke('project:setWorktreeMode', path, mode),
   relinkProject: (path: string): Promise<ProjectRelinkResult> =>
     ipcRenderer.invoke('project:relink', path),
   removeProject: (path: string): Promise<void> => ipcRenderer.invoke('project:remove', path),

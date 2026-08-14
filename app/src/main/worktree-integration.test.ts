@@ -46,6 +46,10 @@ describe('completed worktree integration policy', () => {
     expect(nextWorktreeIntegrationStep('suggest', status())).toBe('suggest')
   })
 
+  it('does nothing when worktree integration is disabled', () => {
+    expect(nextWorktreeIntegrationStep('off', status({ dirty: true }))).toBe('none')
+  })
+
   it('does nothing when there is no work or it was already merged', () => {
     expect(
       nextWorktreeIntegrationStep('auto', status({ hasCommits: false, canMerge: false })),

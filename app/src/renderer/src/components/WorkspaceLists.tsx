@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { FolderPlus, Loader2, Monitor, Pencil, RefreshCw, ShieldAlert, Terminal, Trash2 } from 'lucide-react'
+import { FolderPlus, GitBranch, Loader2, Monitor, Pencil, RefreshCw, ShieldAlert, Terminal, Trash2 } from 'lucide-react'
 import type {
   ApprovalRequest,
   DetectedRunner,
   RunningSession,
   StoredProject,
+  WorktreeIntegrationMode,
 } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import { approvalNavigationPath } from '../lib/navigation'
@@ -22,6 +23,7 @@ interface Props {
   onOpenApproval: (approval: ApprovalRequest) => void | Promise<void>
   onPickFolder: () => void | Promise<void>
   onRenameProject: (path: string, alias: string) => void | Promise<void>
+  onSetProjectWorktreeMode: (path: string, mode: WorktreeIntegrationMode) => void | Promise<void>
   onRelinkProject: (path: string) => void | Promise<void>
   onReorderProjects: (paths: string[]) => void
   onSelectProject: (path: string) => void | Promise<void>
@@ -43,6 +45,7 @@ export default function WorkspaceLists(props: Props) {
     onOpenApproval,
     onPickFolder,
     onRenameProject,
+    onSetProjectWorktreeMode,
     onRelinkProject,
     onReorderProjects,
     onSelectProject,
@@ -51,6 +54,7 @@ export default function WorkspaceLists(props: Props) {
   const [dropTarget, setDropTarget] = useState<string>()
   const [editingProject, setEditingProject] = useState<string>()
   const [projectAlias, setProjectAlias] = useState('')
+  const [worktreeMenu, setWorktreeMenu] = useState<string>()
 
   const finishRename = (path: string): void => {
     void onRenameProject(path, projectAlias)
@@ -201,6 +205,16 @@ export default function WorkspaceLists(props: Props) {
                   <button
                     onClick={(event) => {
                       event.stopPropagation()
+                      setWorktreeMenu((current) => current === project.path ? undefined : project.path)
+                    }}
+                    className="hidden rounded p-0.5 text-overlay1 hover:bg-surface1 hover:text-text group-hover:block"
+                    title="Worktree 방식"
+                  >
+                    <GitBranch className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={(event) => {
+                      event.stopPropagation()
                       void onRelinkProject(project.path)
                     }}
                     className="hidden rounded p-0.5 text-overlay1 hover:bg-sapphire/15 hover:text-sapphire group-hover:block"
@@ -238,7 +252,43 @@ export default function WorkspaceLists(props: Props) {
                   ) : (
                     '실행 환경 미지정'
                   )}
+                  <span>·</span>
+                  <GitBranch className="h-3 w-3" />
+                  <span>{
+                    project.worktreeMode === 'off'
+                      ? 'Worktree 끔'
+                      : project.worktreeMode === 'auto'
+                        ? '자동 병합'
+                        : '병합 제안'
+                  }</span>
                 </div>
+                {worktreeMenu === project.path && (
+                  <div
+                    className="mt-1 rounded-md border border-surface1 bg-mantle p-1 shadow-lg"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {([
+                      ['off', '사용 안 함', '원본 폴더에서 실행 · 자동 Git 반영 없음'],
+                      ['suggest', '병합 제안', 'Worktree 격리 · 직접 검토 후 반영'],
+                      ['auto', '자동 병합', 'Worktree 변경을 자동 커밋·안전 병합'],
+                    ] as const).map(([mode, label, description]) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        onClick={() => {
+                          void onSetProjectWorktreeMode(project.path, mode)
+                          setWorktreeMenu(undefined)
+                        }}
+                        className={`block w-full rounded px-2 py-1.5 text-left ${
+                          (project.worktreeMode ?? 'suggest') === mode ? 'bg-surface1' : 'hover:bg-surface0'
+                        }`}
+                      >
+                        <span className="block text-[11px] font-medium text-text">{label}</span>
+                        <span className="block text-[10px] text-overlay1">{description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )
           })}

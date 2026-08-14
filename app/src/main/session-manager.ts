@@ -118,6 +118,7 @@ export class SessionManager {
 
     db.addProject(input.cwd)
     db.touchProject(input.cwd)
+    const projectWorktreeMode = db.projectWorktreeMode(input.cwd)
     // 이어가는 경우 제목·생성시각·스냅샷을 그대로 둔다. 탭 이름이 매 턴 바뀌면 안 된다.
     if (!prev) {
       db.createSession({
@@ -151,6 +152,7 @@ export class SessionManager {
     )
     if (
       !worktree &&
+      projectWorktreeMode !== 'off' &&
       shouldCreateWorktree(input.isolate, Boolean(prev), recreateCleanedWorktree)
     ) {
       const originSnapshot = await snapshot(input.cwd)
@@ -626,14 +628,24 @@ export class SessionManager {
     if (this.integratingWorktrees.has(sessionId)) return
     this.integratingWorktrees.add(sessionId)
     const stored = db.getSession(sessionId)
-    let wt = stored?.worktree
-    if (!wt) {
+    if (!stored?.worktree) {
       this.integratingWorktrees.delete(sessionId)
       return
     }
+    let wt = stored.worktree
 
-    const mode: WorktreeIntegrationMode =
-      db.getSetting('worktree_integration_mode') === 'suggest' ? 'suggest' : 'auto'
+    const mode: WorktreeIntegrationMode = db.projectWorktreeMode(stored.projectPath)
+    if (mode === 'off') {
+      this.setIntegrationReport(sessionId, {
+        mode,
+        phase: 'skipped',
+        summary: '프로젝트 설정에서 Worktree 자동 반영을 사용하지 않습니다.',
+        worktreePath: wt.path,
+        updatedAt: Date.now(),
+      })
+      this.integratingWorktrees.delete(sessionId)
+      return
+    }
     this.setIntegrationReport(sessionId, {
       mode,
       phase: 'checking',

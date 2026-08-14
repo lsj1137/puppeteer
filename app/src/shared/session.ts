@@ -17,7 +17,7 @@ export type RiskLevel = 'low' | 'med' | 'high'
 export type ArtifactKind = 'code' | 'md' | 'diff' | 'image' | 'log'
 
 /** 세션이 정상 완료된 뒤 격리 worktree를 원본에 반영하는 방식. */
-export type WorktreeIntegrationMode = 'auto' | 'suggest'
+export type WorktreeIntegrationMode = 'off' | 'auto' | 'suggest'
 
 export interface WorktreeIntegrationReport {
   mode: WorktreeIntegrationMode
@@ -147,6 +147,8 @@ export interface StoredProject {
   /** 사용자가 지정한 표시 이름. 비어 있으면 폴더명을 사용한다. */
   alias: string | null
   runnerId: string | null
+  /** 이 프로젝트의 격리·자동 반영 정책. */
+  worktreeMode?: WorktreeIntegrationMode
   addedAt: number
   lastUsedAt: number | null
   sortOrder?: number | null

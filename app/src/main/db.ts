@@ -15,6 +15,7 @@ import type {
   StoredProject,
   StoredSession,
   WorktreeIntegrationReport,
+  WorktreeIntegrationMode,
 } from '@shared/session'
 
 /**
@@ -133,6 +134,7 @@ function migrate(): void {
   addColumn('session', 'approval_mode', "TEXT NOT NULL DEFAULT 'ask'")
   addColumn('project', 'sort_order', 'INTEGER')
   addColumn('project', 'alias', 'TEXT')
+  addColumn('project', 'worktree_mode', "TEXT NOT NULL DEFAULT 'suggest'")
   db.exec(`
     WITH ranked AS (
       SELECT path, ROW_NUMBER() OVER (ORDER BY COALESCE(last_used_at, added_at) DESC) - 1 AS position
@@ -233,7 +235,7 @@ export function listProjects(): StoredProject[] {
                 ORDER BY started_at DESC LIMIT 1
               )) AS runnerId,
               added_at AS addedAt, last_used_at AS lastUsedAt,
-              sort_order AS sortOrder
+              sort_order AS sortOrder, worktree_mode AS worktreeMode
        FROM project
        ORDER BY sort_order IS NULL, sort_order ASC, COALESCE(last_used_at, added_at) DESC`,
     )
@@ -241,11 +243,13 @@ export function listProjects(): StoredProject[] {
 }
 
 export function addProject(path: string): void {
+  const defaultMode: WorktreeIntegrationMode =
+    getSetting('worktree_integration_mode') === 'auto' ? 'auto' : 'suggest'
   db.prepare(
-    `INSERT INTO project (path, added_at, last_used_at, sort_order)
-     VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM project))
+    `INSERT INTO project (path, added_at, last_used_at, sort_order, worktree_mode)
+     VALUES (?, ?, ?, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM project), ?)
      ON CONFLICT(path) DO UPDATE SET last_used_at = excluded.last_used_at`,
-  ).run(path, now(), now())
+  ).run(path, now(), now(), defaultMode)
 }
 
 export function reorderProjects(paths: string[]): void {
@@ -365,6 +369,21 @@ export function updateSession(
   if (patch.costUsd !== undefined)
     db.prepare('UPDATE session SET cost_usd = ? WHERE id = ?').run(patch.costUsd, id)
   if (patch.ended) db.prepare('UPDATE session SET ended_at = ? WHERE id = ?').run(now(), id)
+}
+
+export function projectWorktreeMode(path: string): WorktreeIntegrationMode {
+  const row = db.prepare('SELECT worktree_mode AS mode FROM project WHERE path = ?').get(path) as
+    | { mode?: string }
+    | undefined
+  return row?.mode === 'auto' || row?.mode === 'off' ? row.mode : 'suggest'
+}
+
+export function setProjectWorktreeMode(
+  path: string,
+  mode: WorktreeIntegrationMode,
+): StoredProject | undefined {
+  db.prepare('UPDATE project SET worktree_mode = ? WHERE path = ?').run(mode, path)
+  return listProjects().find((project) => project.path === path)
 }
 
 export function setSessionApprovalMode(id: string, mode: ApprovalMode): StoredSession | undefined {

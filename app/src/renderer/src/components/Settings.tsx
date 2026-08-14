@@ -157,8 +157,8 @@ export default function Settings({
           </Row>
 
           <Row
-            label="작업 반영"
-            hint="정상 완료된 격리 세션의 변경을 원본 프로젝트에 반영하는 방식입니다. 충돌 가능성이 있으면 자동 병합도 제안으로 전환됩니다."
+            label="새 프로젝트"
+            hint="앞으로 추가하는 프로젝트의 기본 Worktree 반영 방식입니다. 기존 프로젝트는 프로젝트 목록에서 각각 바꿉니다."
           >
             <div className="flex gap-1.5">
               <Choice
@@ -175,8 +175,8 @@ export default function Settings({
               </Choice>
             </div>
             <div className="mt-1.5 text-[11px] leading-relaxed text-overlay1">
-              자동 병합은 완료 시 변경을 커밋하고 안전한 fast-forward만 수행합니다. 병합 제안은
-              worktree 실행 경로와 수동 반영 방법을 대화에 남깁니다.
+              새 프로젝트에만 적용됩니다. 기존 프로젝트는 목록의 Git 분기 아이콘에서 사용 안 함,
+              자동 병합, 병합 제안을 각각 선택합니다.
             </div>
           </Row>
 

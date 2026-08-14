@@ -278,7 +278,11 @@ export default function ArtifactSidebar({
                     <span className="text-[12px] font-medium text-subtext1">{worktreeStatus.integration.summary}</span>
                   </div>
                   <div className="mt-1 text-[11px] text-overlay1">
-                    {worktreeStatus.integration.mode === 'auto' ? '자동 병합' : '병합 제안'} · {new Date(worktreeStatus.integration.updatedAt).toLocaleString()}
+                    {worktreeStatus.integration.mode === 'auto'
+                      ? '자동 병합'
+                      : worktreeStatus.integration.mode === 'off'
+                        ? 'Worktree 사용 안 함'
+                        : '병합 제안'} · {new Date(worktreeStatus.integration.updatedAt).toLocaleString()}
                   </div>
                   {worktreeStatus.integration.detail && (
                     <div className="mt-1.5 whitespace-pre-wrap break-words rounded bg-crust/40 px-2 py-1.5 font-mono text-[11px] text-overlay1">
