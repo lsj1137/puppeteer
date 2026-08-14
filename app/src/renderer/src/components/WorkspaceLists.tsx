@@ -244,23 +244,27 @@ export default function WorkspaceLists(props: Props) {
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="flex items-center gap-1 text-[11px] text-overlay1">
-                  {runner ? (
-                    <>
-                      <Icon className="h-3 w-3" /> {runnerLabel(runner)}
-                    </>
-                  ) : (
-                    '실행 환경 미지정'
-                  )}
-                  <span>·</span>
-                  <GitBranch className="h-3 w-3" />
-                  <span>{
-                    project.worktreeMode === 'off'
-                      ? 'Worktree 끔'
-                      : project.worktreeMode === 'auto'
-                        ? '자동 병합'
-                        : '병합 제안'
-                  }</span>
+                <div className="flex min-w-0 items-center gap-2 text-[11px] text-overlay1">
+                  <span className="flex min-w-0 flex-1 items-center gap-1 truncate">
+                    {runner ? (
+                      <>
+                        <Icon className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{runnerLabel(runner)}</span>
+                      </>
+                    ) : (
+                      <span className="truncate">실행 환경 미지정</span>
+                    )}
+                  </span>
+                  <span className="ml-auto flex shrink-0 items-center gap-1 text-right">
+                    <GitBranch className="h-3 w-3" />
+                    <span>{
+                      project.worktreeMode === 'off'
+                        ? 'Worktree 끔'
+                        : project.worktreeMode === 'auto'
+                          ? '자동 병합'
+                          : '병합 제안'
+                    }</span>
+                  </span>
                 </div>
               </div>
             )
