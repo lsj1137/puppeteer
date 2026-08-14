@@ -64,6 +64,27 @@ function Hint({ text }: { text: string }): React.ReactElement {
   )
 }
 
+/** 라벨 | 컨트롤 2단. 모듈 범위에 고정해 입력 중 자식 DOM이 다시 마운트되지 않게 한다. */
+function EditorRow({
+  label,
+  hint,
+  children,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+}): React.ReactElement {
+  return (
+    <div className="grid grid-cols-[92px_1fr] items-start gap-x-4 py-2">
+      <div className="flex items-center gap-1 pt-1.5 text-[12px] text-subtext0">
+        <span>{label}</span>
+        {hint && <Hint text={hint} />}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
+
 /** 에이전트 편집. 저장하면 앱 라이브러리에 기록된다. */
 export default function AgentEditor({
   agent,
@@ -132,25 +153,6 @@ export default function AgentEditor({
     await window.api.saveAgent(next)
     onSaved(next)
   }
-
-  /** 라벨 | 컨트롤 2단. 라벨을 위에 쌓지 않아 세로가 훨씬 짧아진다. */
-  const Row = ({
-    label,
-    hint,
-    children,
-  }: {
-    label: string
-    hint?: string
-    children: React.ReactNode
-  }): React.ReactElement => (
-    <div className="grid grid-cols-[92px_1fr] items-start gap-x-4 py-2">
-      <div className="flex items-center gap-1 pt-1.5 text-[12px] text-subtext0">
-        <span>{label}</span>
-        {hint && <Hint text={hint} />}
-      </div>
-      <div className="min-w-0">{children}</div>
-    </div>
-  )
 
   const field =
     'w-full rounded-lg bg-base px-2.5 py-1.5 text-[13px] text-text outline-none ring-1 ring-transparent transition placeholder:text-overlay0 focus:ring-lavender/50 motion-reduce:transition-none'
@@ -221,24 +223,24 @@ export default function AgentEditor({
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-5 pb-2 pt-2">
-          <Row label="설명" hint="지시를 어느 에이전트로 보낼지 정할 때 이 문장을 보고 판단합니다.">
+          <EditorRow label="설명" hint="지시를 어느 에이전트로 보낼지 정할 때 이 문장을 보고 판단합니다.">
             <input
               className={field}
               value={draft.description}
               onChange={(e) => set('description', e.target.value)}
               placeholder="리팩터링 전담. 기능 변경 없이 구조만 정리한다."
             />
-          </Row>
+          </EditorRow>
 
-          <Row label="역할 지침" hint="세션의 시스템 프롬프트가 됩니다. 이 에이전트가 무엇을 어떻게 하는지 적으세요.">
+          <EditorRow label="역할 지침" hint="세션의 시스템 프롬프트가 됩니다. 이 에이전트가 무엇을 어떻게 하는지 적으세요.">
             <textarea
               className={`${field} min-h-[200px] resize-y leading-relaxed`}
               value={draft.instructions}
               onChange={(e) => set('instructions', e.target.value)}
             />
-          </Row>
+          </EditorRow>
 
-          <Row label="적용 대상" hint="고른 프로젝트에서만 이 에이전트가 보입니다. 아무것도 안 고르면 전체에서 쓸 수 있습니다.">
+          <EditorRow label="적용 대상" hint="고른 프로젝트에서만 이 에이전트가 보입니다. 아무것도 안 고르면 전체에서 쓸 수 있습니다.">
             {projects.length === 0 ? (
               <div className="py-1.5 text-[12px] text-overlay1">등록된 프로젝트가 없습니다</div>
             ) : (
@@ -268,9 +270,9 @@ export default function AgentEditor({
                 )}
               </div>
             )}
-          </Row>
+          </EditorRow>
 
-          <Row
+          <EditorRow
             label="실행 환경"
             hint="고른 환경에서만 실행됩니다. 내부 정보가 든 지침은 여기서 막아 두세요 — 지침 전문이 그대로 모델에 전달됩니다."
           >
@@ -296,9 +298,9 @@ export default function AgentEditor({
                 <span className="pl-1 text-[11px] text-overlay1">제한 없음</span>
               )}
             </div>
-          </Row>
+          </EditorRow>
 
-          <Row label="모델" hint="비우면 앱 기본값을 씁니다. opus · sonnet · haiku 중 하나를 적으세요.">
+          <EditorRow label="모델" hint="비우면 앱 기본값을 씁니다. opus · sonnet · haiku 중 하나를 적으세요.">
             <input
               className={field}
               value={draft.model ?? ''}
@@ -306,9 +308,9 @@ export default function AgentEditor({
               placeholder="기본값"
               spellCheck={false}
             />
-          </Row>
+          </EditorRow>
 
-          <Row label="도구" hint="쉼표로 구분합니다. 허용을 지정하면 그것만 쓸 수 있고, 금지는 항상 막힙니다. 아래 버튼으로 자주 쓰는 도구를 추가하거나 해제할 수 있습니다.">
+          <EditorRow label="도구" hint="쉼표로 구분합니다. 허용을 지정하면 그것만 쓸 수 있고, 금지는 항상 막힙니다. 아래 버튼으로 자주 쓰는 도구를 추가하거나 해제할 수 있습니다.">
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <span className="w-8 shrink-0 text-[11px] text-overlay1">허용</span>
@@ -352,9 +354,9 @@ export default function AgentEditor({
                 />
               </div>
             </div>
-          </Row>
+          </EditorRow>
 
-          <Row label="Skills" hint="Required는 항상 적용, Available은 필요할 때 사용, Disabled는 같은 이름의 하위 Skill까지 끕니다.">
+          <EditorRow label="Skills" hint="Required는 항상 적용, Available은 필요할 때 사용, Disabled는 같은 이름의 하위 Skill까지 끕니다.">
             {skillNames.length === 0 ? (
               <div className="py-1.5 text-[12px] text-overlay1">등록된 Skill이 없습니다</div>
             ) : (
@@ -380,9 +382,9 @@ export default function AgentEditor({
                 })}
               </div>
             )}
-          </Row>
+          </EditorRow>
 
-          <Row label="완료 조건" hint="작업을 마칠 때 무엇을 보고할지 적습니다. 지침 끝에 덧붙여집니다.">
+          <EditorRow label="완료 조건" hint="작업을 마칠 때 무엇을 보고할지 적습니다. 지침 끝에 덧붙여집니다.">
             <input
               className={field}
               value={draft.workspace.completion ?? ''}
@@ -391,7 +393,7 @@ export default function AgentEditor({
               }
               placeholder="테스트 통과 후 변경 요약 보고"
             />
-          </Row>
+          </EditorRow>
         </div>
 
         <div className="flex items-center gap-3 px-5 pb-5 pt-3">
