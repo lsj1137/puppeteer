@@ -211,6 +211,7 @@ export function parseAgentText(
         writePaths: strings(ws.writePaths),
         allowedTools: strings(ws.allowedTools),
         disallowedTools: strings(ws.disallowedTools),
+        approvalMode: ws.approvalMode === 'auto-allowed' ? 'auto-allowed' : undefined,
         projects: strings(ws.projects),
         source: parseSource(ws.source),
         memory: typeof ws.memory === 'string' ? ws.memory : undefined,

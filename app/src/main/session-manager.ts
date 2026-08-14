@@ -200,9 +200,16 @@ export class SessionManager {
       }
     }
     const workCwd = worktree?.path ?? input.cwd
+    const agent = input.agentName ? library.read(input.agentName) : undefined
 
     const approvalDir = join(workCwd, '.agent-workspace', 'approvals', id)
-    this.broker.attach(id, approvalDir)
+    this.broker.attach(
+      id,
+      approvalDir,
+      agent?.workspace.approvalMode === 'auto-allowed'
+        ? (agent.workspace.allowedTools ?? [])
+        : [],
+    )
 
     // provider 에 맞는 어댑터를 고른다. 이벤트 계약은 같다.
     const adapter =
@@ -234,7 +241,6 @@ export class SessionManager {
       })
     }
 
-    const agent = input.agentName ? library.read(input.agentName) : undefined
     const skills = skillPrompt(input.cwd, agent, (path) => toRunnerPath(path, input.runner))
 
     // ★ 마지막 방어선. 화면에서 걸러도 여기서 한 번 더 막는다 —

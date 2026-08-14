@@ -25,7 +25,7 @@ export class ApprovalBroker {
 
   constructor(private readonly onRequest: (req: ApprovalRequest) => void) {}
 
-  attach(sessionId: string, dir: string): void {
+  attach(sessionId: string, dir: string, autoAllowed: string[] = []): void {
     mkdirSync(dir, { recursive: true })
 
     // 같은 세션에 이어서 지시하면 attach 가 다시 불린다.
@@ -33,13 +33,14 @@ export class ApprovalBroker {
     const prev = this.watched.get(sessionId)
     if (prev) {
       prev.dir = dir
+      for (const tool of autoAllowed) prev.sessionAllowed.add(tool)
       return
     }
 
     this.watched.set(sessionId, {
       dir,
       sessionId,
-      sessionAllowed: new Set(),
+      sessionAllowed: new Set(autoAllowed),
       seen: new Set(),
       timer: setInterval(() => this.poll(sessionId), 200),
     })

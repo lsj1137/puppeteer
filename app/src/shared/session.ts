@@ -254,6 +254,8 @@ export interface AgentWorkspaceConfig {
   writePaths?: string[]
   allowedTools?: string[]
   disallowedTools?: string[]
+  /** ask = 매번 승인, auto-allowed = 이 Agent의 allowedTools만 세션 시작부터 자동 승인. */
+  approvalMode?: 'ask' | 'auto-allowed'
   completion?: string
   worktree?: string
   /** 이 에이전트를 쓸 프로젝트 경로. 비어 있으면 전체 허용. */

@@ -354,6 +354,51 @@ export default function AgentEditor({
             </div>
           </Row>
 
+          <Row label="승인" hint="자동 승인은 이 Agent의 허용 도구 목록에 명시된 도구에만 적용됩니다. 허용 목록 밖의 도구는 계속 승인 요청을 표시합니다.">
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDraft((value) => ({
+                    ...value,
+                    workspace: { ...value.workspace, approvalMode: undefined },
+                  }))}
+                  className={`rounded-lg px-3 py-2 text-left text-[12px] ring-1 transition ${
+                    draft.workspace.approvalMode !== 'auto-allowed'
+                      ? 'bg-lavender/15 text-lavender ring-lavender/30'
+                      : 'text-subtext0 ring-surface1 hover:bg-surface0'
+                  }`}
+                >
+                  <span className="block font-medium">매번 확인</span>
+                  <span className="mt-0.5 block text-[10px] opacity-70">기본값 · 도구 실행 전 승인</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraft((value) => ({
+                    ...value,
+                    workspace: { ...value.workspace, approvalMode: 'auto-allowed' },
+                  }))}
+                  className={`rounded-lg px-3 py-2 text-left text-[12px] ring-1 transition ${
+                    draft.workspace.approvalMode === 'auto-allowed'
+                      ? 'bg-yellow/15 text-yellow ring-yellow/30'
+                      : 'text-subtext0 ring-surface1 hover:bg-surface0'
+                  }`}
+                >
+                  <span className="block font-medium">허용 도구 자동 승인</span>
+                  <span className="mt-0.5 block text-[10px] opacity-70">이 Agent의 허용 목록만 적용</span>
+                </button>
+              </div>
+              {draft.workspace.approvalMode === 'auto-allowed' && !parseList(allowed)?.length && (
+                <div className="text-[11px] text-yellow">허용 도구가 비어 있어 자동 승인되는 도구가 없습니다.</div>
+              )}
+              {draft.workspace.approvalMode === 'auto-allowed' && (parseList(allowed) ?? []).some((tool) => tool === 'Bash' || tool === 'PowerShell') && (
+                <div className="rounded-md bg-red/10 px-2.5 py-1.5 text-[11px] leading-relaxed text-red">
+                  Bash·PowerShell 자동 승인은 임의 명령 실행까지 포함합니다. 신뢰할 수 있는 Agent에서만 사용하세요.
+                </div>
+              )}
+            </div>
+          </Row>
+
           <Row label="Skills" hint="Required는 항상 적용, Available은 필요할 때 사용, Disabled는 같은 이름의 하위 Skill까지 끕니다.">
             {skillNames.length === 0 ? (
               <div className="py-1.5 text-[12px] text-overlay1">등록된 Skill이 없습니다</div>
