@@ -38,3 +38,20 @@ https://github.com/lsj1137/puppeteer/blob/main/agents/agent-creator.md
 
 프로젝트 구조를 읽기 위한 Read · Glob · Grep과 승인된 Agent 파일을 저장하기 위한 Edit만 요청한다.
 커밋·push나 Agent 이외의 코드 변경은 별도 요청 없이는 수행하지 않는다.
+
+## git-worktree-doctor
+
+linked worktree의 경로 오류, dirty 상태, ahead/behind 불일치, `index.lock`, 자동 커밋·병합 실패를
+읽기 전용으로 진단하고 데이터 손실 없는 복구 절차를 제시하는 Agent다.
+
+```text
+https://github.com/lsj1137/puppeteer/blob/main/agents/git-worktree-doctor.md
+```
+
+### 요청 권한
+
+- Read · Glob · Grep: 저장소 문서와 Git 설정 조사
+- Bash: `git status`, `worktree list` 같은 읽기 전용 Git 확인
+
+`reset --hard`, `clean -fd`, 강제 checkout, force push와 브랜치·태그·stash·worktree 삭제는 하지
+않는다. 확인하지 못한 원인은 추측 대신 `확인하지 못함`으로 남긴다.
