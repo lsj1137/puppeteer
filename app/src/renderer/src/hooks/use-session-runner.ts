@@ -8,6 +8,8 @@ interface UseSessionRunnerOptions {
   activeProjectRunnerId?: string | null
   activeSessionId?: string
   agentName?: string
+  /** 새 세션에 지정할 모델. 이어가는 턴은 세션에 저장된 값을 쓴다. */
+  model?: string | null
   attachments: { path: string }[]
   busy: boolean
   defaultRunnerId?: string
@@ -39,6 +41,7 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
     activeProjectRunnerId,
     activeSessionId,
     agentName,
+    model,
     attachments,
     busy,
     defaultRunnerId,
@@ -78,6 +81,7 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
           continueSessionId,
           attachments: attachments.map((attachment) => attachment.path),
           agentName,
+          model,
         })
         setAttachments([])
         setActiveSessionId(id)
@@ -94,6 +98,7 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
       activeProjectPath,
       activeSessionId,
       agentName,
+      model,
       attachments,
       failSessionView,
       refresh,

@@ -19,6 +19,7 @@ import type {
   MemoryEntry,
   MemoryEdit,
   MemoryProposal,
+  ModelChoices,
   SkillDef,
   SkillImportPreview,
   CheckpointDraft,
@@ -57,6 +58,8 @@ export interface StartSessionArgs {
   attachments?: string[]
   /** 적용할 Project Agent 이름 */
   agentName?: string
+  /** 이 세션에 쓸 모델. 비어 있으면 Agent 지정값이나 CLI 기본을 쓴다. */
+  model?: string | null
   /** 새 세션을 전용 worktree 에서 격리할지. 생략하면 기본으로 격리한다. */
   isolate?: boolean
   /** 이어서 지시하는 경우 기존 세션 id (새 세션을 만들지 않는다) */
@@ -106,6 +109,10 @@ const api = {
     ipcRenderer.invoke('session:rename', sessionId, title),
   setSessionApprovalMode: (sessionId: string, mode: ApprovalMode): Promise<StoredSession | undefined> =>
     ipcRenderer.invoke('session:setApprovalMode', sessionId, mode),
+  setSessionModel: (sessionId: string, model: string | null): Promise<StoredSession | undefined> =>
+    ipcRenderer.invoke('session:setModel', sessionId, model),
+  listModels: (runner: DetectedRunner): Promise<ModelChoices> =>
+    ipcRenderer.invoke('model:list', runner),
   listEvents: (sessionId: string): Promise<StoredEvent[]> =>
     ipcRenderer.invoke('session:events', sessionId),
   listOpenApprovals: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke('approval:open'),

@@ -27,6 +27,8 @@ interface Props {
   agents: AgentDef[]
   approvalMode: ApprovalMode
   approvalLocked: boolean
+  model?: string | null
+  appliedModel?: string
   commitNotice?: { id: string; title: string; text: string; status: 'success' | 'warning' }
   onAnnotate: (index: number) => void
   onAttachFiles: (files: FileList) => void | Promise<void>
@@ -35,6 +37,7 @@ interface Props {
   onEditAgent: (agent: AgentDef) => void
   onNewAgent: () => void
   onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<void>
+  onChangeModel: (model: string | null) => void | Promise<void>
   onRemoveAttachment: (index: number) => void
   onStop: (sessionId: string) => void | Promise<void>
   onSubmit: (text: string) => void
@@ -61,6 +64,8 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     agents,
     approvalMode,
     approvalLocked,
+    model,
+    appliedModel,
     commitNotice,
     onAnnotate,
     onAttachFiles,
@@ -69,6 +74,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     onEditAgent,
     onNewAgent,
     onChangeApprovalMode,
+    onChangeModel,
     onRemoveAttachment,
     onStop,
     onSubmit,
@@ -115,11 +121,14 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
         agents={agents}
         approvalMode={approvalMode}
         approvalLocked={approvalLocked}
+        model={model}
+        appliedModel={appliedModel}
         forceRunnerOpen={showRunnerPicker}
         onSelect={onSelectAgent}
         onEdit={onEditAgent}
         onNew={onNewAgent}
         onChangeApprovalMode={onChangeApprovalMode}
+        onChangeModel={onChangeModel}
       />
       <div className="flex items-end gap-2">
         <label

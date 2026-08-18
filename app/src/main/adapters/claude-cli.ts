@@ -433,6 +433,7 @@ export function buildClaudeArgs(
     | 'allowedTools'
     | 'disallowedTools'
     | 'hookCommand'
+    | 'model'
     | 'prompt'
     | 'resumeSessionId'
   >,
@@ -444,6 +445,8 @@ export function buildClaudeArgs(
     '--verbose',
   ]
   if (opts.resumeSessionId) cliArgs.push('--resume', opts.resumeSessionId)
+  // 예전에는 model 을 받고도 CLI 에 넘기지 않아, Agent 에 모델을 지정해도 조용히 무시됐다.
+  if (opts.model) cliArgs.push('--model', opts.model)
   // 에이전트는 앱 라이브러리에서 관리하므로 정의를 인라인으로 넘긴다.
   // 파일을 러너 홈(.claude/agents)에 배치할 필요가 없다 — WSL/Windows 홈이 다르다.
   if (opts.agentsJson) cliArgs.push('--agents', opts.agentsJson)

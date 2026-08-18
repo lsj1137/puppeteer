@@ -149,6 +149,8 @@ function migrate(): void {
   addColumn('session', 'sort_order', 'INTEGER')
   addColumn('session', 'hidden', 'INTEGER NOT NULL DEFAULT 0')
   addColumn('session', 'approval_mode', "TEXT NOT NULL DEFAULT 'ask'")
+  // 비어 있으면 Agent 지정값, 그것도 없으면 CLI 기본 모델을 쓴다.
+  addColumn('session', 'model', 'TEXT')
   // 기존 행은 run_id가 비어 있고, 그건 Lead run으로 읽는다. 과거 기록을 소급 변환하지 않는다.
   addColumn('event', 'run_id', 'TEXT')
   addColumn('approval', 'run_id', 'TEXT')
@@ -368,15 +370,25 @@ export function createSession(s: {
   runnerId: string
   title: string
   agentName?: string
+  model?: string | null
 }): void {
   const first = db.prepare(
     'SELECT COALESCE(MIN(sort_order), 0) - 1 AS position FROM session WHERE project_path = ?',
   ).get(s.projectPath) as { position: number }
   db.prepare(
     `INSERT INTO session
-       (id, project_path, runner_id, title, agent_name, status, started_at, sort_order)
-     VALUES (?, ?, ?, ?, ?, 'starting', ?, ?)`,
-  ).run(s.id, s.projectPath, s.runnerId, s.title, s.agentName ?? null, now(), first.position)
+       (id, project_path, runner_id, title, agent_name, model, status, started_at, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, 'starting', ?, ?)`,
+  ).run(
+    s.id,
+    s.projectPath,
+    s.runnerId,
+    s.title,
+    s.agentName ?? null,
+    s.model?.trim() || null,
+    now(),
+    first.position,
+  )
 }
 
 export function updateSession(
@@ -424,6 +436,12 @@ export function setSessionApprovalMode(id: string, mode: ApprovalMode): StoredSe
   return getSession(id)
 }
 
+/** 빈 문자열은 지정 해제로 본다 — 그러면 Agent 지정값이나 CLI 기본으로 돌아간다. */
+export function setSessionModel(id: string, model: string | null): StoredSession | undefined {
+  db.prepare('UPDATE session SET model = ? WHERE id = ?').run(model?.trim() || null, id)
+  return getSession(id)
+}
+
 export function listSessions(projectPath: string, limit = 50): StoredSession[] {
   return db
     .prepare(
@@ -431,7 +449,7 @@ export function listSessions(projectPath: string, limit = 50): StoredSession[] {
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
               worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden,
-              approval_mode AS approvalMode
+              approval_mode AS approvalMode, model
        FROM session WHERE project_path = ? AND hidden = 0
        ORDER BY sort_order ASC, started_at DESC LIMIT ?`,
     )
@@ -446,7 +464,7 @@ export function getSession(id: string): StoredSession | undefined {
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
               worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden,
-              approval_mode AS approvalMode
+              approval_mode AS approvalMode, model
        FROM session WHERE id = ?`,
     )
     .get(id) as unknown as StoredSession | undefined
@@ -503,7 +521,7 @@ export function recentSessions(limit = 20): StoredSession[] {
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt,
-              worktree, worktree_cleaned AS worktreeCleaned, approval_mode AS approvalMode
+              worktree, worktree_cleaned AS worktreeCleaned, approval_mode AS approvalMode, model
        FROM session ORDER BY started_at DESC LIMIT ?`,
     )
     .all(limit)
@@ -549,7 +567,7 @@ export function listHiddenSessions(projectPath: string, limit = 50): StoredSessi
             runner_id AS runnerId, title, agent_name AS agentName, status,
             cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
             worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden,
-            approval_mode AS approvalMode
+            approval_mode AS approvalMode, model
      FROM session WHERE project_path = ? AND hidden = 1
      ORDER BY ended_at DESC, started_at DESC LIMIT ?`,
   ).all(projectPath, limit).map(hydrate) as unknown as StoredSession[]

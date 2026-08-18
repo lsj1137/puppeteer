@@ -151,6 +151,24 @@ export type RunnerKind = 'windows-native' | 'wsl' | 'posix' | 'custom'
 
 export type InstallMethod = 'npm' | 'bun' | 'native' | 'unknown'
 
+/** 세션에 지정할 수 있는 모델 하나. `value` 가 CLI 에 그대로 넘어간다. */
+export interface ModelOption {
+  value: string
+  label: string
+  detail?: string
+}
+
+/**
+ * 실행 환경별 모델 후보. Codex 목록은 CLI 캐시에서 읽으므로 실패할 수 있고,
+ * 그때는 후보를 지어내지 않고 `note` 로 이유를 남긴 채 직접 입력만 받는다.
+ */
+export interface ModelChoices {
+  options: ModelOption[]
+  /** 목록을 읽어온 파일 경로 */
+  source?: string
+  note?: string
+}
+
 /** 탐지된 실행 환경 1건 */
 export interface DetectedRunner {
   id: string
@@ -212,6 +230,8 @@ export interface StoredSession {
   sortOrder?: number | null
   hidden?: boolean
   approvalMode?: ApprovalMode
+  /** 이 세션에 지정한 모델. 비어 있으면 Agent 지정값, 그것도 없으면 CLI 기본을 쓴다. */
+  model?: string | null
 }
 
 export interface ProjectWorktreeModeResult {

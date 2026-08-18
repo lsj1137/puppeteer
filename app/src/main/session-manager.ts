@@ -73,6 +73,8 @@ export interface StartSessionInput {
   attachments?: string[]
   /** 적용할 Project Agent 이름 (.claude/agents/<name>.md) */
   agentName?: string
+  /** 새 세션에 지정할 모델. 이어가는 턴에는 저장된 세션 값을 쓴다. */
+  model?: string | null
   /** 새 세션을 전용 worktree 에서 격리할지. 생략하면 기본으로 격리한다. */
   isolate?: boolean
   /**
@@ -128,6 +130,7 @@ export class SessionManager {
         runnerId: input.runner.id,
         title: input.prompt.slice(0, 80),
         agentName: input.agentName,
+        model: input.model,
       })
     }
 
@@ -263,7 +266,8 @@ export class SessionManager {
       agentName: agent ? input.agentName : undefined,
       agentsJson: agent ? library.toCliAgents(agent) : undefined,
       agentPrompt: agent ? library.toPromptPrefix(agent) : undefined,
-      model: agent?.model,
+      // 세션 지정 > Agent 지정 > CLI 기본. 세션 값은 실행 중에도 바꿀 수 있고 다음 턴부터 적용된다.
+      model: (prev?.model ?? input.model)?.trim() || agent?.model,
       approvalDirHost: approvalDir,
       hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
@@ -275,6 +279,10 @@ export class SessionManager {
 
   stop(sessionId: string): void {
     this.sessions.get(sessionId)?.adapter.stop()
+  }
+
+  setModel(sessionId: string, model: string | null): StoredSession | undefined {
+    return db.setSessionModel(sessionId, model)
   }
 
   setApprovalMode(sessionId: string, mode: ApprovalMode): StoredSession | undefined {

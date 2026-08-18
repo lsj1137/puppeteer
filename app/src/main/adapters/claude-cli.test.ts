@@ -33,6 +33,13 @@ describe('buildClaudeArgs', () => {
     ])
   })
 
+  // 예전에는 model 을 받고도 CLI 에 넘기지 않아 Agent 의 모델 지정이 조용히 무시됐다.
+  it('passes the selected model to the CLI', () => {
+    expect(buildClaudeArgs({ prompt: 'hello', model: 'opus' })).toContain('--model')
+    expect(buildClaudeArgs({ prompt: 'hello', model: 'opus' })).toContain('opus')
+    expect(buildClaudeArgs({ prompt: 'hello' })).not.toContain('--model')
+  })
+
   it('keeps resume and session-scoped settings in CLI args', () => {
     const args = buildClaudeArgs({
       prompt: 'continue this',

@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Cpu,
   Flag,
   GitBranch,
   GitCommitHorizontal,
@@ -20,7 +21,15 @@ import {
   Terminal,
   X,
 } from 'lucide-react'
-import type { AgentDef, ApprovalMode, ApprovalRequest, DetectedRunner, RunningSession, StoredSession } from '@shared/session'
+import type {
+  AgentDef,
+  ApprovalMode,
+  ApprovalRequest,
+  DetectedRunner,
+  ModelChoices,
+  RunningSession,
+  StoredSession,
+} from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -340,12 +349,15 @@ export function ComposerSettings({
   agents,
   approvalMode,
   approvalLocked,
+  model,
+  appliedModel,
   forceRunnerOpen,
   onChooseRunner,
   onSelect,
   onEdit,
   onNew,
   onChangeApprovalMode,
+  onChangeModel,
 }: {
   activeRunner?: DetectedRunner
   runnerLocked: boolean
@@ -356,17 +368,44 @@ export function ComposerSettings({
   agents: AgentDef[]
   approvalMode: ApprovalMode
   approvalLocked: boolean
+  /** 이 세션에 지정한 모델. 비어 있으면 Agent 지정값이나 CLI 기본을 쓴다. */
+  model?: string | null
+  /** CLI가 session-meta로 알려준 실제 적용 모델 */
+  appliedModel?: string
   forceRunnerOpen: boolean
   onSelect: (name?: string) => void
   onEdit: (agent: AgentDef) => void
   onNew: () => void
   onChangeApprovalMode: (mode: ApprovalMode) => void | Promise<void>
+  onChangeModel: (model: string | null) => void | Promise<void>
 }) {
   const [expanded, setExpanded] = useState(
     () => localStorage.getItem('ws.composerContextExpanded') !== 'false',
   )
-  const [panel, setPanel] = useState<'runner' | 'agent' | 'approval' | 'commit'>()
+  const [panel, setPanel] = useState<'runner' | 'agent' | 'approval' | 'model' | 'commit'>()
   const [commitExpanded, setCommitExpanded] = useState(false)
+  const [modelChoices, setModelChoices] = useState<ModelChoices>()
+  const [modelDraft, setModelDraft] = useState('')
+
+  // 후보는 실행 환경마다 다르고 Codex는 CLI 캐시에서 읽으므로, 패널을 열 때 그때의 값을 받는다.
+  useEffect(() => {
+    if (panel !== 'model' || !activeRunner) return
+    setModelDraft(model ?? '')
+    let alive = true
+    void window.api
+      .listModels(activeRunner)
+      .then((choices) => alive && setModelChoices(choices))
+      .catch((e: unknown) =>
+        alive &&
+        setModelChoices({
+          options: [],
+          note: `모델 목록을 불러오지 못했습니다: ${e instanceof Error ? e.message : String(e)}`,
+        }),
+      )
+    return () => {
+      alive = false
+    }
+  }, [panel, activeRunner?.id, model])
 
   useEffect(() => {
     if (!forceRunnerOpen) return
@@ -448,6 +487,18 @@ export function ComposerSettings({
               ? <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-yellow" />
               : <ShieldAlert className="h-3.5 w-3.5 shrink-0 text-sapphire" />}
             <span>{approvalMode === 'auto' ? '자동 승인' : '승인 확인'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => togglePanel('model')}
+            disabled={!activeRunner}
+            title={appliedModel ? `실행 중 모델: ${appliedModel}` : '이 세션에 쓸 모델'}
+            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 ${
+              panel === 'model' ? 'bg-surface0 text-text' : 'text-subtext0 hover:bg-surface0/60'
+            }`}
+          >
+            <Cpu className="h-3.5 w-3.5 shrink-0 text-teal" />
+            <span className="truncate">{model || appliedModel || 'CLI 기본'}</span>
           </button>
 
         <button
@@ -607,6 +658,74 @@ export function ComposerSettings({
                 <span className="block text-[12px] font-medium text-yellow">자동 승인</span>
                 <span className="mt-0.5 block text-[10px] leading-relaxed text-overlay1">이 세션의 모든 도구 요청을 자동 승인합니다. 신뢰할 수 있는 작업에서만 사용하세요.</span>
               </button>
+            </div>
+          )}
+          {panel === 'model' && (
+            <div className="absolute bottom-full left-0 z-40 mb-1.5 w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
+              <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">
+                이 세션의 모델
+              </div>
+              <div className="max-h-64 overflow-auto">
+                <button
+                  onClick={() => { void Promise.resolve(onChangeModel(null)); setPanel(undefined) }}
+                  className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${!model ? 'bg-surface1' : 'hover:bg-surface0'}`}
+                >
+                  <span className="block text-[12px] font-medium text-text">CLI 기본</span>
+                  <span className="mt-0.5 block text-[10px] text-overlay1">
+                    Agent에 지정된 모델이 있으면 그것을, 없으면 CLI 기본값을 씁니다.
+                  </span>
+                </button>
+                {modelChoices?.options.map((option) => (
+                  <button
+                    key={option.value}
+                    onClick={() => { void Promise.resolve(onChangeModel(option.value)); setPanel(undefined) }}
+                    className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${model === option.value ? 'bg-surface1' : 'hover:bg-surface0'}`}
+                  >
+                    <span className="flex items-baseline gap-1.5">
+                      <span className="text-[12px] font-medium text-text">{option.label}</span>
+                      <span className="truncate font-mono text-[10px] text-overlay1">{option.value}</span>
+                    </span>
+                    {option.detail && (
+                      <span className="mt-0.5 block text-[10px] leading-relaxed text-overlay1">{option.detail}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+              {/* 목록을 못 읽었으면 후보를 지어내지 않고 이유를 그대로 보여준다. */}
+              {modelChoices?.note && (
+                <div className="mt-1 rounded-lg bg-yellow/10 px-2.5 py-1.5 text-[10px] leading-relaxed text-yellow">
+                  {modelChoices.note}
+                </div>
+              )}
+              <form
+                className="mt-1.5 flex items-center gap-1.5 border-t border-surface0 pt-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void Promise.resolve(onChangeModel(modelDraft.trim() || null))
+                  setPanel(undefined)
+                }}
+              >
+                <input
+                  value={modelDraft}
+                  onChange={(e) => setModelDraft(e.target.value)}
+                  placeholder="슬러그 직접 입력"
+                  spellCheck={false}
+                  className="min-w-0 flex-1 rounded-md bg-surface0/60 px-2 py-1.5 font-mono text-[11px] text-text outline-none placeholder:text-overlay0 focus:bg-surface0"
+                />
+                <button type="submit" className="shrink-0 rounded-md bg-surface1 px-2.5 py-1.5 text-[11px] text-subtext1 hover:text-text">
+                  적용
+                </button>
+              </form>
+              {appliedModel && (
+                <div className="px-1.5 pt-1.5 text-[10px] text-overlay1">
+                  현재 실행 중인 모델: <span className="font-mono text-subtext1">{appliedModel}</span>
+                </div>
+              )}
+              {modelChoices?.source && (
+                <div className="truncate px-1.5 pt-1 font-mono text-[10px] text-overlay0" title={modelChoices.source}>
+                  {modelChoices.source}
+                </div>
+              )}
             </div>
           )}
           {panel === 'commit' && (

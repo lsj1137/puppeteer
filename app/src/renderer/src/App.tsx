@@ -131,6 +131,8 @@ export default function App() {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [agents, setAgents] = useState<AgentDef[]>([])
   const [agentName, setAgentName] = useState<string>()
+  /** 아직 세션이 없을 때 고른 모델. 세션이 생기면 그 행에 저장된 값이 정본이 된다. */
+  const [pendingModel, setPendingModel] = useState<string>()
   const [tabMenu, setTabMenu] = useState(false)
   const [importing, setImporting] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -260,6 +262,7 @@ export default function App() {
     activeProjectRunnerId: activeProject?.runnerId,
     activeSessionId: activeSession,
     agentName,
+    model: selected?.model ?? pendingModel ?? null,
     attachments,
     busy,
     defaultRunnerId,
@@ -656,6 +659,15 @@ export default function App() {
   async function changeSessionApprovalMode(mode: ApprovalMode): Promise<void> {
     if (!activeSession) return
     const updated = await window.api.setSessionApprovalMode(activeSession, mode)
+    if (!updated) return
+    setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))
+  }
+
+  // 세션이 아직 없으면(첫 지시 전) 다음 세션에 쓸 값으로만 들고 있다가 start 시 함께 저장한다.
+  async function changeSessionModel(model: string | null): Promise<void> {
+    setPendingModel(model ?? undefined)
+    if (!activeSession) return
+    const updated = await window.api.setSessionModel(activeSession, model)
     if (!updated) return
     setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))
   }
@@ -1165,7 +1177,10 @@ export default function App() {
           onNewAgent={() => {
             setEditing({ agent: emptyAgent(active), isNew: true })
           }}
+          model={selected?.model ?? pendingModel ?? null}
+          appliedModel={view.meta?.model}
           onChangeApprovalMode={changeSessionApprovalMode}
+          onChangeModel={changeSessionModel}
           onRemoveAttachment={(index) =>
             setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))
           }

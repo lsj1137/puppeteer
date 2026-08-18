@@ -8,6 +8,7 @@ import * as db from './db'
 import * as library from './agent-library'
 import { route } from './router'
 import * as memory from './memory'
+import * as models from './models'
 import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
 import { commitProjectMemory, gitHistory, isRepo, projectMemoryDirty, repairLinkedWorktrees } from './git'
@@ -360,6 +361,11 @@ app.whenReady().then(() => {
     if (mode !== 'ask' && mode !== 'auto') throw new Error('지원하지 않는 승인 모드입니다.')
     return sessions.setApprovalMode(sessionId, mode)
   })
+  ipcMain.handle('session:setModel', (_e, sessionId: string, model: string | null) =>
+    sessions.setModel(sessionId, model),
+  )
+  // 후보 목록은 Codex CLI 캐시에서 읽는다. 앱이 슬러그를 박아두면 모델이 바뀔 때 조용히 틀린다.
+  ipcMain.handle('model:list', (_e, runner: DetectedRunner) => models.list(runner))
   ipcMain.handle('approval:open', () => db.listOpenApprovals())
   ipcMain.handle('overview:stats', () => ({
     projects: db.projectStats(),
