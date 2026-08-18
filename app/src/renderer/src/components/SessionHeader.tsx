@@ -74,6 +74,9 @@ interface SessionHeaderProps {
 }
 const PROVIDER_ORDER = ['claude-cli', 'codex-cli', 'claude-agent-sdk']
 
+/** 세션 도구 모음에서 한 번에 하나만 열리는 오버레이 */
+type ComposerPanel = 'runner' | 'agent' | 'approval' | 'model' | 'commit'
+
 /** 프로젝트 화면 상단의 세션 탭과 세션별 실행 설정. */
 export default function SessionHeader({
   tabBarRef,
@@ -382,7 +385,7 @@ export function ComposerSettings({
   const [expanded, setExpanded] = useState(
     () => localStorage.getItem('ws.composerContextExpanded') !== 'false',
   )
-  const [panel, setPanel] = useState<'runner' | 'agent' | 'approval' | 'model' | 'commit'>()
+  const [panel, setPanel] = useState<ComposerPanel>()
   const [commitExpanded, setCommitExpanded] = useState(false)
   const [modelChoices, setModelChoices] = useState<ModelChoices>()
   const [modelDraft, setModelDraft] = useState('')
@@ -436,7 +439,7 @@ export function ComposerSettings({
     })
   }
 
-  const togglePanel = (next: 'runner' | 'agent' | 'approval' | 'commit'): void => {
+  const togglePanel = (next: ComposerPanel): void => {
     setPanel((current) => current === next ? undefined : next)
     if (next === 'commit') setCommitExpanded(false)
   }
