@@ -60,6 +60,7 @@ import {
   extractDelegates,
   DELEGATE_INSTRUCTION,
   MAX_SUB_RUNS,
+  SUB_RUN_TIMEOUT_MS,
   type DelegateOutcome,
   type ParsedDelegate,
 } from './delegate'
@@ -144,6 +145,8 @@ export class SessionManager {
   private runners = new Map<string, DetectedRunner>()
   /** 실행 중인 보조 run. 세션을 중지하면 함께 끊는다. */
   private subAdapters = new Map<string, ClaudeCliAdapter | CodexCliAdapter>()
+  /** 보조가 도는 동안 사용자가 중지를 눌렀는지 */
+  private delegationCancelled = new Set<string>()
   private broker: ApprovalBroker
 
   constructor(private readonly getWindow: () => BrowserWindow | undefined) {
@@ -341,8 +344,11 @@ export class SessionManager {
     this.sessions.get(sessionId)?.adapter.stop()
     // 보조가 남아 돌면 사용자는 멈춘 줄 알고 있는데 토큰이 계속 나간다.
     this.pendingDelegations.delete(sessionId)
+    const prefix = `${sessionId}:sub:`
     for (const [runId, adapter] of this.subAdapters) {
-      if (runId.startsWith(`${sessionId}:sub:`)) adapter.stop()
+      if (!runId.startsWith(prefix)) continue
+      this.delegationCancelled.add(sessionId)
+      adapter.stop()
     }
   }
 
@@ -780,6 +786,7 @@ export class SessionManager {
   private async runDelegations(sessionId: string): Promise<void> {
     const requested = this.pendingDelegations.get(sessionId) ?? []
     this.pendingDelegations.delete(sessionId)
+    this.delegationCancelled.delete(sessionId)
     const stored = db.getSession(sessionId)
     if (!stored || requested.length === 0) return
 
@@ -817,9 +824,22 @@ export class SessionManager {
         .join('\n'),
     })
 
-    const outcomes: DelegateOutcome[] = []
-    for (const request of accepted) {
-      outcomes.push(await this.runSub(sessionId, cwd, runner, request, stored.model ?? undefined))
+    // 병렬 조사가 목적이므로 동시에 띄운다. 하나가 실패해도 나머지 결과는 그대로 전달한다.
+    const outcomes = await Promise.all(
+      accepted.map((request) =>
+        this.runSub(sessionId, cwd, runner, request, stored.model ?? undefined),
+      ),
+    )
+
+    // 사용자가 중지했으면 Lead 를 다시 띄우지 않는다. 멈춘 줄 알았는데 살아나면 안 된다.
+    if (this.delegationCancelled.delete(sessionId)) {
+      this.persistAndSend(sessionId, {
+        t: 'notice',
+        level: 'warning',
+        title: '위임 중단',
+        text: '중지 요청으로 보조 Agent 결과를 전달하지 않았습니다.',
+      })
+      return
     }
 
     // 결과는 사용자 지시가 아니라 앱이 넣는 프롬프트다.
@@ -877,14 +897,23 @@ export class SessionManager {
     return await new Promise<DelegateOutcome>((resolve) => {
       let answer = ''
       let settled = false
+      let timer: NodeJS.Timeout | undefined
+
       const finish = (ok: boolean, summary: string): void => {
         if (settled) return
         settled = true
+        if (timer) clearTimeout(timer)
         db.updateRun(runId, { status: ok ? 'completed' : 'failed', ended: true })
         this.broker.detach(runId)
         this.persistAndSend(sessionId, { t: 'run-result', runId, ok, summary }, runId)
         resolve({ ...request, ok, summary })
       }
+
+      // Lead 가 영원히 기다리면 대화가 멈춘 것처럼 보인다. 물고 있으면 끊고 실패로 돌린다.
+      timer = setTimeout(() => {
+        this.subAdapters.get(runId)?.stop()
+        finish(false, `${Math.round(SUB_RUN_TIMEOUT_MS / 60000)}분 안에 끝나지 않아 중단했습니다.`)
+      }, SUB_RUN_TIMEOUT_MS)
 
       const adapter =
         runner.provider === 'codex-cli'

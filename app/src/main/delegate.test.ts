@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDelegateResultPrompt, extractDelegates } from './delegate'
+import { buildDelegateResultPrompt, extractDelegates, MAX_SUB_RUNS } from './delegate'
 
 describe('extractDelegates', () => {
   it('블록을 걷어내고 위임만 남긴다', () => {
@@ -31,6 +31,13 @@ describe('extractDelegates', () => {
 
   it('위임이 없으면 본문을 그대로 둔다', () => {
     expect(extractDelegates('그냥 답변')).toEqual({ text: '그냥 답변', delegates: [] })
+  })
+
+  // 자르는 일은 실행부가 하고 알림도 남긴다. 파서는 요청 전부를 그대로 넘긴다.
+  it('상한을 넘는 요청도 파서는 전부 돌려준다', () => {
+    const runs = Array.from({ length: MAX_SUB_RUNS + 2 }, (_, index) => ({ task: `조사 ${index}` }))
+    const { delegates } = extractDelegates(`\`\`\`delegate\n${JSON.stringify({ runs })}\n\`\`\``)
+    expect(delegates).toHaveLength(MAX_SUB_RUNS + 2)
   })
 })
 
