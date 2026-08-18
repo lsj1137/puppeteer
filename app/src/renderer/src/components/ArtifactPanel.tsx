@@ -49,7 +49,10 @@ export default function ArtifactPanel({
   }, [selected?.id])
 
   return (
-    <div className="flex h-full flex-col">
+    // 사이드바(flex column)의 남은 높이만 차지해야 한다. h-full 로 두면 탭 헤더 높이를
+    // 무시한 100% 를 요구하고, 내용이 길 때 min-height:auto 때문에 줄어들지도 못해
+    // 패널 아래쪽이 잘린다.
+    <div className="flex min-h-0 flex-1 flex-col">
       {artifacts.length === 0 && (
         <div className="p-3 text-[12px] text-overlay1">
           코드·실행 결과가 생기면 여기에 모입니다
