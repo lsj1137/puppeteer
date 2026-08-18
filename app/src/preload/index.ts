@@ -43,6 +43,8 @@ import type { AppUpdateState } from '@shared/app-update'
 
 export interface SessionEventEnvelope {
   sessionId: string
+  /** 이벤트를 낸 run. 비어 있으면 Lead run이다. */
+  runId?: string
   event: SessionEvent
 }
 

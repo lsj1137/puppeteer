@@ -32,8 +32,37 @@ export interface WorktreeIntegrationReport {
   >
 }
 
+// ---------------------------------------------------------------------------
+// Agent Run — 한 세션 안의 개별 실행
+// ---------------------------------------------------------------------------
+
+/**
+ * 세션 하나는 Lead run 하나로 시작하고, 멀티 Agent 위임이 붙으면 보조 run이 추가된다.
+ * 세션 행을 늘리지 않는 이유는 사용자에게 대화가 하나로 보여야 하기 때문이다.
+ * 여기서 말하는 Agent는 앱 라이브러리의 Puppeteer Agent(`AgentDef`)다.
+ */
+export type AgentRunRole = 'lead' | 'sub'
+
+export interface AgentRun {
+  id: string
+  sessionId: string
+  role: AgentRunRole
+  /** 적용된 Puppeteer Agent 이름. 없으면 역할 정본 없이 도는 보조 run이다. */
+  agentName?: string | null
+  runnerId: string | null
+  /** 보조 run에 위임된 지시. Lead run은 사용자 지시가 들어간다. */
+  task: string
+  status: SessionStatus
+  costUsd: number
+  startedAt: number
+  endedAt?: number | null
+}
+
 /** 어댑터가 정규화해 올리는 이벤트. 모든 Provider가 이 타입으로 수렴한다. */
 export type SessionEvent =
+  | { t: 'run-start'; run: AgentRun }
+  | { t: 'run-status'; runId: string; status: SessionStatus; reason?: string }
+  | { t: 'run-result'; runId: string; ok: boolean; summary: string }
   | { t: 'status'; status: SessionStatus; reason?: string }
   | { t: 'session-meta'; meta: SessionMeta }
   | { t: 'message'; role: 'assistant' | 'user'; messageId: string; text: string; isError?: boolean }
@@ -93,6 +122,8 @@ export interface ApprovalRequest {
   /** 앱 내부 승인 ID */
   id: string
   sessionId: string
+  /** 요청한 run. 비어 있으면 Lead run이다(멀티 Agent 이전 기록 포함). */
+  runId?: string
   /** 세션이 속한 원본 프로젝트. cwd는 격리 worktree일 수 있다. */
   projectPath?: string
   tool: string
@@ -194,6 +225,8 @@ export type ApprovalMode = 'ask' | 'auto'
 export interface StoredEvent {
   id: number
   createdAt: number
+  /** 어느 run이 낸 이벤트인지. 비어 있으면 Lead run이다. */
+  runId?: string
   event: SessionEvent
 }
 

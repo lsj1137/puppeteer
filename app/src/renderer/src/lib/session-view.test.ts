@@ -96,6 +96,39 @@ describe('reduceSessionView', () => {
   })
 })
 
+describe('멀티 Agent run 이벤트', () => {
+  // 1단계는 식별자만 도입하고 화면 동작은 그대로 둔다. 보조 run 이벤트가 흘러들어와도
+  // 기존 대화 뷰가 흔들리지 않아야 다음 단계에서 UI를 안전하게 얹을 수 있다.
+  it('아직 화면을 바꾸지 않는다', () => {
+    const started = reduceSessionView(
+      EMPTY_SESSION_VIEW,
+      { t: 'message', role: 'user', messageId: 'u-1', text: '조사해줘' },
+      'event-user-1',
+    )
+
+    const afterRuns = [
+      {
+        t: 'run-start' as const,
+        run: {
+          id: 'run-1',
+          sessionId: 'session-1',
+          role: 'sub' as const,
+          agentName: null,
+          runnerId: 'claude-windows',
+          task: '문서 훑기',
+          status: 'running' as const,
+          costUsd: 0,
+          startedAt: 0,
+        },
+      },
+      { t: 'run-status' as const, runId: 'run-1', status: 'completed' as const },
+      { t: 'run-result' as const, runId: 'run-1', ok: true, summary: '요약' },
+    ].reduce((view, event, index) => reduceSessionView(view, event, `event-run-${index}`), started)
+
+    expect(afterRuns).toEqual(started)
+  })
+})
+
 describe('splitSessionTabs', () => {
   it('keeps the active session visible when the tab row overflows', () => {
     const sessions = ['one', 'two', 'three', 'four'].map(session)

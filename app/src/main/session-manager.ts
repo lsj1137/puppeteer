@@ -980,9 +980,13 @@ export class SessionManager {
     }
   }
 
-  private persistAndSend(sessionId: string, event: SessionEvent): void {
-    db.appendEvent(sessionId, event)
-    this.getWindow()?.webContents.send('session:event', { sessionId, event })
+  /**
+   * runId를 주면 그 run이 낸 이벤트로 기록한다. 생략하면 Lead run이다 —
+   * 멀티 Agent 이전 기록도 같은 규칙으로 읽힌다.
+   */
+  private persistAndSend(sessionId: string, event: SessionEvent, runId?: string): void {
+    db.appendEvent(sessionId, event, runId)
+    this.getWindow()?.webContents.send('session:event', { sessionId, runId, event })
   }
 }
 

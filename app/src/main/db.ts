@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type {
+  AgentRun,
   MemoryEdit,
   MemoryProposal,
   SessionWorktree,
@@ -112,6 +113,22 @@ function migrate(): void {
       decided_at INTEGER
     );
 
+    -- 세션 하나 안에서 실제로 돌아간 실행 단위. Lead run 하나로 시작하고
+    -- 멀티 Agent 위임이 붙으면 보조 run이 같은 세션에 쌓인다.
+    CREATE TABLE IF NOT EXISTS agent_run (
+      id          TEXT PRIMARY KEY,
+      session_id  TEXT NOT NULL,
+      role        TEXT NOT NULL,
+      agent_name  TEXT,
+      runner_id   TEXT,
+      task        TEXT NOT NULL,
+      status      TEXT NOT NULL,
+      cost_usd    REAL NOT NULL DEFAULT 0,
+      started_at  INTEGER NOT NULL,
+      ended_at    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_agent_run_session ON agent_run(session_id, started_at);
+
     CREATE TABLE IF NOT EXISTS app_setting (
       key   TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -132,6 +149,9 @@ function migrate(): void {
   addColumn('session', 'sort_order', 'INTEGER')
   addColumn('session', 'hidden', 'INTEGER NOT NULL DEFAULT 0')
   addColumn('session', 'approval_mode', "TEXT NOT NULL DEFAULT 'ask'")
+  // 기존 행은 run_id가 비어 있고, 그건 Lead run으로 읽는다. 과거 기록을 소급 변환하지 않는다.
+  addColumn('event', 'run_id', 'TEXT')
+  addColumn('approval', 'run_id', 'TEXT')
   addColumn('project', 'sort_order', 'INTEGER')
   addColumn('project', 'alias', 'TEXT')
   addColumn('project', 'worktree_mode', "TEXT NOT NULL DEFAULT 'suggest'")
@@ -517,13 +537,10 @@ export function deleteSession(id: string): void {
 
 // ── 이벤트 ──────────────────────────────────────────────────
 
-export function appendEvent(sessionId: string, event: SessionEvent): void {
-  db.prepare('INSERT INTO event (session_id, t, payload, created_at) VALUES (?, ?, ?, ?)').run(
-    sessionId,
-    event.t,
-    JSON.stringify(event),
-    now(),
-  )
+export function appendEvent(sessionId: string, event: SessionEvent, runId?: string): void {
+  db.prepare(
+    'INSERT INTO event (session_id, run_id, t, payload, created_at) VALUES (?, ?, ?, ?, ?)',
+  ).run(sessionId, runId ?? null, event.t, JSON.stringify(event), now())
 }
 
 export function listHiddenSessions(projectPath: string, limit = 50): StoredSession[] {
@@ -607,23 +624,88 @@ export function listFileChanges(sessionId: string): string[] {
 
 export function listEvents(sessionId: string): StoredEvent[] {
   const rows = db
-    .prepare('SELECT id, payload, created_at AS createdAt FROM event WHERE session_id = ? ORDER BY id')
-    .all(sessionId) as unknown as Array<{ id: number; payload: string; createdAt: number }>
+    .prepare(
+      'SELECT id, run_id AS runId, payload, created_at AS createdAt FROM event WHERE session_id = ? ORDER BY id',
+    )
+    .all(sessionId) as unknown as Array<{
+      id: number
+      runId: string | null
+      payload: string
+      createdAt: number
+    }>
   return rows.map((r) => ({
     id: r.id,
     createdAt: r.createdAt,
+    ...(r.runId ? { runId: r.runId } : {}),
     event: JSON.parse(r.payload) as SessionEvent,
   }))
+}
+
+// ── Agent Run ───────────────────────────────────────────────
+
+export function createRun(run: AgentRun): void {
+  db.prepare(
+    `INSERT INTO agent_run (id, session_id, role, agent_name, runner_id, task, status, cost_usd, started_at, ended_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO NOTHING`,
+  ).run(
+    run.id,
+    run.sessionId,
+    run.role,
+    run.agentName ?? null,
+    run.runnerId ?? null,
+    run.task,
+    run.status,
+    run.costUsd,
+    run.startedAt,
+    run.endedAt ?? null,
+  )
+}
+
+export function updateRun(
+  id: string,
+  patch: { status?: SessionStatus; costUsd?: number; ended?: boolean },
+): void {
+  if (patch.status !== undefined) {
+    db.prepare('UPDATE agent_run SET status = ? WHERE id = ?').run(patch.status, id)
+  }
+  if (patch.costUsd !== undefined) {
+    db.prepare('UPDATE agent_run SET cost_usd = ? WHERE id = ?').run(patch.costUsd, id)
+  }
+  if (patch.ended) {
+    db.prepare('UPDATE agent_run SET ended_at = ? WHERE id = ?').run(now(), id)
+  }
+}
+
+/** 세션에 속한 run 목록. 오래된 세션은 run 기록이 없으므로 빈 배열이 정상이다. */
+export function listRuns(sessionId: string): AgentRun[] {
+  const rows = db
+    .prepare(
+      `SELECT id, session_id AS sessionId, role, agent_name AS agentName, runner_id AS runnerId,
+              task, status, cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt
+       FROM agent_run WHERE session_id = ? ORDER BY started_at, rowid`,
+    )
+    .all(sessionId) as unknown as AgentRun[]
+  return rows
 }
 
 // ── 승인 ────────────────────────────────────────────────────
 
 export function recordApproval(req: ApprovalRequest): void {
   db.prepare(
-    `INSERT INTO approval (id, session_id, tool, input, cwd, risk, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO approval (id, session_id, run_id, tool, input, cwd, risk, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`,
-  ).run(req.id, req.sessionId, req.tool, JSON.stringify(req.input), req.cwd, req.risk, now())
+  ).run(
+    req.id,
+    req.sessionId,
+    req.runId ?? null,
+    req.tool,
+    JSON.stringify(req.input),
+    req.cwd,
+    req.risk,
+    now(),
+  )
 }
 
 export function decideApproval(id: string, decision: ApprovalDecision): void {
@@ -639,16 +721,23 @@ export function listOpenApprovals(): ApprovalRequest[] {
   expireStaleApprovals()
   const rows = db
     .prepare(
-      `SELECT a.id, a.session_id AS sessionId, s.project_path AS projectPath,
+      `SELECT a.id, a.session_id AS sessionId, a.run_id AS runId, s.project_path AS projectPath,
               a.tool, a.input, a.cwd, a.risk
        FROM approval a
        LEFT JOIN session s ON s.id = a.session_id
        WHERE a.decision IS NULL ORDER BY a.created_at`,
     )
-    .all() as unknown as Array<Omit<ApprovalRequest, 'input' | 'pending'> & { input: string }>
+    .all() as unknown as Array<
+      Omit<ApprovalRequest, 'input' | 'pending' | 'runId'> & { input: string; runId: string | null }
+    >
   // 같은 메인 프로세스에서 렌더러만 새로고침됐을 수 있다. DB에 열려 있다면 broker도
   // 아직 응답 가능하므로 일반 승인 카드로 복원한다. 진짜 timeout은 onApproval에서 닫힌다.
-  return rows.map((r) => ({ ...r, input: JSON.parse(r.input) as unknown, pending: false }))
+  return rows.map(({ runId, ...r }) => ({
+    ...r,
+    ...(runId ? { runId } : {}),
+    input: JSON.parse(r.input) as unknown,
+    pending: false,
+  }))
 }
 
 /** 프로세스나 세션이 끝나 더는 응답할 수 없는 승인 요청을 닫는다. */
