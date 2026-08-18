@@ -98,6 +98,19 @@ interface LiveSession {
 
 const TERMINAL: SessionStatus[] = ['completed', 'failed', 'stopped', 'auth-required']
 
+/**
+ * 세션마다 Lead run 은 하나뿐이라 id 를 세션에서 유도한다.
+ * 이어가는 턴에서도 같은 값이 나와야 승인 폴더와 run 기록이 갈라지지 않는다.
+ */
+export function leadRunIdOf(sessionId: string): string {
+  return `${sessionId}:lead`
+}
+
+/** runId 가 없는 과거 기록도 Lead 로 읽는다. */
+function isLeadRun(sessionId: string, runId?: string): boolean {
+  return !runId || runId === leadRunIdOf(sessionId)
+}
+
 /** 세션 생명주기 관리. 모든 이벤트를 DB 에 적재하고 렌더러로 중계한다. */
 export class SessionManager {
   private sessions = new Map<string, LiveSession>()
@@ -209,14 +222,27 @@ export class SessionManager {
     const workCwd = worktree?.path ?? input.cwd
     const agent = input.agentName ? library.read(input.agentName) : undefined
 
-    const approvalDir = join(workCwd, '.agent-workspace', 'approvals', id)
-    this.broker.attach(id, approvalDir, prev?.approvalMode === 'auto')
+    // 승인 요청 폴더는 run 단위로 나눈다. 보조 Agent 가 동시에 요청해도 섞이지 않아야 한다.
+    const leadRunId = leadRunIdOf(id)
+    db.createRun({
+      id: leadRunId,
+      sessionId: id,
+      role: 'lead',
+      agentName: input.agentName ?? null,
+      runnerId: input.runner.id,
+      task: input.prompt,
+      status: 'starting',
+      costUsd: 0,
+      startedAt: Date.now(),
+    })
+    const approvalDir = join(workCwd, '.agent-workspace', 'approvals', id, leadRunId)
+    this.broker.attach(leadRunId, id, approvalDir, prev?.approvalMode === 'auto')
 
     // provider 에 맞는 어댑터를 고른다. 이벤트 계약은 같다.
     const adapter =
       input.runner.provider === 'codex-cli'
-        ? new CodexCliAdapter((event) => this.onEvent(id, event))
-        : new ClaudeCliAdapter((event) => this.onEvent(id, event))
+        ? new CodexCliAdapter((event) => this.onEvent(id, event, leadRunId))
+        : new ClaudeCliAdapter((event) => this.onEvent(id, event, leadRunId))
     this.sessions.set(id, {
       id,
       adapter,
@@ -311,7 +337,7 @@ export class SessionManager {
     const live = this.sessions.get(sessionId)
     if (live) {
       live.adapter.stop()
-      this.broker.detach(sessionId)
+      this.broker.detachSession(sessionId)
       this.sessions.delete(sessionId)
     }
 
@@ -614,24 +640,32 @@ export class SessionManager {
     db.recordApproval(routedReq)
     if (routedReq.pending) {
       db.decideApproval(routedReq.id, 'deny')
-      this.onEvent(routedReq.sessionId, {
-        t: 'notice',
-        level: 'warning',
-        title: '승인 요청 시간 초과',
-        text: `${routedReq.tool} 요청을 건너뛰었습니다.`,
-      })
+      this.onEvent(
+        routedReq.sessionId,
+        {
+          t: 'notice',
+          level: 'warning',
+          title: '승인 요청 시간 초과',
+          text: `${routedReq.tool} 요청을 건너뛰었습니다.`,
+        },
+        routedReq.runId,
+      )
       if (this.sessions.has(routedReq.sessionId)) {
-        this.onEvent(routedReq.sessionId, { t: 'status', status: 'running' })
+        this.onEvent(routedReq.sessionId, { t: 'status', status: 'running' }, routedReq.runId)
       }
       this.getWindow()?.webContents.send('approval:cleared', routedReq.id)
       return
     }
     this.getWindow()?.webContents.send('approval:request', routedReq)
     notifyApproval(routedReq)
-    this.onEvent(routedReq.sessionId, { t: 'status', status: 'approval-required' })
+    this.onEvent(
+      routedReq.sessionId,
+      { t: 'status', status: 'approval-required' },
+      routedReq.runId,
+    )
   }
 
-  private onEvent(sessionId: string, event: SessionEvent): void {
+  private onEvent(sessionId: string, event: SessionEvent, runId?: string): void {
     const session = this.sessions.get(sessionId)
     let integrateCompletedWorktree = false
 
@@ -641,7 +675,9 @@ export class SessionManager {
         const entryId = session?.memoryTargets[proposal.scope]
         if (!entryId) continue
         const recorded = db.recordMemoryProposal({ sessionId, entryId, ...proposal })
-        if (recorded) this.persistAndSend(sessionId, { t: 'memory-proposal', proposal: recorded })
+        if (recorded) {
+          this.persistAndSend(sessionId, { t: 'memory-proposal', proposal: recorded }, runId)
+        }
       }
       event = { ...event, text: extracted.text }
       if (!event.text && extracted.proposals.length > 0) return
@@ -650,8 +686,10 @@ export class SessionManager {
     if (event.t === 'status') {
       if (session) session.status = event.status
       db.updateSession(sessionId, { status: event.status })
+      if (runId) db.updateRun(runId, { status: event.status })
       if (TERMINAL.includes(event.status)) {
         db.updateSession(sessionId, { ended: true })
+        if (runId) db.updateRun(runId, { ended: true })
         // 세션을 지우기 전에 알린다 — 지운 뒤엔 제목·경로를 알 수 없다
         const meta = session ?? db.getSession(sessionId)
         if (meta) {
@@ -661,9 +699,10 @@ export class SessionManager {
         for (const approvalId of db.discardOpenApprovals(sessionId)) {
           this.getWindow()?.webContents.send('approval:cleared', approvalId)
         }
-        this.broker.detach(sessionId)
+        this.broker.detachSession(sessionId)
         this.sessions.delete(sessionId)
-        integrateCompletedWorktree = event.status === 'completed'
+        // 자동 반영은 Lead 가 끝났을 때만 한 번 돈다. 보조 run 종료가 원본을 건드리면 안 된다.
+        integrateCompletedWorktree = event.status === 'completed' && isLeadRun(sessionId, runId)
       }
     }
     if (event.t === 'session-meta') {
@@ -671,6 +710,7 @@ export class SessionManager {
     }
     if (event.t === 'usage') {
       db.updateSession(sessionId, { costUsd: event.usage.totalCostUsd })
+      if (runId) db.updateRun(runId, { costUsd: event.usage.totalCostUsd })
     }
     if (event.t === 'file-changed') {
       db.recordFileChange(sessionId, event.path)
@@ -678,7 +718,7 @@ export class SessionManager {
       this.checkConflict(sessionId, event.path)
     }
 
-    this.persistAndSend(sessionId, event)
+    this.persistAndSend(sessionId, event, runId)
     if (integrateCompletedWorktree) void this.integrateWorktree(sessionId)
   }
 
