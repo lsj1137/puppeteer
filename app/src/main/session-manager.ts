@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import { app } from 'electron'
 import type {
+  AgentRun,
   ApprovalDecision,
   ApprovalMode,
   ApprovalRequest,
@@ -54,6 +55,14 @@ import {
 import { notifyApproval, notifyStatus } from './notify'
 import * as memory from './memory'
 import { extractMemoryProposals, MEMORY_PROPOSAL_INSTRUCTION } from './memory-proposal'
+import {
+  buildDelegateResultPrompt,
+  extractDelegates,
+  DELEGATE_INSTRUCTION,
+  MAX_SUB_RUNS,
+  type DelegateOutcome,
+  type ParsedDelegate,
+} from './delegate'
 import { prompt as skillPrompt } from './skill-library'
 import {
   sessionDeletionBlockReason,
@@ -75,6 +84,11 @@ export interface StartSessionInput {
   agentName?: string
   /** 새 세션에 지정할 모델. 이어가는 턴에는 저장된 세션 값을 쓴다. */
   model?: string | null
+  /**
+   * 앱이 만들어 넣는 프롬프트(보조 Agent 결과 전달 등).
+   * CLI 에는 그대로 보내되 사용자 지시로 기록하지 않는다 — 지시 목록이 오염되면 안 된다.
+   */
+  internalPrompt?: boolean
   /** 새 세션을 전용 worktree 에서 격리할지. 생략하면 기본으로 격리한다. */
   isolate?: boolean
   /**
@@ -98,6 +112,15 @@ interface LiveSession {
 
 const TERMINAL: SessionStatus[] = ['completed', 'failed', 'stopped', 'auth-required']
 
+/** 보조 run 은 조사만 한다. Agent 정의가 없어도 앱이 쓰기 도구를 막는다. */
+const SUB_RUN_DISALLOWED = ['Write', 'Edit', 'NotebookEdit']
+
+const SUB_RUN_INSTRUCTION = `당신은 다른 Agent가 위임한 조사를 수행하는 보조 실행입니다. 결과는 사람이 아니라 위임한 Agent에게 전달됩니다.
+- 파일을 수정하거나 만들 수 없습니다. 읽고 확인한 사실만 보고하세요.
+- 마지막 응답이 그대로 전달됩니다. 인사말 없이 확인한 내용과 근거(파일 경로·줄 번호 등)를 적으세요.
+- 확인하지 못한 것은 추측하지 말고 확인하지 못했다고 적으세요.
+- 다른 보조에게 다시 위임할 수 없습니다.`
+
 /**
  * 세션마다 Lead run 은 하나뿐이라 id 를 세션에서 유도한다.
  * 이어가는 턴에서도 같은 값이 나와야 승인 폴더와 run 기록이 갈라지지 않는다.
@@ -115,6 +138,12 @@ function isLeadRun(sessionId: string, runId?: string): boolean {
 export class SessionManager {
   private sessions = new Map<string, LiveSession>()
   private integratingWorktrees = new Set<string>()
+  /** Lead 가 이번 턴에 요청한 위임. 턴이 끝나면 꺼내서 실행한다. */
+  private pendingDelegations = new Map<string, ParsedDelegate[]>()
+  /** 세션이 마지막으로 쓴 실행 환경. 보조도 같은 환경에서 돌려야 한다. */
+  private runners = new Map<string, DetectedRunner>()
+  /** 실행 중인 보조 run. 세션을 중지하면 함께 끊는다. */
+  private subAdapters = new Map<string, ClaudeCliAdapter | CodexCliAdapter>()
   private broker: ApprovalBroker
 
   constructor(private readonly getWindow: () => BrowserWindow | undefined) {
@@ -148,7 +177,9 @@ export class SessionManager {
     }
 
     // 사용자 지시도 이벤트로 남겨야 대화를 그대로 복원할 수 있다
-    this.persistAndSend(id, { t: 'message', role: 'user', messageId: `u-${id}`, text: prompt })
+    if (!input.internalPrompt) {
+      this.persistAndSend(id, { t: 'message', role: 'user', messageId: `u-${id}`, text: prompt })
+    }
 
     /** 새 세션은 기본 격리한다. 정리한 격리 세션은 현재 원본 HEAD에서 다시 격리한다. */
     let worktree = (prev?.worktree ?? undefined) as SessionWorktree | undefined
@@ -243,6 +274,7 @@ export class SessionManager {
       input.runner.provider === 'codex-cli'
         ? new CodexCliAdapter((event) => this.onEvent(id, event, leadRunId))
         : new ClaudeCliAdapter((event) => this.onEvent(id, event, leadRunId))
+    this.runners.set(id, input.runner)
     this.sessions.set(id, {
       id,
       adapter,
@@ -298,13 +330,20 @@ export class SessionManager {
       hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
       disallowedTools: agent?.workspace.disallowedTools,
-      systemPrompt: [MEMORY_PROPOSAL_INSTRUCTION, skills].filter(Boolean).join('\n\n---\n\n'),
+      systemPrompt: [MEMORY_PROPOSAL_INSTRUCTION, DELEGATE_INSTRUCTION, skills]
+        .filter(Boolean)
+        .join('\n\n---\n\n'),
     })
     return id
   }
 
   stop(sessionId: string): void {
     this.sessions.get(sessionId)?.adapter.stop()
+    // 보조가 남아 돌면 사용자는 멈춘 줄 알고 있는데 토큰이 계속 나간다.
+    this.pendingDelegations.delete(sessionId)
+    for (const [runId, adapter] of this.subAdapters) {
+      if (runId.startsWith(`${sessionId}:sub:`)) adapter.stop()
+    }
   }
 
   setModel(sessionId: string, model: string | null): StoredSession | undefined {
@@ -340,6 +379,8 @@ export class SessionManager {
       this.broker.detachSession(sessionId)
       this.sessions.delete(sessionId)
     }
+    this.stop(sessionId)
+    this.runners.delete(sessionId)
 
     // 코드가 남은 worktree는 세션과 함께 추적돼야 한다. 미커밋/미병합 작업이 있으면
     // 세션 삭제도 중단하고 Worktree 관리 화면에서 먼저 정리하게 한다.
@@ -668,6 +709,7 @@ export class SessionManager {
   private onEvent(sessionId: string, event: SessionEvent, runId?: string): void {
     const session = this.sessions.get(sessionId)
     let integrateCompletedWorktree = false
+    let runDelegations = false
 
     if (event.t === 'message' && event.role === 'assistant' && !event.isError) {
       const extracted = extractMemoryProposals(event.text)
@@ -679,8 +721,13 @@ export class SessionManager {
           this.persistAndSend(sessionId, { t: 'memory-proposal', proposal: recorded }, runId)
         }
       }
-      event = { ...event, text: extracted.text }
-      if (!event.text && extracted.proposals.length > 0) return
+      const delegated = extractDelegates(extracted.text)
+      if (delegated.delegates.length > 0 && isLeadRun(sessionId, runId)) {
+        // Lead 프로세스가 아직 살아 있다. 이번 턴이 끝난 뒤에 보조를 띄운다.
+        this.pendingDelegations.set(sessionId, delegated.delegates)
+      }
+      event = { ...event, text: delegated.text }
+      if (!event.text && (extracted.proposals.length > 0 || delegated.delegates.length > 0)) return
     }
 
     if (event.t === 'status') {
@@ -702,7 +749,10 @@ export class SessionManager {
         this.broker.detachSession(sessionId)
         this.sessions.delete(sessionId)
         // 자동 반영은 Lead 가 끝났을 때만 한 번 돈다. 보조 run 종료가 원본을 건드리면 안 된다.
-        integrateCompletedWorktree = event.status === 'completed' && isLeadRun(sessionId, runId)
+        const leadDone = event.status === 'completed' && isLeadRun(sessionId, runId)
+        // 위임이 걸려 있으면 대화가 아직 안 끝났다. 반영하지 말고 보조부터 돌린다.
+        runDelegations = leadDone && this.pendingDelegations.has(sessionId)
+        integrateCompletedWorktree = leadDone && !runDelegations
       }
     }
     if (event.t === 'session-meta') {
@@ -720,6 +770,169 @@ export class SessionManager {
 
     this.persistAndSend(sessionId, event, runId)
     if (integrateCompletedWorktree) void this.integrateWorktree(sessionId)
+    if (runDelegations) void this.runDelegations(sessionId)
+  }
+
+  /**
+   * Lead 턴이 끝난 뒤 위임을 실행하고 결과를 Lead 에게 돌려준다.
+   * 보조는 읽기 전용이며, Lead 와 같은 실행 환경에서 돈다(도메인 지식이 다른 provider 로 새지 않게).
+   */
+  private async runDelegations(sessionId: string): Promise<void> {
+    const requested = this.pendingDelegations.get(sessionId) ?? []
+    this.pendingDelegations.delete(sessionId)
+    const stored = db.getSession(sessionId)
+    if (!stored || requested.length === 0) return
+
+    const runner = this.runners.get(sessionId)
+    if (!runner) {
+      this.persistAndSend(sessionId, {
+        t: 'notice',
+        level: 'warning',
+        title: '위임 실패',
+        text: '실행 환경을 찾지 못해 보조 Agent를 띄우지 못했습니다.',
+      })
+      return
+    }
+
+    const accepted = requested.slice(0, MAX_SUB_RUNS)
+    // 조용히 자르지 않는다 — 몇 건을 버렸는지 대화에 남긴다.
+    if (requested.length > accepted.length) {
+      this.persistAndSend(sessionId, {
+        t: 'notice',
+        level: 'warning',
+        title: '위임 수 제한',
+        text: `한 번에 ${MAX_SUB_RUNS}개까지만 실행합니다. 요청 ${requested.length}건 중 ${
+          requested.length - accepted.length
+        }건은 실행하지 않았습니다.`,
+      })
+    }
+
+    const cwd = stored.worktree?.path ?? stored.projectPath
+    this.persistAndSend(sessionId, {
+      t: 'notice',
+      level: 'info',
+      title: '보조 Agent 실행',
+      text: accepted
+        .map((request, index) => `${index + 1}. ${request.agent ?? 'Agent 없음'} — ${request.task}`)
+        .join('\n'),
+    })
+
+    const outcomes: DelegateOutcome[] = []
+    for (const request of accepted) {
+      outcomes.push(await this.runSub(sessionId, cwd, runner, request, stored.model ?? undefined))
+    }
+
+    // 결과는 사용자 지시가 아니라 앱이 넣는 프롬프트다.
+    await this.start({
+      runner,
+      cwd: stored.projectPath,
+      prompt: buildDelegateResultPrompt(outcomes),
+      internalPrompt: true,
+      continueSessionId: sessionId,
+      resumeCliSessionId: db.getSession(sessionId)?.cliSessionId ?? undefined,
+      agentName: stored.agentName ?? undefined,
+    })
+  }
+
+  /** 보조 run 하나. 마지막 assistant 응답이 Lead 에게 돌아갈 결과가 된다. */
+  private async runSub(
+    sessionId: string,
+    cwd: string,
+    runner: DetectedRunner,
+    request: ParsedDelegate,
+    model?: string,
+  ): Promise<DelegateOutcome> {
+    const runId = `${sessionId}:sub:${randomUUID().slice(0, 8)}`
+    const agent = request.agent ? library.read(request.agent) : undefined
+
+    if (request.agent && !agent) {
+      return { ...request, ok: false, summary: `«${request.agent}» 를 찾지 못했습니다.` }
+    }
+    // Lead 와 같은 마지막 방어선. 지침 전문이 그대로 모델에 실려 나간다.
+    if (agent && !library.allowsProvider(agent, runner.provider)) {
+      return {
+        ...request,
+        ok: false,
+        summary: `«${agent.name}» 는 ${runner.provider} 로 실행할 수 없습니다.`,
+      }
+    }
+
+    const run: AgentRun = {
+      id: runId,
+      sessionId,
+      role: 'sub',
+      agentName: agent?.name ?? null,
+      runnerId: runner.id,
+      task: request.task,
+      status: 'starting',
+      costUsd: 0,
+      startedAt: Date.now(),
+    }
+    db.createRun(run)
+    this.persistAndSend(sessionId, { t: 'run-start', run }, runId)
+
+    const approvalDir = join(cwd, '.agent-workspace', 'approvals', sessionId, runId)
+    this.broker.attach(runId, sessionId, approvalDir, db.getSession(sessionId)?.approvalMode === 'auto')
+
+    return await new Promise<DelegateOutcome>((resolve) => {
+      let answer = ''
+      let settled = false
+      const finish = (ok: boolean, summary: string): void => {
+        if (settled) return
+        settled = true
+        db.updateRun(runId, { status: ok ? 'completed' : 'failed', ended: true })
+        this.broker.detach(runId)
+        this.persistAndSend(sessionId, { t: 'run-result', runId, ok, summary }, runId)
+        resolve({ ...request, ok, summary })
+      }
+
+      const adapter =
+        runner.provider === 'codex-cli'
+          ? new CodexCliAdapter((event) => onSubEvent(event))
+          : new ClaudeCliAdapter((event) => onSubEvent(event))
+
+      const onSubEvent = (event: SessionEvent): void => {
+        // 보조의 대화·도구 이벤트는 기록만 한다. 렌더러로 흘리면 Lead 가 말한 것처럼 보인다.
+        // 화면에 그리는 일은 위임 카드(다음 단계)가 맡는다.
+        if (event.t === 'message' && event.role === 'assistant' && !event.isError && event.text) {
+          answer = event.text
+        }
+        if (event.t === 'usage') db.updateRun(runId, { costUsd: event.usage.totalCostUsd })
+        if (event.t === 'status') {
+          db.updateRun(runId, { status: event.status })
+          db.appendEvent(sessionId, event, runId)
+          this.persistAndSend(sessionId, { t: 'run-status', runId, status: event.status }, runId)
+          if (TERMINAL.includes(event.status)) {
+            finish(event.status === 'completed', answer || (event.reason ?? ''))
+            return
+          }
+          return
+        }
+        db.appendEvent(sessionId, event, runId)
+      }
+
+      this.subAdapters.set(runId, adapter)
+      adapter.start({
+        runner,
+        cwd,
+        prompt: request.task,
+        hookCommand: hookCommand(runner, approvalDir),
+        agentName: agent ? agent.name : undefined,
+        agentsJson: agent ? library.toCliAgents(agent) : undefined,
+        agentPrompt: agent ? library.toPromptPrefix(agent) : undefined,
+        model: model || agent?.model,
+        approvalDirHost: approvalDir,
+        hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), runner),
+        allowedTools: agent?.workspace.allowedTools,
+        // Agent 정의가 없어도 보조는 읽기 전용이다. 쓰기는 Lead 만 한다.
+        disallowedTools: [
+          ...new Set([...(agent?.workspace.disallowedTools ?? []), ...SUB_RUN_DISALLOWED]),
+        ],
+        systemPrompt: SUB_RUN_INSTRUCTION,
+      })
+    }).finally(() => {
+      this.subAdapters.delete(runId)
+    })
   }
 
   /** 정상 완료된 격리 작업만 자동 커밋하고, 안전한 fast-forward일 때만 원본에 합친다. */
