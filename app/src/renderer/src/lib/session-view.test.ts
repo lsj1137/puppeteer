@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { StoredSession } from '@shared/session'
+import type { SessionEvent, StoredSession } from '@shared/session'
 import {
   EMPTY_SESSION_VIEW,
   reduceSessionView,
@@ -97,35 +97,73 @@ describe('reduceSessionView', () => {
 })
 
 describe('멀티 Agent run 이벤트', () => {
-  // 1단계는 식별자만 도입하고 화면 동작은 그대로 둔다. 보조 run 이벤트가 흘러들어와도
-  // 기존 대화 뷰가 흔들리지 않아야 다음 단계에서 UI를 안전하게 얹을 수 있다.
-  it('아직 화면을 바꾸지 않는다', () => {
-    const started = reduceSessionView(
+  const startRun = (id: string, task: string): SessionEvent => ({
+    t: 'run-start',
+    run: {
+      id,
+      sessionId: 'session-1',
+      role: 'sub',
+      agentName: null,
+      runnerId: 'claude-windows',
+      task,
+      status: 'running',
+      costUsd: 0,
+      startedAt: 0,
+    },
+  })
+
+  // 같은 턴에 병렬로 뜬 보조는 카드 하나로 묶여야 한다. 줄줄이 쌓이면 대화를 밀어낸다.
+  it('한 턴의 보조들을 카드 하나에 모은다', () => {
+    const view = [startRun('run-1', '문서 훑기'), startRun('run-2', '로그 확인')].reduce(
+      (current, event, index) => reduceSessionView(current, event, `event-run-${index}`),
       EMPTY_SESSION_VIEW,
-      { t: 'message', role: 'user', messageId: 'u-1', text: '조사해줘' },
-      'event-user-1',
     )
 
-    const afterRuns = [
-      {
-        t: 'run-start' as const,
-        run: {
-          id: 'run-1',
-          sessionId: 'session-1',
-          role: 'sub' as const,
-          agentName: null,
-          runnerId: 'claude-windows',
-          task: '문서 훑기',
-          status: 'running' as const,
-          costUsd: 0,
-          startedAt: 0,
-        },
-      },
-      { t: 'run-status' as const, runId: 'run-1', status: 'completed' as const },
-      { t: 'run-result' as const, runId: 'run-1', ok: true, summary: '요약' },
-    ].reduce((view, event, index) => reduceSessionView(view, event, `event-run-${index}`), started)
+    expect(view.entries).toHaveLength(1)
+    expect(view.entries[0]).toMatchObject({
+      kind: 'delegation',
+      runs: [{ runId: 'run-1' }, { runId: 'run-2' }],
+    })
+  })
 
-    expect(afterRuns).toEqual(started)
+  it('결과가 오면 해당 run 만 갱신한다', () => {
+    const view = [
+      startRun('run-1', '문서 훑기'),
+      startRun('run-2', '로그 확인'),
+      { t: 'run-result', runId: 'run-2', ok: false, summary: '시간 초과', costUsd: 0.02 },
+    ].reduce(
+      (current, event, index) => reduceSessionView(current, event as SessionEvent, `e${index}`),
+      EMPTY_SESSION_VIEW,
+    )
+
+    const entry = view.entries[0]
+    expect(entry?.kind === 'delegation' && entry.runs).toMatchObject([
+      { runId: 'run-1', status: 'running', ok: undefined },
+      { runId: 'run-2', status: 'failed', ok: false, summary: '시간 초과', costUsd: 0.02 },
+    ])
+  })
+
+  it('모르는 run 의 결과는 뷰를 건드리지 않는다', () => {
+    const view = reduceSessionView(EMPTY_SESSION_VIEW, startRun('run-1', '문서 훑기'), 'e0')
+    const after = reduceSessionView(
+      view,
+      { t: 'run-result', runId: 'unknown', ok: true, summary: '' },
+      'e1',
+    )
+    expect(after).toBe(view)
+  })
+
+  it('다음 턴의 위임은 새 카드가 된다', () => {
+    const first = [
+      startRun('run-1', '문서 훑기'),
+      { t: 'run-result', runId: 'run-1', ok: true, summary: '완료' },
+    ].reduce(
+      (current, event, index) => reduceSessionView(current, event as SessionEvent, `a${index}`),
+      EMPTY_SESSION_VIEW,
+    )
+    const second = reduceSessionView(first, startRun('run-2', '두 번째 턴'), 'b0')
+
+    expect(second.entries).toHaveLength(2)
   })
 })
 

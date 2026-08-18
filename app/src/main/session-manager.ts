@@ -896,6 +896,7 @@ export class SessionManager {
 
     return await new Promise<DelegateOutcome>((resolve) => {
       let answer = ''
+      let costUsd = 0
       let settled = false
       let timer: NodeJS.Timeout | undefined
 
@@ -905,7 +906,7 @@ export class SessionManager {
         if (timer) clearTimeout(timer)
         db.updateRun(runId, { status: ok ? 'completed' : 'failed', ended: true })
         this.broker.detach(runId)
-        this.persistAndSend(sessionId, { t: 'run-result', runId, ok, summary }, runId)
+        this.persistAndSend(sessionId, { t: 'run-result', runId, ok, summary, costUsd }, runId)
         resolve({ ...request, ok, summary })
       }
 
@@ -926,7 +927,10 @@ export class SessionManager {
         if (event.t === 'message' && event.role === 'assistant' && !event.isError && event.text) {
           answer = event.text
         }
-        if (event.t === 'usage') db.updateRun(runId, { costUsd: event.usage.totalCostUsd })
+        if (event.t === 'usage') {
+          costUsd = event.usage.totalCostUsd
+          db.updateRun(runId, { costUsd })
+        }
         if (event.t === 'status') {
           db.updateRun(runId, { status: event.status })
           db.appendEvent(sessionId, event, runId)

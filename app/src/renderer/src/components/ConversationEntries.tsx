@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, FileCode2, Loader2, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, Check, FileCode2, Loader2, Sparkles, Users, X } from 'lucide-react'
 import type { MemoryProposal } from '@shared/session'
-import type { SessionView } from '../lib/session-view'
+import type { DelegationRun, SessionView } from '../lib/session-view'
 import { artifactTitle, lineCount } from './ArtifactPanel'
 import Markdown from './Markdown'
 import ToolEntry from './ToolEntry'
@@ -53,6 +53,9 @@ export default function ConversationEntries({
           )
         }
         if (entry.kind === 'tool') return <ToolEntry key={entry.id} entry={entry} />
+        if (entry.kind === 'delegation') {
+          return <DelegationCard key={entry.id} runs={entry.runs} />
+        }
         if (entry.kind === 'memory-proposal') {
           return (
             <MemoryProposalCard
@@ -138,6 +141,63 @@ export default function ConversationEntries({
         )
       })}
     </>
+  )
+}
+
+/**
+ * 위임 카드. 보조 run 의 대화 전체는 싣지 않고 상태·비용과 반환 요약만 접어서 보여준다.
+ * 보조 메시지를 그대로 흘리면 Lead 가 말한 것처럼 보인다.
+ */
+function DelegationCard({ runs }: { runs: DelegationRun[] }) {
+  const [openRunId, setOpenRunId] = useState<string>()
+  const running = runs.filter((run) => run.ok === undefined).length
+  const failed = runs.filter((run) => run.ok === false).length
+  const cost = runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0)
+
+  return (
+    <div className="rounded-lg border border-mauve/35 bg-mauve/5 p-3 text-[12px]">
+      <div className="mb-2 flex items-center gap-1.5">
+        <Users className="h-3.5 w-3.5 shrink-0 text-mauve" />
+        <span className="font-semibold text-text">보조 Agent {runs.length}</span>
+        <span className="text-overlay1">
+          {running > 0 ? `${running}개 실행 중` : failed > 0 ? `${failed}개 실패` : '완료'}
+        </span>
+        {cost > 0 && <span className="ml-auto font-mono text-[11px] text-overlay1">${cost.toFixed(4)}</span>}
+      </div>
+      <div className="space-y-1">
+        {runs.map((run) => {
+          const open = openRunId === run.runId
+          return (
+            <div key={run.runId} className="rounded-md bg-base/50">
+              <button
+                type="button"
+                onClick={() => setOpenRunId(open ? undefined : run.runId)}
+                className="flex w-full items-start gap-2 px-2.5 py-2 text-left hover:bg-surface0/50"
+              >
+                {run.ok === undefined ? (
+                  <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-mauve" />
+                ) : run.ok ? (
+                  <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green" />
+                ) : (
+                  <X className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red" />
+                )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-text">{run.task}</span>
+                  <span className="block truncate text-[11px] text-overlay1">
+                    {run.agentName || 'Agent 없음'} · {run.status}
+                  </span>
+                </span>
+              </button>
+              {open && (
+                <div className="whitespace-pre-wrap px-2.5 pb-2.5 text-[12px] leading-relaxed text-subtext1">
+                  {run.summary || '아직 반환된 내용이 없습니다.'}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

@@ -62,7 +62,7 @@ export interface AgentRun {
 export type SessionEvent =
   | { t: 'run-start'; run: AgentRun }
   | { t: 'run-status'; runId: string; status: SessionStatus; reason?: string }
-  | { t: 'run-result'; runId: string; ok: boolean; summary: string }
+  | { t: 'run-result'; runId: string; ok: boolean; summary: string; costUsd?: number }
   | { t: 'status'; status: SessionStatus; reason?: string }
   | { t: 'session-meta'; meta: SessionMeta }
   | { t: 'message'; role: 'assistant' | 'user'; messageId: string; text: string; isError?: boolean }

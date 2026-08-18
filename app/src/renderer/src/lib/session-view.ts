@@ -22,6 +22,18 @@ export type Entry =
       result?: { ok: boolean; preview: string }
     }
   | { kind: 'user'; id: string; text: string }
+  | { kind: 'delegation'; id: string; runs: DelegationRun[] }
+
+/** 위임 카드 한 줄. 한 턴에 띄운 보조 run 들을 카드 하나에 모은다. */
+export interface DelegationRun {
+  runId: string
+  agentName?: string | null
+  task: string
+  status: SessionStatus
+  ok?: boolean
+  summary?: string
+  costUsd?: number
+}
 
 export interface SessionView {
   entries: Entry[]
@@ -127,9 +139,51 @@ export function reduceSessionView(v: SessionView, e: SessionEvent, key: string):
         cost: e.usage.totalCostUsd,
         tokens: e.usage.inputTokens + e.usage.outputTokens,
       }
+    case 'run-start': {
+      const run: DelegationRun = {
+        runId: e.run.id,
+        agentName: e.run.agentName,
+        task: e.run.task,
+        status: e.run.status,
+      }
+      // 같은 턴에 병렬로 뜬 보조들은 카드 하나에 모은다. 아직 끝나지 않은 카드가 그 턴이다.
+      const last = v.entries.at(-1)
+      if (last?.kind === 'delegation' && last.runs.some((item) => item.ok === undefined)) {
+        return {
+          ...v,
+          entries: [...v.entries.slice(0, -1), { ...last, runs: [...last.runs, run] }],
+        }
+      }
+      return { ...v, entries: [...v.entries, { kind: 'delegation', id: key, runs: [run] }] }
+    }
+    case 'run-status':
+      return patchDelegationRun(v, e.runId, (run) => ({ ...run, status: e.status }))
+    case 'run-result':
+      return patchDelegationRun(v, e.runId, (run) => ({
+        ...run,
+        ok: e.ok,
+        summary: e.summary,
+        costUsd: e.costUsd,
+        status: e.ok ? 'completed' : 'failed',
+      }))
     default:
       return v
   }
+}
+
+/** 이미 그려진 위임 카드에서 해당 run 만 바꾼다. 없으면 뷰를 그대로 둔다. */
+function patchDelegationRun(
+  v: SessionView,
+  runId: string,
+  patch: (run: DelegationRun) => DelegationRun,
+): SessionView {
+  let changed = false
+  const entries = v.entries.map((entry) => {
+    if (entry.kind !== 'delegation' || !entry.runs.some((run) => run.runId === runId)) return entry
+    changed = true
+    return { ...entry, runs: entry.runs.map((run) => (run.runId === runId ? patch(run) : run)) }
+  })
+  return changed ? { ...v, entries } : v
 }
 
 export const baseName = (path: string): string =>
