@@ -20,18 +20,32 @@ describe('parseCodexModels', () => {
     const options = parseCodexModels(
       JSON.stringify({
         models: [
-          { slug: 'gpt-5.6-terra', display_name: 'GPT-5.6-Terra', description: '균형', visibility: 'list' },
-          { slug: 'gpt-5.6-luna', display_name: 'GPT-5.6-Luna', visibility: 'list' },
+          {
+            slug: 'gpt-5.6-terra',
+            display_name: 'GPT-5.6-Terra',
+            description: 'Balanced agentic coding model for everyday work.',
+            visibility: 'list',
+          },
           { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide' },
         ],
       }),
     )
 
-    // CLI 에 넘기는 값은 표시 이름(Terra)이 아니라 슬러그다.
+    // CLI 에 넘기는 값은 표시 이름(Terra)이 아니라 슬러그다. 아는 슬러그면 설명을 한글로 바꾼다.
     expect(options).toEqual([
-      { value: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', detail: '균형' },
-      { value: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', detail: undefined },
+      { value: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', detail: '일상 작업용 균형 잡힌 에이전트 코딩 모델' },
     ])
+  })
+
+  it('모르는 슬러그는 설명을 지어내지 않고 원문을 그대로 쓴다', () => {
+    const options = parseCodexModels(
+      JSON.stringify({
+        models: [
+          { slug: 'gpt-9-unknown', display_name: 'Future', description: 'Something new.', visibility: 'list' },
+        ],
+      }),
+    )
+    expect(options[0]).toMatchObject({ value: 'gpt-9-unknown', detail: 'Something new.' })
   })
 
   it('표시 이름이 비어 있으면 슬러그를 그대로 쓴다', () => {

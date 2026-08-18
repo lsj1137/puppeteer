@@ -643,26 +643,26 @@ export function ComposerSettings({
           )}
           {panel === 'approval' && (
             <div className="absolute bottom-full left-0 z-40 mb-1.5 w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
-              <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">이 세션의 승인 모드</div>
+              <div className="px-1.5 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-overlay1">이 세션의 승인 모드</div>
               <button
                 onClick={() => { void Promise.resolve(onChangeApprovalMode('ask')); setPanel(undefined) }}
                 className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${approvalMode === 'ask' ? 'bg-surface1' : 'hover:bg-surface0'}`}
               >
-                <span className="block text-[12px] font-medium text-text">매번 확인</span>
-                <span className="mt-0.5 block text-[10px] text-overlay1">도구 실행 전에 승인 요청을 표시합니다.</span>
+                <span className="block text-[13px] font-medium text-text">매번 확인</span>
+                <span className="mt-0.5 block text-[12px] text-overlay1">도구 실행 전에 승인 요청을 표시합니다.</span>
               </button>
               <button
                 onClick={() => { void Promise.resolve(onChangeApprovalMode('auto')); setPanel(undefined) }}
                 className={`w-full rounded-lg px-3 py-2 text-left ${approvalMode === 'auto' ? 'bg-yellow/15 ring-1 ring-yellow/30' : 'hover:bg-surface0'}`}
               >
-                <span className="block text-[12px] font-medium text-yellow">자동 승인</span>
-                <span className="mt-0.5 block text-[10px] leading-relaxed text-overlay1">이 세션의 모든 도구 요청을 자동 승인합니다. 신뢰할 수 있는 작업에서만 사용하세요.</span>
+                <span className="block text-[13px] font-medium text-yellow">자동 승인</span>
+                <span className="mt-0.5 block text-[12px] leading-relaxed text-overlay1">이 세션의 모든 도구 요청을 자동 승인합니다. 신뢰할 수 있는 작업에서만 사용하세요.</span>
               </button>
             </div>
           )}
           {panel === 'model' && (
             <div className="absolute bottom-full left-0 z-40 mb-1.5 w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
-              <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">
+              <div className="px-1.5 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-overlay1">
                 이 세션의 모델
               </div>
               <div className="max-h-64 overflow-auto">
@@ -670,8 +670,8 @@ export function ComposerSettings({
                   onClick={() => { void Promise.resolve(onChangeModel(null)); setPanel(undefined) }}
                   className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${!model ? 'bg-surface1' : 'hover:bg-surface0'}`}
                 >
-                  <span className="block text-[12px] font-medium text-text">CLI 기본</span>
-                  <span className="mt-0.5 block text-[10px] text-overlay1">
+                  <span className="block text-[13px] font-medium text-text">CLI 기본</span>
+                  <span className="mt-0.5 block text-[12px] text-overlay1">
                     Agent에 지정된 모델이 있으면 그것을, 없으면 CLI 기본값을 씁니다.
                   </span>
                 </button>
@@ -682,18 +682,18 @@ export function ComposerSettings({
                     className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${model === option.value ? 'bg-surface1' : 'hover:bg-surface0'}`}
                   >
                     <span className="flex items-baseline gap-1.5">
-                      <span className="text-[12px] font-medium text-text">{option.label}</span>
-                      <span className="truncate font-mono text-[10px] text-overlay1">{option.value}</span>
+                      <span className="text-[13px] font-medium text-text">{option.label}</span>
+                      <span className="truncate font-mono text-[12px] text-overlay1">{option.value}</span>
                     </span>
                     {option.detail && (
-                      <span className="mt-0.5 block text-[10px] leading-relaxed text-overlay1">{option.detail}</span>
+                      <span className="mt-0.5 block text-[12px] leading-relaxed text-overlay1">{option.detail}</span>
                     )}
                   </button>
                 ))}
               </div>
               {/* 목록을 못 읽었으면 후보를 지어내지 않고 이유를 그대로 보여준다. */}
               {modelChoices?.note && (
-                <div className="mt-1 rounded-lg bg-yellow/10 px-2.5 py-1.5 text-[10px] leading-relaxed text-yellow">
+                <div className="mt-1 rounded-lg bg-yellow/10 px-2.5 py-1.5 text-[12px] leading-relaxed text-yellow">
                   {modelChoices.note}
                 </div>
               )}
@@ -710,19 +710,19 @@ export function ComposerSettings({
                   onChange={(e) => setModelDraft(e.target.value)}
                   placeholder="슬러그 직접 입력"
                   spellCheck={false}
-                  className="min-w-0 flex-1 rounded-md bg-surface0/60 px-2 py-1.5 font-mono text-[11px] text-text outline-none placeholder:text-overlay0 focus:bg-surface0"
+                  className="min-w-0 flex-1 rounded-md bg-surface0/60 px-2 py-1.5 font-mono text-[12px] text-text outline-none placeholder:text-overlay0 focus:bg-surface0"
                 />
-                <button type="submit" className="shrink-0 rounded-md bg-surface1 px-2.5 py-1.5 text-[11px] text-subtext1 hover:text-text">
+                <button type="submit" className="shrink-0 rounded-md bg-surface1 px-2.5 py-1.5 text-[12px] text-subtext1 hover:text-text">
                   적용
                 </button>
               </form>
               {appliedModel && (
-                <div className="px-1.5 pt-1.5 text-[10px] text-overlay1">
+                <div className="px-1.5 pt-1.5 text-[12px] text-overlay1">
                   현재 실행 중인 모델: <span className="font-mono text-subtext1">{appliedModel}</span>
                 </div>
               )}
               {modelChoices?.source && (
-                <div className="truncate px-1.5 pt-1 font-mono text-[10px] text-overlay0" title={modelChoices.source}>
+                <div className="truncate px-1.5 pt-1 font-mono text-[11px] text-overlay0" title={modelChoices.source}>
                   {modelChoices.source}
                 </div>
               )}
