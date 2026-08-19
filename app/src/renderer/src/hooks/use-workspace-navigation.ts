@@ -156,6 +156,8 @@ export function useWorkspaceNavigation(options: Options) {
       if (activeSessionId === id) {
         setActiveSessionId(undefined)
         setSelectedArtifact(undefined)
+        // 삭제한 세션의 Agent 가 남으면 다음에 시작하는 새 세션에 그대로 딸려간다.
+        setAgentName(undefined)
       }
       void refresh(activeProjectPath)
     },
@@ -165,6 +167,7 @@ export function useWorkspaceNavigation(options: Options) {
       forgetSessionView,
       refresh,
       setActiveSessionId,
+      setAgentName,
       setConfirmDelete,
       setDeleteError,
       setSelectedArtifact,
@@ -177,8 +180,18 @@ export function useWorkspaceNavigation(options: Options) {
     setPendingPrompt(undefined)
     setActiveSessionId(undefined)
     setSelectedArtifact(undefined)
+    // 직전 세션의 Agent 를 물려주지 않는다. 프로젝트를 열면 최근 세션이 자동 선택되므로
+    // 여기서 비우지 않으면 고른 적 없는 Agent 가 새 세션에 그대로 박힌다.
+    setAgentName(undefined)
     focusPrompt()
-  }, [focusPrompt, setActiveSessionId, setPendingPrompt, setScrolled, setSelectedArtifact])
+  }, [
+    focusPrompt,
+    setActiveSessionId,
+    setAgentName,
+    setPendingPrompt,
+    setScrolled,
+    setSelectedArtifact,
+  ])
 
   const pickFolder = useCallback(async (): Promise<void> => {
     const path = await window.api.pickProject()
