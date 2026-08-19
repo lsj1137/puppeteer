@@ -8,6 +8,21 @@ export interface SessionLaunch {
   sameRunner: boolean
 }
 
+/**
+ * 지금 화면에 적용할 Agent.
+ *
+ * 세션이 열려 있으면 그 세션에 저장된 값이 정본이고, 새 세션 화면에서는 사용자가 이번에 고른 값을 쓴다.
+ * 이동할 때마다 상태를 비우는 방식은 경로 하나만 빠뜨려도 고른 적 없는 Agent 가 다음 세션에
+ * 그대로 딸려간다 — 실제로 `새 세션`과 세션 삭제 경로에서 그렇게 샜다.
+ */
+export function resolveSessionAgent(
+  selectedSession: StoredSession | undefined,
+  pickedAgent: string | undefined,
+): string | undefined {
+  if (!selectedSession) return pickedAgent
+  return selectedSession.agentName ?? undefined
+}
+
 /** 현재 탭을 이어갈지 새 CLI 세션으로 시작할지 결정한다. */
 export function resolveSessionLaunch(
   runnerId: string,

@@ -59,6 +59,7 @@ import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
 import { useWorkspaceCommands } from './hooks/use-workspace-commands'
 import { approvalNavigationPath } from './lib/navigation'
+import { resolveSessionAgent } from './lib/session-launch'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
@@ -130,7 +131,11 @@ export default function App() {
   const [scrolled, setScrolled] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [agents, setAgents] = useState<AgentDef[]>([])
-  const [agentName, setAgentName] = useState<string>()
+  /**
+   * 새 세션 화면에서 이번에 고른 Agent. 세션이 열려 있으면 세션에 저장된 값이 정본이다.
+   * 이동 경로마다 상태를 비우는 방식은 하나만 빠뜨려도 고른 적 없는 Agent 가 딸려간다.
+   */
+  const [pickedAgent, setPickedAgent] = useState<string>()
   /** 아직 세션이 없을 때 고른 모델. 세션이 생기면 그 행에 저장된 값이 정본이 된다. */
   const [pendingModel, setPendingModel] = useState<string>()
   const [tabMenu, setTabMenu] = useState(false)
@@ -224,6 +229,8 @@ export default function App() {
   const view = (activeSession && views[activeSession]) || EMPTY_SESSION_VIEW
   const activeProject = projects.find((p) => p.path === active)
   const selected = sessions.find((s) => s.id === activeSession)
+  /** 세션이 열려 있으면 그 세션의 Agent 가 정본, 새 세션 화면에서는 이번에 고른 값. */
+  const agentName = resolveSessionAgent(selected, pickedAgent)
   const selectedSessionRunnerId = selected?.runnerId
   /** 지금 화면이 가리키는 러너 — 세션 것 > 사용자가 고른 것 > 프로젝트 기본값 */
   const activeRunnerId =
@@ -298,7 +305,6 @@ export default function App() {
     focusPrompt,
     setActiveProjectPath: setActive,
     setActiveSessionId: setActiveSession,
-    setAgentName,
     setAttachments,
     setConfirmDrop,
     setConfirmDelete: setConfirmDelSession,
@@ -663,6 +669,15 @@ export default function App() {
     setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))
   }
 
+  /** 세션이 있으면 그 세션의 정본을 바꾸고, 없으면 다음 세션에 쓸 값으로만 들고 있는다. */
+  async function changeSessionAgent(name?: string): Promise<void> {
+    setPickedAgent(name)
+    if (!activeSession) return
+    const updated = await window.api.setSessionAgent(activeSession, name ?? null)
+    if (!updated) return
+    setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))
+  }
+
   // 세션이 아직 없으면(첫 지시 전) 다음 세션에 쓸 값으로만 들고 있다가 start 시 함께 저장한다.
   async function changeSessionModel(model: string | null): Promise<void> {
     setPendingModel(model ?? undefined)
@@ -768,7 +783,7 @@ export default function App() {
    */
   async function runRouted(c: RouteCandidate, projectPath: string, text: string): Promise<void> {
     void selectProject(projectPath, false)
-    setAgentName(c.agentName)
+    setPickedAgent(c.agentName)
 
     const proj = projects.find((p) => p.path === projectPath)
     const runner = runners.find((r) => r.id === proj?.runnerId)
@@ -805,7 +820,7 @@ export default function App() {
     setCheckpoint(undefined)
     setActiveSession(undefined) // 새 세션으로 간다
     setNextRunnerId(runnerId)
-    setAgentName(agent)
+    setPickedAgent(agent)
     await startFreshSession({ runnerId, cwd: path, prompt: body, agentName: agent })
   }
 
@@ -825,7 +840,7 @@ export default function App() {
       void window.api.buildCheckpoint(sessionId).then((draft) => draft && setCheckpoint(draft))
     },
     onShowOverview: () => setScreen('overview'),
-    onSelectAgent: setAgentName,
+    onSelectAgent: (name?: string) => void changeSessionAgent(name),
     onNewAgent: (projectPath) => setEditing({ agent: emptyAgent(projectPath), isNew: true }),
     onDeleteSession: (session) => {
       setSessionDeleteError(undefined)
@@ -1168,9 +1183,7 @@ export default function App() {
           onAnnotate={setAnnotating}
           onAttachFiles={attachFiles}
           onChooseRunner={chooseRunner}
-          onSelectAgent={(name) => {
-            setAgentName(name)
-          }}
+          onSelectAgent={(name) => void changeSessionAgent(name)}
           onEditAgent={(agent) => {
             setEditing({ agent, isNew: false })
           }}
@@ -1252,12 +1265,12 @@ export default function App() {
         onCloseEditor={() => setEditing(undefined)}
         onAgentSaved={(savedAgent) => {
           setEditing(undefined)
-          setAgentName(savedAgent.name)
+          void changeSessionAgent(savedAgent.name)
           void reloadAgents()
         }}
         onAgentDeleted={(name) => {
           setEditing(undefined)
-          if (agentName === name) setAgentName(undefined)
+          if (agentName === name) void changeSessionAgent(undefined)
           void reloadAgents()
         }}
         annotating={annotating}

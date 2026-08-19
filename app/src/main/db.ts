@@ -436,6 +436,12 @@ export function setSessionApprovalMode(id: string, mode: ApprovalMode): StoredSe
   return getSession(id)
 }
 
+/** 세션 도중 Agent 를 바꾸면 그 세션의 정본이 된다. 다음 턴부터 적용된다. */
+export function setSessionAgentName(id: string, agentName: string | null): StoredSession | undefined {
+  db.prepare('UPDATE session SET agent_name = ? WHERE id = ?').run(agentName?.trim() || null, id)
+  return getSession(id)
+}
+
 /** 빈 문자열은 지정 해제로 본다 — 그러면 Agent 지정값이나 CLI 기본으로 돌아간다. */
 export function setSessionModel(id: string, model: string | null): StoredSession | undefined {
   db.prepare('UPDATE session SET model = ? WHERE id = ?').run(model?.trim() || null, id)

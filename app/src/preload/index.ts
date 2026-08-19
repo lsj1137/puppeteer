@@ -109,6 +109,8 @@ const api = {
     ipcRenderer.invoke('session:rename', sessionId, title),
   setSessionApprovalMode: (sessionId: string, mode: ApprovalMode): Promise<StoredSession | undefined> =>
     ipcRenderer.invoke('session:setApprovalMode', sessionId, mode),
+  setSessionAgent: (sessionId: string, agentName: string | null): Promise<StoredSession | undefined> =>
+    ipcRenderer.invoke('session:setAgent', sessionId, agentName),
   setSessionModel: (sessionId: string, model: string | null): Promise<StoredSession | undefined> =>
     ipcRenderer.invoke('session:setModel', sessionId, model),
   listModels: (runner: DetectedRunner): Promise<ModelChoices> =>

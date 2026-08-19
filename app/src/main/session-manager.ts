@@ -254,7 +254,9 @@ export class SessionManager {
       }
     }
     const workCwd = worktree?.path ?? input.cwd
-    const agent = input.agentName ? library.read(input.agentName) : undefined
+    // 세션 저장값 > 이번 호출값. 도중에 바꾼 Agent 가 다음 턴부터 적용된다.
+    const agentName = prev?.agentName ?? input.agentName ?? undefined
+    const agent = agentName ? library.read(agentName) : undefined
 
     // 승인 요청 폴더는 run 단위로 나눈다. 보조 Agent 가 동시에 요청해도 섞이지 않아야 한다.
     const leadRunId = leadRunIdOf(id)
@@ -324,7 +326,7 @@ export class SessionManager {
       prompt,
       resumeSessionId: input.resumeCliSessionId,
       hookCommand: hookCommand(input.runner, approvalDir),
-      agentName: agent ? input.agentName : undefined,
+      agentName: agent ? agentName : undefined,
       agentsJson: agent ? library.toCliAgents(agent) : undefined,
       agentPrompt: agent ? library.toPromptPrefix(agent) : undefined,
       // 세션 지정 > Agent 지정 > CLI 기본. 세션 값은 실행 중에도 바꿀 수 있고 다음 턴부터 적용된다.
@@ -350,6 +352,10 @@ export class SessionManager {
       this.delegationCancelled.add(sessionId)
       adapter.stop()
     }
+  }
+
+  setAgent(sessionId: string, agentName: string | null): StoredSession | undefined {
+    return db.setSessionAgentName(sessionId, agentName)
   }
 
   setModel(sessionId: string, model: string | null): StoredSession | undefined {

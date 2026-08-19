@@ -361,6 +361,9 @@ app.whenReady().then(() => {
     if (mode !== 'ask' && mode !== 'auto') throw new Error('지원하지 않는 승인 모드입니다.')
     return sessions.setApprovalMode(sessionId, mode)
   })
+  ipcMain.handle('session:setAgent', (_e, sessionId: string, agentName: string | null) =>
+    sessions.setAgent(sessionId, agentName),
+  )
   ipcMain.handle('session:setModel', (_e, sessionId: string, model: string | null) =>
     sessions.setModel(sessionId, model),
   )
