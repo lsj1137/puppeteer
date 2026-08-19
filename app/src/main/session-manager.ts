@@ -31,7 +31,7 @@ import type {
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
 import { ApprovalBroker } from './approval-broker'
-import { hookCommand, toRunnerPath } from './paths'
+import { approvalDirOf, hookCommand, toRunnerPath } from './paths'
 import * as library from './agent-library'
 import * as db from './db'
 import {
@@ -269,7 +269,7 @@ export class SessionManager {
       costUsd: 0,
       startedAt: Date.now(),
     })
-    const approvalDir = join(workCwd, '.agent-workspace', 'approvals', id, leadRunId)
+    const approvalDir = approvalDirOf(workCwd, id, leadRunId)
     this.broker.attach(leadRunId, id, approvalDir, prev?.approvalMode === 'auto')
 
     // provider 에 맞는 어댑터를 고른다. 이벤트 계약은 같다.
@@ -891,7 +891,7 @@ export class SessionManager {
     db.createRun(run)
     this.persistAndSend(sessionId, { t: 'run-start', run }, runId)
 
-    const approvalDir = join(cwd, '.agent-workspace', 'approvals', sessionId, runId)
+    const approvalDir = approvalDirOf(cwd, sessionId, runId)
     this.broker.attach(runId, sessionId, approvalDir, db.getSession(sessionId)?.approvalMode === 'auto')
 
     return await new Promise<DelegateOutcome>((resolve) => {
