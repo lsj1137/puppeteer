@@ -137,10 +137,14 @@ describe('멀티 Agent run 이벤트', () => {
     )
 
     const entry = view.entries[0]
-    expect(entry?.kind === 'delegation' && entry.runs).toMatchObject([
-      { runId: 'run-1', status: 'running', ok: undefined },
+    const runs = entry?.kind === 'delegation' ? entry.runs : []
+    // toMatchObject 는 기대값이 undefined 여도 키가 있어야 통과한다. 아직 안 끝난 run 은
+    // ok 키 자체가 없으므로 여기서 확인하지 않고 아래에서 따로 본다.
+    expect(runs).toMatchObject([
+      { runId: 'run-1', status: 'running' },
       { runId: 'run-2', status: 'failed', ok: false, summary: '시간 초과', costUsd: 0.02 },
     ])
+    expect(runs[0]?.ok).toBeUndefined()
   })
 
   it('모르는 run 의 결과는 뷰를 건드리지 않는다', () => {
