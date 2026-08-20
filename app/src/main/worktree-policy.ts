@@ -28,3 +28,16 @@ export function sessionDeletionBlockReason(
   }
   return undefined
 }
+
+/**
+ * 세션을 지울 때 worktree 안전 검사를 해야 하는지.
+ *
+ * 폴더가 이미 없으면 잃을 작업이 없고, 원본을 확인할 수 없으면 검사 자체가 불가능하다.
+ * 두 경우 모두 검사를 건너뛰고 DB 연결만 끊어야 한다 — 예전에는 여기서 «상태를 확인하지
+ * 못했습니다» 로 막혀 폴더가 사라진 오래된 세션을 영영 지우지 못했다.
+ */
+export function needsWorktreeSafetyCheck(
+  connection: 'connected' | 'detached' | 'unavailable',
+): boolean {
+  return connection === 'connected'
+}

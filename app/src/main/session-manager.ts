@@ -44,6 +44,7 @@ import {
   worktreeHeadCommitTime,
   rebaseWorktree as rebaseGitWorktree,
   resolveWorktreeConflicts as resolveGitWorktreeConflicts,
+  pruneWorktrees,
   removeWorktree,
   snapshot,
   worktreeDiff as readWorktreeDiff,
@@ -68,6 +69,7 @@ import {
 } from './delegate'
 import { prompt as skillPrompt } from './skill-library'
 import {
+  needsWorktreeSafetyCheck,
   sessionDeletionBlockReason,
   shouldCreateWorktree,
   worktreeBranchName,
@@ -422,6 +424,24 @@ export class SessionManager {
     const stored = db.getSession(sessionId)
     const wt = stored?.worktree
     if (wt) {
+      // 폴더가 사라졌거나 원본을 확인할 수 없으면 안전 검사를 할 수도, 할 필요도 없다.
+      // 예전에는 여기서 `worktreeDirty` 가 undefined 를 돌려 «상태를 확인하지 못했습니다» 로
+      // 막혔고, 폴더가 없는 오래된 세션이 영영 지워지지 않았다.
+      const connection = await worktreeConnection(wt.origin, wt.path)
+      if (!needsWorktreeSafetyCheck(connection)) {
+        // 폴더는 건드리지 않는다. 원본을 확인할 수 없을 때 남은 작업이 있을 수 있다.
+        await pruneWorktrees(wt.origin, wt.branch)
+        db.setWorktree(sessionId, null)
+        db.deleteSession(sessionId)
+        return {
+          ok: true,
+          message:
+            connection === 'detached'
+              ? undefined
+              : `원본 Git 저장소를 확인하지 못해 폴더는 그대로 두고 연결만 해제했습니다: ${wt.path}`,
+        }
+      }
+
       const dirty = await worktreeDirty(wt.path)
       const status = await inspectWorktree(wt)
       const blocked = sessionDeletionBlockReason(dirty, status)

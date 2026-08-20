@@ -326,6 +326,30 @@ export async function addWorktree(
 }
 
 /** 세션이 끝나거나 지워질 때 정리. 작업 내용이 남아 있으면 지우지 않는다. */
+/**
+ * 폴더가 이미 사라진 worktree 의 Git 등록만 걷어낸다.
+ *
+ * `git worktree remove` 는 폴더가 없으면 실패한다. 그대로 두면 `git worktree list` 에
+ * prunable 항목이 남아 다음 정리·재생성 때 걸린다. 원본을 확인할 수 없으면 조용히 넘긴다 —
+ * 폴더가 없어 잃을 작업도 없다.
+ */
+export async function pruneWorktrees(cwd: string, branch?: string): Promise<boolean> {
+  try {
+    await gitWithError(cwd, ['worktree', 'prune'])
+  } catch {
+    return false
+  }
+  if (branch) {
+    // 병합됐거나 커밋이 없는 브랜치만 지운다. 미병합 작업은 보존한다.
+    try {
+      await gitWithError(cwd, ['branch', '-d', branch])
+    } catch {
+      // 미병합 브랜치는 남긴다
+    }
+  }
+  return true
+}
+
 export async function removeWorktree(
   cwd: string,
   dir: string,
