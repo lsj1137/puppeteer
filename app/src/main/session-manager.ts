@@ -304,6 +304,20 @@ export class SessionManager {
       ),
     })
 
+    // 선언만 되고 강제되지 않는 설정은 조용히 넘기지 않는다. 새 세션에서 한 번만 알린다.
+    const unenforced = agent ? library.unenforcedPathScopes(agent) : []
+    if (!prev && unenforced.length > 0) {
+      this.persistAndSend(id, {
+        t: 'notice',
+        level: 'warning',
+        title: '적용되지 않는 Agent 설정',
+        text:
+          `«${agent?.name}» 의 ${unenforced.join('·')} 는 현재 실행에 반영되지 않습니다.\n` +
+          '경로 제한은 아직 강제되지 않으니 이 Agent 가 그 범위를 벗어나 파일을 읽거나 고칠 수 있습니다.\n' +
+          '도구 자체를 막으려면 allowedTools·disallowedTools 를 쓰세요.',
+      })
+    }
+
     // 세션 시작 전 git 상태를 남긴다 (실패해도 세션은 진행).
     // 이어가는 턴에는 다시 찍지 않는다 — 기준점은 대화가 시작된 시점이어야 한다.
     if (!prev) {
