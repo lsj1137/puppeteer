@@ -432,7 +432,8 @@ export default function MemoryScreen() {
                     <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-overlay1">
                       추가할 내용
                     </div>
-                    <div className="max-h-40 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-subtext1 overscroll-contain">
+                    {/* 160px 는 몇 줄만 보여 무엇을 승인하는지 알기 어려웠다. 창 높이에 맞춰 늘린다. */}
+                    <div className="max-h-[min(22rem,50vh)] overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-subtext1 overscroll-contain">
                       {proposal.content}
                     </div>
                   </div>

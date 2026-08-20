@@ -276,7 +276,8 @@ function MemoryProposalCard({
         <div className="min-w-0 flex-1">
           <div className="font-semibold text-text">Memory에 추가할까요?</div>
           <div className="mt-0.5 text-subtext0">{proposal.reason}</div>
-          <div className="mt-2 whitespace-pre-wrap rounded-md bg-base px-2.5 py-2 font-mono text-[11px] leading-relaxed text-subtext1">
+          {/* 상한이 없으면 긴 제안이 대화를 밀어내고 승인 버튼이 화면 밖으로 나간다. */}
+          <div className="mt-2 max-h-[min(18rem,45vh)] overflow-auto overscroll-contain whitespace-pre-wrap break-words rounded-md bg-base px-2.5 py-2 font-mono text-[12px] leading-relaxed text-subtext1">
             {proposal.content}
           </div>
           <div className="mt-1.5 text-[10px] text-overlay1">
