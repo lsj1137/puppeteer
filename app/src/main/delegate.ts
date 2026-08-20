@@ -81,3 +81,25 @@ export function buildDelegateResultPrompt(outcomes: DelegateOutcome[]): string {
     '이 결과를 반영해 사용자에게 최종 답변을 하세요. 확인되지 않은 내용은 확인되지 않았다고 밝히고, 실패한 보조가 있으면 그 사실도 알리세요.',
   ].join('\n\n')
 }
+
+/**
+ * Lead 턴이 끝났을 때 세션을 실행 중으로 붙잡아 둘지.
+ *
+ * 위임이 남아 있으면 대화가 끝난 게 아니다. 세션을 종료 처리하면 완료 알림이 뜨고,
+ * 그 사이 들어온 새 지시가 «다음 지시 예약» 이 아니라 곧바로 새 턴으로 나가 보조 결과와 엉킨다.
+ */
+export function shouldHoldForDelegation(
+  status: string,
+  isLead: boolean,
+  hasPending: boolean,
+): boolean {
+  return status === 'completed' && isLead && hasPending
+}
+
+/**
+ * 대기 중인 위임을 버려야 하는지.
+ * Lead 가 실패·중지로 끝났으면 그 턴의 위임은 의미가 없다 — 남겨두면 다음 턴에 되살아난다.
+ */
+export function shouldDropPendingDelegations(status: string, isLead: boolean): boolean {
+  return isLead && status !== 'completed'
+}

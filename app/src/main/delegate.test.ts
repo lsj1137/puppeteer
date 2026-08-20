@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { buildDelegateResultPrompt, extractDelegates, MAX_SUB_RUNS } from './delegate'
+import {
+  buildDelegateResultPrompt,
+  extractDelegates,
+  MAX_SUB_RUNS,
+  shouldDropPendingDelegations,
+  shouldHoldForDelegation,
+} from './delegate'
 
 describe('extractDelegates', () => {
   it('블록을 걷어내고 위임만 남긴다', () => {
@@ -58,5 +64,34 @@ describe('buildDelegateResultPrompt', () => {
   it('빈 결과도 비어 있다고 알린다', () => {
     const prompt = buildDelegateResultPrompt([{ task: '조사', ok: true, summary: '   ' }])
     expect(prompt).toContain('(반환된 내용 없음)')
+  })
+})
+
+describe('위임 대기 중 세션 유지', () => {
+  it('위임이 남아 있으면 Lead 가 끝나도 세션을 붙잡는다', () => {
+    expect(shouldHoldForDelegation('completed', true, true)).toBe(true)
+  })
+
+  it('위임이 없으면 평소대로 종료한다', () => {
+    expect(shouldHoldForDelegation('completed', true, false)).toBe(false)
+  })
+
+  // 보조 run 의 종료가 세션을 붙잡거나 끝내면 안 된다. 판단은 Lead 만 한다.
+  it('보조 run 의 종료는 판단에 쓰지 않는다', () => {
+    expect(shouldHoldForDelegation('completed', false, true)).toBe(false)
+  })
+
+  it('실패·중지로 끝나면 붙잡지 않고 대기 위임을 버린다', () => {
+    expect(shouldHoldForDelegation('failed', true, true)).toBe(false)
+    expect(shouldDropPendingDelegations('failed', true)).toBe(true)
+    expect(shouldDropPendingDelegations('stopped', true)).toBe(true)
+  })
+
+  it('정상 완료면 대기 위임을 버리지 않는다', () => {
+    expect(shouldDropPendingDelegations('completed', true)).toBe(false)
+  })
+
+  it('보조 run 의 실패로 대기 위임을 버리지 않는다', () => {
+    expect(shouldDropPendingDelegations('failed', false)).toBe(false)
   })
 })

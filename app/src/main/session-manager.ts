@@ -60,6 +60,8 @@ import {
   extractDelegates,
   DELEGATE_INSTRUCTION,
   MAX_SUB_RUNS,
+  shouldDropPendingDelegations,
+  shouldHoldForDelegation,
   SUB_RUN_TIMEOUT_MS,
   type DelegateOutcome,
   type ParsedDelegate,
@@ -751,24 +753,38 @@ export class SessionManager {
       db.updateSession(sessionId, { status: event.status })
       if (runId) db.updateRun(runId, { status: event.status })
       if (TERMINAL.includes(event.status)) {
-        db.updateSession(sessionId, { ended: true })
         if (runId) db.updateRun(runId, { ended: true })
-        // 세션을 지우기 전에 알린다 — 지운 뒤엔 제목·경로를 알 수 없다
-        const meta = session ?? db.getSession(sessionId)
-        if (meta) {
-          const cwd = 'projectPath' in meta ? meta.projectPath : ''
-          notifyStatus(event.status, meta.title ?? '', cwd, sessionId, event.reason)
-        }
         for (const approvalId of db.discardOpenApprovals(sessionId)) {
           this.getWindow()?.webContents.send('approval:cleared', approvalId)
         }
-        this.broker.detachSession(sessionId)
-        this.sessions.delete(sessionId)
+
+        const isLead = isLeadRun(sessionId, runId)
         // 자동 반영은 Lead 가 끝났을 때만 한 번 돈다. 보조 run 종료가 원본을 건드리면 안 된다.
-        const leadDone = event.status === 'completed' && isLeadRun(sessionId, runId)
-        // 위임이 걸려 있으면 대화가 아직 안 끝났다. 반영하지 말고 보조부터 돌린다.
-        runDelegations = leadDone && this.pendingDelegations.has(sessionId)
+        const leadDone = event.status === 'completed' && isLead
+        runDelegations = shouldHoldForDelegation(
+          event.status,
+          isLead,
+          this.pendingDelegations.has(sessionId),
+        )
         integrateCompletedWorktree = leadDone && !runDelegations
+        if (shouldDropPendingDelegations(event.status, isLead)) {
+          this.pendingDelegations.delete(sessionId)
+        }
+
+        if (runDelegations) {
+          // 세션은 살려 둔다. Lead 감시만 걷고 보조는 각자 붙는다.
+          this.broker.detach(leadRunIdOf(sessionId))
+        } else {
+          db.updateSession(sessionId, { ended: true })
+          // 세션을 지우기 전에 알린다 — 지운 뒤엔 제목·경로를 알 수 없다
+          const meta = session ?? db.getSession(sessionId)
+          if (meta) {
+            const cwd = 'projectPath' in meta ? meta.projectPath : ''
+            notifyStatus(event.status, meta.title ?? '', cwd, sessionId, event.reason)
+          }
+          this.broker.detachSession(sessionId)
+          this.sessions.delete(sessionId)
+        }
       }
     }
     if (event.t === 'session-meta') {
@@ -784,9 +800,19 @@ export class SessionManager {
       this.checkConflict(sessionId, event.path)
     }
 
+    if (runDelegations) {
+      // 위임이 남았으면 대화가 끝난 게 아니다. Lead 의 완료는 기록만 하고 세션은 실행 중으로 둔다.
+      // 그래야 완료 알림이 뜨지 않고, 새 지시가 기존 «다음 지시 예약» 경로로 들어간다.
+      db.appendEvent(sessionId, event, runId)
+      db.updateSession(sessionId, { status: 'running' })
+      if (session) session.status = 'running'
+      this.persistAndSend(sessionId, { t: 'status', status: 'running' }, runId)
+      void this.runDelegations(sessionId)
+      return
+    }
+
     this.persistAndSend(sessionId, event, runId)
     if (integrateCompletedWorktree) void this.integrateWorktree(sessionId)
-    if (runDelegations) void this.runDelegations(sessionId)
   }
 
   /**
@@ -798,7 +824,10 @@ export class SessionManager {
     this.pendingDelegations.delete(sessionId)
     this.delegationCancelled.delete(sessionId)
     const stored = db.getSession(sessionId)
-    if (!stored || requested.length === 0) return
+    if (!stored || requested.length === 0) {
+      this.settleAfterDelegation(sessionId, 'completed')
+      return
+    }
 
     const runner = this.runners.get(sessionId)
     if (!runner) {
@@ -808,6 +837,7 @@ export class SessionManager {
         title: '위임 실패',
         text: '실행 환경을 찾지 못해 보조 Agent를 띄우지 못했습니다.',
       })
+      this.settleAfterDelegation(sessionId, 'failed')
       return
     }
 
@@ -849,6 +879,7 @@ export class SessionManager {
         title: '위임 중단',
         text: '중지 요청으로 보조 Agent 결과를 전달하지 않았습니다.',
       })
+      this.settleAfterDelegation(sessionId, 'stopped')
       return
     }
 
@@ -862,6 +893,17 @@ export class SessionManager {
       resumeCliSessionId: db.getSession(sessionId)?.cliSessionId ?? undefined,
       agentName: stored.agentName ?? undefined,
     })
+  }
+
+  /**
+   * Lead 를 다시 띄우지 못하고 위임이 끝난 경우의 마무리.
+   *
+   * 위임을 기다리는 동안 세션을 실행 중으로 붙잡아 뒀으므로, 여기서 풀어주지 않으면
+   * 영원히 «실행 중»으로 남아 입력이 예약으로만 들어간다. 종료 처리는 평소 경로를 그대로 탄다.
+   */
+  private settleAfterDelegation(sessionId: string, status: SessionStatus): void {
+    if (!this.sessions.has(sessionId)) return
+    this.onEvent(sessionId, { t: 'status', status }, leadRunIdOf(sessionId))
   }
 
   /** 보조 run 하나. 마지막 assistant 응답이 Lead 에게 돌아갈 결과가 된다. */
