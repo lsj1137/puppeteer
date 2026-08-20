@@ -115,11 +115,18 @@ interface LiveSession {
 
 const TERMINAL: SessionStatus[] = ['completed', 'failed', 'stopped', 'auth-required']
 
-/** 보조 run 은 조사만 한다. Agent 정의가 없어도 앱이 쓰기 도구를 막는다. */
-const SUB_RUN_DISALLOWED = ['Write', 'Edit', 'NotebookEdit']
+/**
+ * 보조 run 이 쓸 수 없는 도구.
+ *
+ * 쓰기 도구는 «Lead 만 파일을 고친다» 원칙 때문이고, Bash·PowerShell 은 승인 훅이 가로채는
+ * 도구라 사람이 승인하기 전까지 보조가 멈춰 선다. 실제로 문서 조사 위임 2건이 Bash 승인 대기로
+ * 10분 타임아웃까지 아무 일도 못 하고 끊겼다. 조사는 Read·Grep·Glob 으로 한다.
+ */
+const SUB_RUN_DISALLOWED = ['Write', 'Edit', 'NotebookEdit', 'Bash', 'PowerShell']
 
 const SUB_RUN_INSTRUCTION = `당신은 다른 Agent가 위임한 조사를 수행하는 보조 실행입니다. 결과는 사람이 아니라 위임한 Agent에게 전달됩니다.
-- 파일을 수정하거나 만들 수 없습니다. 읽고 확인한 사실만 보고하세요.
+- 파일을 수정하거나 만들 수 없고 명령도 실행할 수 없습니다. Read·Grep·Glob 으로만 조사하세요.
+  (Bash 를 시도하면 승인 대기로 멈춰 아무 결과도 못 냅니다.)
 - 마지막 응답이 그대로 전달됩니다. 인사말 없이 확인한 내용과 근거(파일 경로·줄 번호 등)를 적으세요.
 - 확인하지 못한 것은 추측하지 말고 확인하지 못했다고 적으세요.
 - 다른 보조에게 다시 위임할 수 없습니다.`
@@ -950,6 +957,7 @@ export class SessionManager {
       let answer = ''
       let costUsd = 0
       let settled = false
+      let timedOut = false
       let timer: NodeJS.Timeout | undefined
 
       const finish = (ok: boolean, summary: string): void => {
@@ -963,9 +971,13 @@ export class SessionManager {
       }
 
       // Lead 가 영원히 기다리면 대화가 멈춘 것처럼 보인다. 물고 있으면 끊고 실패로 돌린다.
+      const timeoutSummary = `${Math.round(SUB_RUN_TIMEOUT_MS / 60000)}분 안에 끝나지 않아 중단했습니다.`
       timer = setTimeout(() => {
+        // stop() 이 곧바로 종료 상태를 올리므로 먼저 표시해 둔다.
+        // 안 그러면 «작업을 시작하겠습니다» 같은 첫 문장이 결과로 둔갑한다.
+        timedOut = true
         this.subAdapters.get(runId)?.stop()
-        finish(false, `${Math.round(SUB_RUN_TIMEOUT_MS / 60000)}분 안에 끝나지 않아 중단했습니다.`)
+        finish(false, timeoutSummary)
       }, SUB_RUN_TIMEOUT_MS)
 
       const adapter =
@@ -988,7 +1000,8 @@ export class SessionManager {
           db.appendEvent(sessionId, event, runId)
           this.persistAndSend(sessionId, { t: 'run-status', runId, status: event.status }, runId)
           if (TERMINAL.includes(event.status)) {
-            finish(event.status === 'completed', answer || (event.reason ?? ''))
+            if (timedOut) finish(false, timeoutSummary)
+            else finish(event.status === 'completed', answer || (event.reason ?? ''))
             return
           }
           return
