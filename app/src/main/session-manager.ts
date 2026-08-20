@@ -40,6 +40,7 @@ import {
   changedSince,
   commitWorktree as commitGitWorktree,
   diffFile,
+  listRegisteredWorktrees,
   mergeWorktree as mergeGitWorktree,
   worktreeHeadCommitTime,
   rebaseWorktree as rebaseGitWorktree,
@@ -70,6 +71,7 @@ import {
 import { prompt as skillPrompt } from './skill-library'
 import {
   needsWorktreeSafetyCheck,
+  orphanWorktreePaths,
   sessionDeletionBlockReason,
   worktreeCleanupBlockReason,
   shouldCreateWorktree,
@@ -219,6 +221,14 @@ export class SessionManager {
       shouldCreateWorktree(input.isolate, Boolean(prev), recreateCleanedWorktree)
     ) {
       const originSnapshot = await snapshot(input.cwd)
+      // 폴더가 사라졌는데 등록만 남은 항목은 새 worktree 생성을 방해할 수 있다.
+      // 앱이 아는 것과 Git 이 아는 것이 어긋나면 조용히 걷어낸다 — 폴더는 건드리지 않는다.
+      const stale = orphanWorktreePaths(
+        await listRegisteredWorktrees(input.cwd),
+        db.projectWorktreeSessions(input.cwd).map(({ worktree }) => worktree.path),
+      )
+      if (stale.length > 0) await pruneWorktrees(input.cwd)
+
       const recreatedAt = recreateCleanedWorktree ? Date.now() : undefined
       // 연결이 끊긴 기존 폴더는 사용자 파일이 남아 있을 수 있으므로 덮거나 지우지 않는다.
       const dirName = recreatedAt === undefined ? id : `${id}-${recreatedAt.toString(36)}`
@@ -544,6 +554,15 @@ export class SessionManager {
       }
       db.setWorktree(entry.id, null)
     }
+
+    // 앱이 모르는 등록이 남으면 `git worktree list` 에 계속 보이고 다음 생성 때 걸린다.
+    // 구 userData 경로(`%AppData%\Puppeteer`)에 만든 worktree 가 대표적이다.
+    const orphans = orphanWorktreePaths(
+      await listRegisteredWorktrees(projectPath),
+      entries.map(({ worktree }) => worktree.path),
+    )
+    if (orphans.length > 0) await pruneWorktrees(projectPath)
+
     const project = db.setProjectWorktreeMode(projectPath, mode)
     return project
       ? { ok: true, message: `Worktree ${checked.length}개를 정리하고 사용을 껐습니다.`, project }

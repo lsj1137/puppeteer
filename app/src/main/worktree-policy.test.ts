@@ -4,6 +4,8 @@ import {
   sessionDeletionBlockReason,
   shouldCreateWorktree,
   worktreeBranchName,
+  normalizeWorktreePath,
+  orphanWorktreePaths,
   worktreeCleanupBlockReason,
 } from './worktree-policy'
 
@@ -100,5 +102,32 @@ describe('worktree 정리 실패 안내', () => {
   it('안전하면 막지 않는다', () => {
     expect(worktreeCleanupBlockReason(false, clean)).toBeUndefined()
     expect(worktreeCleanupBlockReason(false, { hasCommits: true, merged: true })).toBeUndefined()
+  })
+})
+
+describe('앱이 모르는 worktree 등록', () => {
+  const roaming = 'C:\\Users\\me\\AppData\\Roaming'
+
+  // userData 경로가 바뀌면서(%AppData%\Puppeteer → %AppData%\agent-workspace)
+  // 예전 worktree 가 Git 에만 남아 화면에서 정리할 수 없었다.
+  it('구 경로에 남은 등록을 찾아낸다', () => {
+    const registered = [
+      `${roaming}\\agent-workspace\\worktrees\\aaa`,
+      `${roaming}\\Puppeteer\\worktrees\\bbb`,
+    ]
+    expect(orphanWorktreePaths(registered, [`${roaming}\\agent-workspace\\worktrees\\aaa`])).toEqual([
+      `${roaming}\\Puppeteer\\worktrees\\bbb`,
+    ])
+  })
+
+  // Windows 는 구분자와 대소문자가 흔들린다. 같은 폴더를 고아로 오인하면 멀쩡한 등록을 지운다.
+  it('구분자·대소문자 차이는 같은 폴더로 본다', () => {
+    expect(orphanWorktreePaths(['C:/Users/Me/WT/aaa'], ['c:\\users\\me\\wt\\aaa'])).toEqual([])
+    expect(normalizeWorktreePath('C:\\a\\B\\')).toBe('c:/a/b')
+  })
+
+  it('앱이 아는 것만 등록돼 있으면 비어 있다', () => {
+    expect(orphanWorktreePaths(['C:/wt/a'], ['C:/wt/a'])).toEqual([])
+    expect(orphanWorktreePaths([], ['C:/wt/a'])).toEqual([])
   })
 })

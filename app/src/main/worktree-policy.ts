@@ -64,3 +64,23 @@ export function worktreeCleanupBlockReason(
   }
   return undefined
 }
+
+/**
+ * Windows 경로는 구분자와 대소문자가 흔들린다.
+ * `C:/a\B` 와 `c:\a/b` 는 같은 폴더이므로 비교 전에 한 모양으로 맞춘다.
+ */
+export function normalizeWorktreePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
+
+/**
+ * Git 은 알지만 앱은 모르는 worktree.
+ *
+ * 앱의 userData 경로가 바뀌면(`%AppData%\\Puppeteer` → `%AppData%\\agent-workspace`)
+ * 그 전에 만든 worktree 가 원본 저장소에 등록된 채 남는다. DB 에 없으니 화면에는 안 뜨고,
+ * 사용자는 정리할 방법이 없는데 `git worktree list` 에는 계속 보인다.
+ */
+export function orphanWorktreePaths(registered: string[], known: string[]): string[] {
+  const seen = new Set(known.map(normalizeWorktreePath))
+  return registered.filter((path) => !seen.has(normalizeWorktreePath(path)))
+}

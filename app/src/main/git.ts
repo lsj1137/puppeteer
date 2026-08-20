@@ -327,6 +327,29 @@ export async function addWorktree(
 
 /** 세션이 끝나거나 지워질 때 정리. 작업 내용이 남아 있으면 지우지 않는다. */
 /**
+ * 원본 저장소에 등록된 linked worktree 경로.
+ *
+ * `--porcelain` 은 `worktree <경로>` 줄로 시작하는 블록을 준다. 첫 항목은 원본 checkout 이라
+ * 제외한다. 실패하면 빈 배열 — 여기서 못 읽었다고 정리 흐름을 막을 이유는 없다.
+ */
+export async function listRegisteredWorktrees(cwd: string): Promise<string[]> {
+  let out: string
+  try {
+    out = await git(cwd, ['worktree', 'list', '--porcelain'])
+  } catch {
+    return []
+  }
+
+  const paths = out
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith('worktree '))
+    .map((line) => line.slice('worktree '.length).trim())
+    .filter(Boolean)
+
+  return paths.slice(1)
+}
+
+/**
  * 폴더가 이미 사라진 worktree 의 Git 등록만 걷어낸다.
  *
  * `git worktree remove` 는 폴더가 없으면 실패한다. 그대로 두면 `git worktree list` 에
