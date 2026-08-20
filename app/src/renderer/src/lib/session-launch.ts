@@ -9,6 +9,25 @@ export interface SessionLaunch {
 }
 
 /**
+ * Agent 를 미리 고르지 않고 지시 내용으로 정하겠다는 표시.
+ * 실제 Agent 이름과 섞이면 안 되므로 파일명으로 쓸 수 없는 형태를 쓴다.
+ */
+export const AUTO_AGENT = '__auto__'
+
+/**
+ * 자동 선택 라우터를 태워야 하는지.
+ *
+ * 세션이 이미 있으면 그 세션의 Agent 가 정본이라 라우팅할 일이 없다.
+ * 즉 자동 선택은 새 세션의 첫 지시에서만 의미가 있다.
+ */
+export function shouldRouteAgent(
+  pickedAgent: string | undefined,
+  activeSessionId: string | undefined,
+): boolean {
+  return pickedAgent === AUTO_AGENT && !activeSessionId
+}
+
+/**
  * 지금 화면에 적용할 Agent.
  *
  * 세션이 열려 있으면 그 세션에 저장된 값이 정본이고, 새 세션 화면에서는 사용자가 이번에 고른 값을 쓴다.

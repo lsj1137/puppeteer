@@ -17,6 +17,7 @@ import {
   Pencil,
   Plus,
   ShieldAlert,
+  WandSparkles,
   ShieldCheck,
   Terminal,
   X,
@@ -31,6 +32,7 @@ import type {
   StoredSession,
 } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
+import { AUTO_AGENT } from '../lib/session-launch'
 
 const PROVIDER_LABEL: Record<string, string> = {
   'claude-cli': 'Claude',
@@ -476,7 +478,9 @@ export function ComposerSettings({
             }`}
           >
             <Bot className="h-3.5 w-3.5 shrink-0 text-mauve" />
-            <span className="truncate">{agentName ?? '에이전트 없음'}</span>
+            <span className="truncate">
+              {agentName === AUTO_AGENT ? '자동 선택' : (agentName ?? '에이전트 없음')}
+            </span>
           </button>
           <button
             type="button"
@@ -604,6 +608,21 @@ export function ComposerSettings({
           {panel === 'agent' && (
           <div className="absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(28rem,70vh)] w-[min(22rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
             <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">에이전트</div>
+            {/* 새 세션에서만 의미가 있다. 이어가는 턴은 세션에 저장된 Agent 가 정본이다. */}
+            {!approvalLocked && (
+              <button
+                onClick={() => { onSelect(AUTO_AGENT); setPanel(undefined) }}
+                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] ${
+                  agentName === AUTO_AGENT ? 'bg-surface1 text-text' : 'text-subtext1 hover:bg-surface0'
+                }`}
+              >
+                <WandSparkles className="h-3.5 w-3.5 shrink-0 text-mauve" />
+                <span className="min-w-0 flex-1">
+                  자동 선택
+                  <span className="block text-[11px] text-overlay1">지시 내용을 보고 고른 뒤 확인합니다</span>
+                </span>
+              </button>
+            )}
             <button
               onClick={() => { onSelect(undefined); setPanel(undefined) }}
               className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] ${

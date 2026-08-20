@@ -45,6 +45,7 @@ import type {
   CostTotals,
   CheckpointDraft,
   RouteCandidate,
+  RouteResult,
   StoredProject,
   StoredSession,
   WorktreeIntegrationMode,
@@ -59,7 +60,8 @@ import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
 import { useWorkspaceCommands } from './hooks/use-workspace-commands'
 import { approvalNavigationPath } from './lib/navigation'
-import { resolveSessionAgent } from './lib/session-launch'
+import { AUTO_AGENT, resolveSessionAgent, shouldRouteAgent } from './lib/session-launch'
+import AgentRouteConfirm from './components/AgentRouteConfirm'
 import type { AppUpdateState } from '@shared/app-update'
 import puppeteerDarkIcon from './assets/icons/puppeteer-icon-128.png'
 import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
@@ -136,6 +138,8 @@ export default function App() {
    * 이동 경로마다 상태를 비우는 방식은 하나만 빠뜨려도 고른 적 없는 Agent 가 딸려간다.
    */
   const [pickedAgent, setPickedAgent] = useState<string>()
+  /** 자동 선택을 태운 지시와 그 결과. 사용자가 확인해야 세션이 시작된다. */
+  const [routeConfirm, setRouteConfirm] = useState<{ text: string; result?: RouteResult }>()
   /** 아직 세션이 없을 때 고른 모델. 세션이 생기면 그 행에 저장된 값이 정본이 된다. */
   const [pendingModel, setPendingModel] = useState<string>()
   const [tabMenu, setTabMenu] = useState(false)
@@ -268,7 +272,8 @@ export default function App() {
     activeProjectPath: active,
     activeProjectRunnerId: activeProject?.runnerId,
     activeSessionId: activeSession,
-    agentName,
+    // 자동은 표시용 값이라 CLI 로 넘기지 않는다. 실제 Agent 는 확인 카드에서 정해진다.
+    agentName: agentName === AUTO_AGENT ? undefined : agentName,
     model: selected?.model ?? pendingModel ?? null,
     attachments,
     busy,
@@ -667,6 +672,46 @@ export default function App() {
     const updated = await window.api.setSessionApprovalMode(activeSession, mode)
     if (!updated) return
     setSessions((current) => current.map((session) => session.id === updated.id ? updated : session))
+  }
+
+  /**
+   * 자동 선택이 걸려 있으면 바로 보내지 않고 라우터를 먼저 태운다.
+   * 새 세션의 첫 지시에서만 해당한다 — 이어가는 턴은 세션의 Agent 가 정본이다.
+   */
+  async function submitOrRoute(text: string): Promise<void> {
+    if (!shouldRouteAgent(pickedAgent, activeSession)) {
+      submit(text)
+      return
+    }
+    setRouteConfirm({ text })
+    const runner = runners.find((r) => r.id === activeRunnerId)
+    if (!runner || !active) {
+      setRouteConfirm({ text, result: { candidates: [], reason: '실행 환경을 찾지 못했습니다.' } })
+      return
+    }
+    try {
+      const result = await window.api.routeInstruction(text, runner, active)
+      setRouteConfirm((current) => (current?.text === text ? { text, result } : current))
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e)
+      setRouteConfirm((current) =>
+        current?.text === text ? { text, result: { candidates: [], reason } } : current,
+      )
+    }
+  }
+
+  /** 확인 카드에서 정한 Agent 로 새 세션을 시작한다. */
+  async function startRouted(agent?: string): Promise<void> {
+    const pending = routeConfirm
+    setRouteConfirm(undefined)
+    setPickedAgent(agent)
+    if (!pending || !active || !activeRunnerId) return
+    await startFreshSession({
+      runnerId: activeRunnerId,
+      cwd: active,
+      prompt: pending.text,
+      agentName: agent,
+    })
   }
 
   /** 세션이 있으면 그 세션의 정본을 바꾸고, 없으면 다음 세션에 쓸 값으로만 들고 있는다. */
@@ -1198,8 +1243,18 @@ export default function App() {
             setAttachments((current) => current.filter((_, itemIndex) => itemIndex !== index))
           }
           onStop={(sessionId) => window.api.stopSession(sessionId)}
-          onSubmit={submit}
+          onSubmit={(text) => void submitOrRoute(text)}
           onSubmitToSession={submitToSession}
+        />
+      )}
+
+      {routeConfirm && (
+        <AgentRouteConfirm
+          instruction={routeConfirm.text}
+          result={routeConfirm.result}
+          routing={!routeConfirm.result}
+          onStart={(agent) => void startRouted(agent)}
+          onCancel={() => setRouteConfirm(undefined)}
         />
       )}
 

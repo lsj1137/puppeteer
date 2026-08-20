@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { StoredSession } from '@shared/session'
-import { resolveSessionAgent, resolveSessionLaunch } from './session-launch'
+import {
+  AUTO_AGENT,
+  resolveSessionAgent,
+  resolveSessionLaunch,
+  shouldRouteAgent,
+} from './session-launch'
 
 const session = (runnerId: string | null, cliSessionId: string | null): StoredSession => ({
   id: 'app-session',
@@ -61,5 +66,21 @@ describe('resolveSessionAgent', () => {
   it('새 세션 화면에서는 이번에 고른 값을 쓴다', () => {
     expect(resolveSessionAgent(undefined, 'explorer')).toBe('explorer')
     expect(resolveSessionAgent(undefined, undefined)).toBeUndefined()
+  })
+})
+
+describe('shouldRouteAgent', () => {
+  it('새 세션의 첫 지시에서만 라우터를 태운다', () => {
+    expect(shouldRouteAgent(AUTO_AGENT, undefined)).toBe(true)
+  })
+
+  // 이어가는 턴은 세션에 저장된 Agent 가 정본이라 다시 고를 일이 없다.
+  it('세션이 열려 있으면 라우팅하지 않는다', () => {
+    expect(shouldRouteAgent(AUTO_AGENT, 'session-1')).toBe(false)
+  })
+
+  it('직접 고른 Agent 나 미지정은 그대로 보낸다', () => {
+    expect(shouldRouteAgent('explorer', undefined)).toBe(false)
+    expect(shouldRouteAgent(undefined, undefined)).toBe(false)
   })
 })
