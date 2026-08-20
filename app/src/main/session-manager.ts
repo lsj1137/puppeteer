@@ -71,6 +71,7 @@ import { prompt as skillPrompt } from './skill-library'
 import {
   needsWorktreeSafetyCheck,
   sessionDeletionBlockReason,
+  worktreeCleanupBlockReason,
   shouldCreateWorktree,
   worktreeBranchName,
 } from './worktree-policy'
@@ -485,6 +486,15 @@ export class SessionManager {
         message: `Git 연결이 이미 끊어진 worktree 기록을 정리했습니다. 기존 폴더는 보존했습니다: ${wt.path}`,
       }
     }
+    // Git 이 거부하면 영어 원문만 남는다. 막힐 이유를 미리 판정해 다음 행동을 알려준다.
+    if (!force) {
+      const blocked = worktreeCleanupBlockReason(
+        await worktreeDirty(wt.path),
+        await inspectWorktree(wt),
+      )
+      if (blocked) return { ok: false, message: blocked }
+    }
+
     const result = await removeWorktree(wt.origin, wt.path, wt.branch, force)
     if (result.ok) db.setWorktree(sessionId, null)
     return result

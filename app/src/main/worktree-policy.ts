@@ -41,3 +41,26 @@ export function needsWorktreeSafetyCheck(
 ): boolean {
   return connection === 'connected'
 }
+
+/**
+ * worktree 폴더 정리를 막아야 하는 이유.
+ *
+ * Git 이 거부하면 «contains modified or untracked files» 같은 영어 원문만 남는다.
+ * 무엇을 어떻게 해야 풀리는지는 우리가 안다 — 원문 대신 다음 행동을 알려준다.
+ * 세션 삭제(`sessionDeletionBlockReason`)와 달리 여기서는 폴더만 지우므로 기록은 남는다.
+ */
+export function worktreeCleanupBlockReason(
+  dirty: boolean | undefined,
+  status: { hasCommits: boolean; merged: boolean },
+): string | undefined {
+  if (dirty === undefined) {
+    return 'worktree 상태를 읽지 못했습니다. 폴더가 열려 있거나 다른 Git 작업이 도는지 확인해 주세요.'
+  }
+  if (dirty) {
+    return '커밋되지 않은 변경이 있어 폴더를 지우지 않았습니다. 위에서 먼저 커밋하거나, 버려도 되는 변경이면 직접 삭제해 주세요.'
+  }
+  if (status.hasCommits && !status.merged) {
+    return '원본에 병합하지 않은 커밋이 있어 폴더를 지우지 않았습니다. 먼저 «원본에 반영»을 실행해 주세요.'
+  }
+  return undefined
+}

@@ -4,6 +4,7 @@ import {
   sessionDeletionBlockReason,
   shouldCreateWorktree,
   worktreeBranchName,
+  worktreeCleanupBlockReason,
 } from './worktree-policy'
 
 describe('worktree launch policy', () => {
@@ -73,5 +74,31 @@ describe('세션 삭제 시 worktree 안전 검사 범위', () => {
     expect(sessionDeletionBlockReason(undefined, { hasCommits: false, merged: false })).toContain(
       '확인하지 못해',
     )
+  })
+})
+
+describe('worktree 정리 실패 안내', () => {
+  const clean = { hasCommits: false, merged: false }
+
+  // Git 원문(«contains modified or untracked files»)이 아니라 다음 행동을 알려야 한다.
+  it('미커밋 변경이면 무엇을 하라고 알려준다', () => {
+    const reason = worktreeCleanupBlockReason(true, clean)
+    expect(reason).toContain('커밋')
+    expect(reason).not.toContain('untracked')
+  })
+
+  it('미병합 커밋이면 원본 반영을 안내한다', () => {
+    expect(worktreeCleanupBlockReason(false, { hasCommits: true, merged: false })).toContain(
+      '원본에 반영',
+    )
+  })
+
+  it('상태를 못 읽으면 확인할 것을 알려준다', () => {
+    expect(worktreeCleanupBlockReason(undefined, clean)).toContain('상태를 읽지 못했습니다')
+  })
+
+  it('안전하면 막지 않는다', () => {
+    expect(worktreeCleanupBlockReason(false, clean)).toBeUndefined()
+    expect(worktreeCleanupBlockReason(false, { hasCommits: true, merged: true })).toBeUndefined()
   })
 })
