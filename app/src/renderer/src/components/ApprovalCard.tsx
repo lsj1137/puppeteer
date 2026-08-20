@@ -44,6 +44,11 @@ export default function ApprovalCard({ approval, shortcutsActive = true, onDecid
           {approval.tool}
         </span>
         <span className={`text-[11px] ${risk.text}`}>위험도 {risk.label}</span>
+        {approval.runLabel && (
+          <span className="rounded bg-mauve/15 px-1.5 py-0.5 text-[11px] text-mauve">
+            {approval.runLabel}
+          </span>
+        )}
         {approval.pending && (
           <span className="rounded bg-yellow/20 px-1.5 py-0.5 text-[11px] text-yellow">보류됨</span>
         )}

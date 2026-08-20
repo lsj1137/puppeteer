@@ -124,6 +124,8 @@ export interface ApprovalRequest {
   sessionId: string
   /** 요청한 run. 비어 있으면 Lead run이다(멀티 Agent 이전 기록 포함). */
   runId?: string
+  /** 보조 run 이 요청한 경우 화면에 붙일 이름. Lead 요청에는 없다. */
+  runLabel?: string
   /** 세션이 속한 원본 프로젝트. cwd는 격리 worktree일 수 있다. */
   projectPath?: string
   tool: string

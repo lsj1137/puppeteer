@@ -1,5 +1,15 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, FileCode2, Loader2, Sparkles, Users, X } from 'lucide-react'
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  FileCode2,
+  Loader2,
+  Sparkles,
+  Users,
+  X,
+} from 'lucide-react'
 import type { MemoryProposal } from '@shared/session'
 import type { DelegationRun, SessionView } from '../lib/session-view'
 import { artifactTitle, lineCount } from './ArtifactPanel'
@@ -77,24 +87,7 @@ export default function ConversationEntries({
               </div>
             )
           }
-          return (
-            <div
-              key={entry.id}
-              className={`flex gap-2 rounded-lg border p-3 text-[12px] ${
-                entry.level === 'error'
-                  ? 'border-red/50 bg-red/5 text-red'
-                  : entry.level === 'warning'
-                    ? 'border-yellow/50 bg-yellow/10 text-yellow'
-                    : 'border-sapphire/40 bg-sapphire/10 text-sapphire'
-              }`}
-            >
-              <AlertTriangle className="h-4 w-4 shrink-0" />
-              <div className="min-w-0">
-                <div className="font-semibold text-text">{entry.title}</div>
-                <div className="mt-0.5 whitespace-pre-wrap text-subtext1">{entry.text}</div>
-              </div>
-            </div>
-          )
+          return <NoticeCard key={entry.id} level={entry.level} title={entry.title} text={entry.text} />
         }
         if (entry.isError) {
           return (
@@ -141,6 +134,51 @@ export default function ConversationEntries({
         )
       })}
     </>
+  )
+}
+
+/**
+ * 알림. 본문이 길면 기본으로 접어 대화를 밀어내지 않게 한다 —
+ * 제목만으로 무슨 일인지 알 수 있고, 자세한 내용은 필요할 때만 편다.
+ */
+function NoticeCard({
+  level,
+  title,
+  text,
+}: {
+  level: 'info' | 'warning' | 'error'
+  title: string
+  text: string
+}) {
+  const long = text.length > 80 || text.includes('\n')
+  const [open, setOpen] = useState(false)
+  const tone =
+    level === 'error'
+      ? 'border-red/50 bg-red/5 text-red'
+      : level === 'warning'
+        ? 'border-yellow/50 bg-yellow/10 text-yellow'
+        : 'border-sapphire/40 bg-sapphire/10 text-sapphire'
+
+  return (
+    <div className={`rounded-lg border p-3 text-[12px] ${tone}`}>
+      <button
+        type="button"
+        onClick={() => long && setOpen((current) => !current)}
+        className={`flex w-full items-center gap-2 text-left ${long ? '' : 'cursor-default'}`}
+      >
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span className="min-w-0 flex-1 font-semibold text-text">{title}</span>
+        {long &&
+          (open ? (
+            <ChevronUp className="h-3.5 w-3.5 shrink-0 opacity-70" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+          ))}
+      </button>
+      {(!long || open) && (
+        <div className="mt-1 whitespace-pre-wrap pl-6 text-subtext1">{text}</div>
+      )}
+    </div>
   )
 }
 

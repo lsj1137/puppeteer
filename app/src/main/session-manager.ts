@@ -689,7 +689,11 @@ export class SessionManager {
 
   private onApproval(req: ApprovalRequest): void {
     const projectPath = db.getSession(req.sessionId)?.projectPath
-    const routedReq = projectPath ? { ...req, projectPath } : req
+    // 보조가 요청했는데 Lead 가 물어본 것처럼 보이면 사용자가 무엇을 승인하는지 알 수 없다.
+    const run = req.runId ? db.listRuns(req.sessionId).find(({ id }) => id === req.runId) : undefined
+    const runLabel =
+      run && run.role === 'sub' ? `보조 · ${run.agentName || 'Agent 없음'}` : undefined
+    const routedReq = { ...req, ...(projectPath ? { projectPath } : {}), ...(runLabel ? { runLabel } : {}) }
     db.recordApproval(routedReq)
     if (routedReq.pending) {
       db.decideApproval(routedReq.id, 'deny')
