@@ -71,7 +71,15 @@ const components: Components = {
 export default function Markdown({ children }: { children: string }) {
   return (
     <div className="min-w-0 max-w-full break-words text-sm [overflow-wrap:anywhere]">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      {/*
+        singleTilde: false — 기본값은 `~글자~` 도 취소선으로 본다.
+        「1월~2월, 3월~4월」 처럼 기간을 쓰면 두 번째·세 번째 물결이 짝을 이뤄
+        의도치 않게 취소선이 된다. GFM 표준인 `~~글자~~` 만 취소선으로 처리한다.
+      */}
+      <ReactMarkdown
+        remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
+        components={components}
+      >
         {children}
       </ReactMarkdown>
     </div>
