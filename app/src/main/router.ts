@@ -177,10 +177,11 @@ function runOnce(prompt: string, runner: DetectedRunner, cwd: string): Promise<s
       reject(new Error('시간 초과'))
     }, TIMEOUT_MS)
 
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (c: string) => (out += c))
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', (c: string) => (err += c))
+    // stdio 가 조건부라 타입상 nullable 이다. 위에서 둘 다 'pipe' 로 열지만 좁혀지지 않는다.
+    child.stdout?.setEncoding('utf8')
+    child.stdout?.on('data', (c: string) => (out += c))
+    child.stderr?.setEncoding('utf8')
+    child.stderr?.on('data', (c: string) => (err += c))
     child.on('error', (e) => {
       clearTimeout(timer)
       reject(e)
