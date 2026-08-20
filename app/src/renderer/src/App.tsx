@@ -700,11 +700,15 @@ export default function App() {
     }
   }
 
-  /** 확인 카드에서 정한 Agent 로 새 세션을 시작한다. */
+  /**
+   * 확인 카드에서 정한 Agent 로 새 세션을 시작한다.
+   *
+   * `자동 선택` 은 그대로 둔다 — 이번에 고른 Agent 로 덮으면 다음 새 세션이 그 Agent 로 고정돼
+   * 한 번 쓰고 풀리는 설정이 된다. 시작된 세션의 Agent 는 세션 행에 저장되므로 화면에도 그게 뜬다.
+   */
   async function startRouted(agent?: string): Promise<void> {
     const pending = routeConfirm
     setRouteConfirm(undefined)
-    setPickedAgent(agent)
     if (!pending || !active || !activeRunnerId) return
     await startFreshSession({
       runnerId: activeRunnerId,
