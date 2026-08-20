@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import type { DetectedRunner, RouteCandidate, RouteResult } from '@shared/session'
+// 러너 실행 명령은 provider 공용이다(WSL·Windows 인용 규칙이 같다).
 import { buildRunnerCommand } from './adapters/claude-cli'
 import * as library from './agent-library'
 import * as db from './db'
@@ -91,6 +92,35 @@ JSON 만 출력한다. 다른 말은 붙이지 마라.
   return { candidates, pick, reason: parsed.reason }
 }
 
+/** `--output-format json` 은 {result: "..."} 로 감싸서 준다. */
+export function claudeResult(out: string): string {
+  try {
+    const o = JSON.parse(out) as { result?: unknown }
+    return typeof o.result === 'string' ? o.result : out
+  } catch {
+    return out
+  }
+}
+
+/**
+ * `codex exec --json` 은 JSONL 을 흘린다. 마지막 agent_message 가 최종 응답이다.
+ * 못 찾으면 원문을 그대로 돌려 상위에서 «해석하지 못했습니다» 로 드러나게 한다.
+ */
+export function lastCodexMessage(out: string): string {
+  let text = ''
+  for (const line of out.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed.startsWith('{')) continue
+    try {
+      const event = JSON.parse(trimmed) as { item?: { type?: string; text?: string } }
+      if (event.item?.type === 'agent_message' && event.item.text) text = event.item.text
+    } catch {
+      // 부분 줄은 건너뛴다
+    }
+  }
+  return text || out
+}
+
 /** 모델이 코드 펜스나 인사말을 섞어 보내도 JSON 만 건져낸다. */
 function parseDecision(text: string): { index: number; reason: string } | undefined {
   const m = text.match(/\{[\s\S]*?"index"[\s\S]*?\}/)
@@ -105,28 +135,40 @@ function parseDecision(text: string): { index: number; reason: string } | undefi
   }
 }
 
-/** CLI 를 print 모드로 한 번만 돌려 최종 텍스트를 받는다. */
+/**
+ * CLI 를 한 번만 돌려 최종 텍스트를 받는다.
+ *
+ * provider 마다 비대화식 실행 방법이 달라 인자와 출력 해석을 나눈다.
+ * Claude 는 `-p --output-format json`, Codex 는 `exec --json` (JSONL) 이다.
+ * 판단만 시키므로 양쪽 다 도구를 막는다 — 승인 요청이 뜨면 화면이 멈춘다.
+ */
 function runOnce(prompt: string, runner: DetectedRunner, cwd: string): Promise<string> {
-  const args = [
-    '-p',
-    prompt,
-    '--model',
-    ROUTER_MODEL,
-    '--output-format',
-    'json',
-    // 판단만 시키면 되므로 도구를 전부 막는다. 승인 요청이 뜨면 홈이 멈춘다.
-    '--disallowedTools',
-    'Bash Read Write Edit Glob Grep WebFetch WebSearch Task',
-  ]
+  const codex = runner.provider === 'codex-cli'
+  const args = codex
+    ? ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-']
+    : [
+        '-p',
+        prompt,
+        '--model',
+        ROUTER_MODEL,
+        '--output-format',
+        'json',
+        '--disallowedTools',
+        'Bash Read Write Edit Glob Grep WebFetch WebSearch Task',
+      ]
   const { command, args: full, windowsVerbatimArguments } = buildRunnerCommand(runner, cwd, args)
 
   return new Promise((resolve, reject) => {
     const child = spawn(command, full, {
       cwd: runner.kind === 'wsl' ? undefined : cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      // Codex 는 프롬프트를 stdin 으로 받는다. 명령행 길이·따옴표 문제를 피한다.
+      stdio: [codex ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       windowsHide: true,
       windowsVerbatimArguments,
     })
+    if (codex) {
+      child.stdin?.end(prompt, 'utf8')
+    }
 
     let out = ''
     let err = ''
@@ -149,13 +191,7 @@ function runOnce(prompt: string, runner: DetectedRunner, cwd: string): Promise<s
         reject(new Error(err.trim().split('\n').pop() || `exit ${code}`))
         return
       }
-      // --output-format json 은 {result: "..."} 로 감싸서 준다
-      try {
-        const o = JSON.parse(out) as { result?: unknown }
-        resolve(typeof o.result === 'string' ? o.result : out)
-      } catch {
-        resolve(out)
-      }
+      resolve(codex ? lastCodexMessage(out) : claudeResult(out))
     })
   })
 }
