@@ -33,3 +33,5 @@
 ## 멀티 Agent 기본 안전 원칙
 
 멀티 Agent 실행의 초기 버전은 Lead Agent 한 명만 파일을 수정하고, 보조 Agent는 병렬 조사와 결과 반환을 담당한다. 보조 Agent별 실행 상태·권한·토큰을 구분해서 표시한다.
+
+멀티 Agent에서 Lead Agent는 사용자가 미리 고르지 않아도 지시 내용으로 자동 선택될 수 있어야 하며(기존 router.ts 재사용), 보조 run은 Puppeteer Agent 없이 맨 CLI로도 실행할 수 있어야 한다. Agent 없는 보조는 Agent 정의의 도구·provider 가드가 없으므로 오케스트레이터가 읽기 전용과 provider 고정을 직접 강제한다.
