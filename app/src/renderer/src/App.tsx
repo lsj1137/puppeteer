@@ -60,6 +60,12 @@ import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
 import { useWorkspaceCommands } from './hooks/use-workspace-commands'
 import { approvalNavigationPath } from './lib/navigation'
+import {
+  isFollowingBottom,
+  isScrollRestoreSatisfied,
+  SCROLL_RESTORE_ATTEMPTS,
+  shouldRetryScrollRestore,
+} from './lib/scroll'
 import { AUTO_AGENT, resolveSessionAgent, shouldRouteAgent } from './lib/session-launch'
 import AgentRouteConfirm from './components/AgentRouteConfirm'
 import type { AppUpdateState } from '@shared/app-update'
@@ -223,7 +229,9 @@ export default function App() {
   const followingBottomRef = useRef(true)
   const previousScrollSessionRef = useRef<string | undefined>(undefined)
   /** 승인 처리를 위해 잠시 떠났다가 복귀할 때만 적용할 대화 위치. */
-  const pendingScrollRestoreRef = useRef<{ sessionId: string; scrollTop: number } | undefined>(undefined)
+  const pendingScrollRestoreRef = useRef<
+    { sessionId: string; scrollTop: number; attemptsLeft: number } | undefined
+  >(undefined)
   /** 같은 세션의 하단 승인 카드로 잠시 이동하기 전 읽던 위치. */
   const inlineApprovalReturnRef = useRef<{ sessionId: string; scrollTop: number } | undefined>(undefined)
   const tabBarRef = useRef<HTMLDivElement>(null)
@@ -449,11 +457,23 @@ export default function App() {
     if (!element) return
     const pendingRestore = pendingScrollRestoreRef.current
     if (activeSession && pendingRestore?.sessionId === activeSession) {
-      pendingScrollRestoreRef.current = undefined
       element.scrollTo({ top: pendingRestore.scrollTop })
-      const distanceFromBottom = element.scrollHeight - pendingRestore.scrollTop - element.clientHeight
-      followingBottomRef.current = distanceFromBottom <= 48
-      setShowScrollToBottom(distanceFromBottom > 48)
+      // 대화가 아직 다 그려지지 않았으면 브라우저가 최대 스크롤로 잘라낸다.
+      // 실제 도달 여부로 판단해야 «바닥 따라가기»로 잘못 넘어가지 않는다.
+      const satisfied = isScrollRestoreSatisfied(pendingRestore.scrollTop, element.scrollTop)
+      if (shouldRetryScrollRestore(satisfied, pendingRestore.attemptsLeft)) {
+        // 이벤트가 더 쌓이거나 코드 강조로 높이가 늘면 다음 렌더에서 다시 시도한다.
+        pendingScrollRestoreRef.current = {
+          ...pendingRestore,
+          attemptsLeft: pendingRestore.attemptsLeft - 1,
+        }
+        previousScrollSessionRef.current = activeSession
+        return
+      }
+      pendingScrollRestoreRef.current = undefined
+      const following = isFollowingBottom(element)
+      followingBottomRef.current = following
+      setShowScrollToBottom(!following)
       previousScrollSessionRef.current = activeSession
       return
     }
@@ -625,7 +645,7 @@ export default function App() {
     if (decidedApproval && inlineReturn?.sessionId === decidedApproval.sessionId) {
       if (!remainingInDecidedSession) {
         inlineApprovalReturnRef.current = undefined
-        pendingScrollRestoreRef.current = inlineReturn
+        pendingScrollRestoreRef.current = { ...inlineReturn, attemptsLeft: SCROLL_RESTORE_ATTEMPTS }
       }
       setApprovals(remaining)
       return
@@ -641,6 +661,7 @@ export default function App() {
         pendingScrollRestoreRef.current = {
           sessionId: previous.sessionId,
           scrollTop: previous.scrollTop,
+          attemptsLeft: SCROLL_RESTORE_ATTEMPTS,
         }
       }
       await jumpTo(previous.sessionId, previous.projectPath)
@@ -1073,10 +1094,10 @@ export default function App() {
         ref={scrollRef}
         onScroll={(event) => {
           const target = event.currentTarget
-          const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight
-          followingBottomRef.current = distanceFromBottom <= 48
+          const following = isFollowingBottom(target)
+          followingBottomRef.current = following
           setScrolled(target.scrollTop > 8)
-          setShowScrollToBottom(distanceFromBottom > 48)
+          setShowScrollToBottom(!following)
         }}
         onWheel={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
         onTouchMove={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
