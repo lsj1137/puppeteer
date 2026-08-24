@@ -2,6 +2,32 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Download, FileCode2, FileInput, Plus, Trash2, X } from 'lucide-react'
 import type { AgentDef, SkillDef, SkillImportPreview, SkillScope, StoredProject } from '@shared/session'
 
+/**
+ * 범위 하나에 딸린 표시 정보.
+ *
+ * 왼쪽 목록의 묶음 색과 편집기의 범위 단추가 **같은 색**이어야 한다 — 지금 만지는 Skill 이
+ * 왼쪽 어느 묶음에 들어가는지 색으로 이어진다.
+ */
+const SCOPE_META: Record<SkillScope, { label: string; hint: string; tone: string }> = {
+  global: {
+    label: 'Global',
+    hint: '모든 프로젝트와 Agent에서 쓸 수 있습니다.',
+    tone: 'bg-sapphire/15 text-sapphire ring-sapphire/20',
+  },
+  project: {
+    label: 'Project',
+    hint: '고른 프로젝트에서 실행할 때만 쓰입니다.',
+    tone: 'bg-green/15 text-green ring-green/20',
+  },
+  agent: {
+    label: 'Agent',
+    hint: '고른 Agent로 실행할 때만 쓰입니다.',
+    tone: 'bg-mauve/15 text-mauve ring-mauve/20',
+  },
+}
+
+const SCOPES: SkillScope[] = ['global', 'project', 'agent']
+
 const empty = (scope: SkillScope, projectPath?: string, agentName?: string): SkillDef => ({
   id: '',
   name: '',
@@ -151,11 +177,18 @@ export default function SkillsScreen({
     setImportPreview(undefined)
   }
 
-  const field = 'w-full rounded-lg bg-base px-3 py-2 text-[13px] text-text outline-none ring-1 ring-transparent focus:ring-lavender/40'
+  const field =
+    'w-full rounded-lg bg-base px-3 py-2 text-[13px] text-text outline-none ring-1 ring-surface0/80 placeholder:text-overlay0 focus:ring-lavender/50'
   const groupTone = (key: string): string => {
-    if (key === 'global') return 'bg-sapphire/15 text-sapphire ring-sapphire/20'
-    if (key.startsWith('project:')) return 'bg-green/15 text-green ring-green/20'
-    return 'bg-mauve/15 text-mauve ring-mauve/20'
+    if (key === 'global') return SCOPE_META.global.tone
+    if (key.startsWith('project:')) return SCOPE_META.project.tone
+    return SCOPE_META.agent.tone
+  }
+  // 범위를 못 고르는 이유를 버튼 위에서 알려준다 — 눌리지 않는 이유가 화면에 없으면 고장으로 보인다
+  const scopeBlocked = (scope: SkillScope): string | undefined => {
+    if (scope === 'project' && projects.length === 0) return '등록된 프로젝트가 없습니다'
+    if (scope === 'agent' && agents.length === 0) return '등록된 Agent가 없습니다'
+    return undefined
   }
 
   return (
@@ -198,31 +231,103 @@ export default function SkillsScreen({
 
       {draft ? (
         <main className="flex min-h-0 flex-1 flex-col gap-3 p-5">
-          <div className="flex items-center gap-2">
-            <span className="rounded bg-yellow/10 px-2 py-1 text-[11px] uppercase text-yellow">{draft.scope}</span>
-            <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-overlay1">{draft.location || '저장하면 SKILL.md 정본이 생성됩니다'}</span>
-            {selected && <button onClick={() => void exportSelected()} className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text" title="SKILL.md 내보내기"><Download className="h-4 w-4" /></button>}
-            {selected && <button onClick={() => void remove()} className="rounded-md p-1.5 text-overlay1 hover:bg-red/10 hover:text-red" title="삭제"><Trash2 className="h-4 w-4" /></button>}
-            {saved ? <span className="flex items-center gap-1 text-[12px] text-green"><Check className="h-3.5 w-3.5" /> 저장됨</span> : <button onClick={() => void save()} className="rounded-lg bg-lavender/20 px-3.5 py-1.5 text-[12px] font-medium text-lavender hover:bg-lavender/30">저장</button>}
-          </div>
-          <input value={draft.name} disabled={Boolean(selected)} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="skill-name" spellCheck={false} className={field} />
-          <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="언제 이 Skill을 사용해야 하는지 한 문장으로 설명" className={field} />
-          <div className="grid grid-cols-2 gap-2">
-            <select value={draft.scope} onChange={(e) => changeScope(e.target.value as SkillScope)} className={field}>
-              <option value="global">Global · 모든 프로젝트</option>
-              <option value="project" disabled={projects.length === 0}>Project · 특정 프로젝트</option>
-              <option value="agent" disabled={agents.length === 0}>Agent · 특정 에이전트</option>
-            </select>
-            {draft.scope === 'project' ? (
-              <select value={draft.projectPath ?? ''} onChange={(e) => setDraft({ ...draft, projectPath: e.target.value })} className={field}>
-                {projects.map((project) => <option key={project.path} value={project.path}>{project.alias || project.path}</option>)}
-              </select>
-            ) : draft.scope === 'agent' ? (
-              <select value={draft.agentName ?? ''} onChange={(e) => setDraft({ ...draft, agentName: e.target.value })} className={field}>
-                {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.name}</option>)}
-              </select>
-            ) : <div className="flex items-center px-3 text-[11px] text-overlay1">모든 프로젝트와 Agent에서 사용할 수 있습니다.</div>}
-          </div>
+          {/*
+            머리 영역은 «무엇을 만지는가»(이름·경로)와 «어디에 둘 것인가»(범위·대상)로 나눈다.
+            예전에는 라벨 없는 입력 넷이 같은 모양으로 쌓여 무엇을 적는 칸인지 채우기 전엔 알 수 없었다.
+          */}
+          <section className="rounded-xl bg-base/40 ring-1 ring-surface0">
+            <div className="flex items-start gap-2.5 p-3">
+              <FileCode2 className="mt-1 h-4 w-4 shrink-0 text-yellow" />
+              <div className="min-w-0 flex-1">
+                {/* 이름은 곧 제목이다. 입력칸처럼 보이지 않게 두고 편집만 가능하게 한다. */}
+                <input
+                  value={draft.name}
+                  readOnly={Boolean(selected)}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                  placeholder="skill-name"
+                  spellCheck={false}
+                  title={selected ? '이름은 폴더 이름이라 여기서 바꿀 수 없습니다' : undefined}
+                  className={`w-full bg-transparent text-[15px] font-medium text-text outline-none placeholder:text-overlay0 ${
+                    selected ? 'cursor-default' : ''
+                  }`}
+                />
+                <div
+                  className="mt-0.5 truncate font-mono text-[10px] text-overlay1"
+                  title={draft.location || undefined}
+                >
+                  {draft.location || '저장하면 SKILL.md 정본이 생성됩니다'}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {selected && (
+                  <>
+                    <button onClick={() => void exportSelected()} className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text" title="SKILL.md 내보내기"><Download className="h-4 w-4" /></button>
+                    <button onClick={() => void remove()} className="rounded-md p-1.5 text-overlay1 hover:bg-red/10 hover:text-red" title="삭제"><Trash2 className="h-4 w-4" /></button>
+                    <span className="mx-1 h-4 w-px bg-surface1" />
+                  </>
+                )}
+                {saved ? (
+                  <span className="flex items-center gap-1 px-2 text-[12px] text-green"><Check className="h-3.5 w-3.5" /> 저장됨</span>
+                ) : (
+                  <button
+                    onClick={() => void save()}
+                    disabled={!draft.name.trim()}
+                    title="Ctrl + S"
+                    className="rounded-lg bg-lavender/20 px-3.5 py-1.5 text-[12px] font-medium text-lavender hover:bg-lavender/30 disabled:opacity-40"
+                  >
+                    저장
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-surface0 px-3 py-3">
+              <span className="text-[11px] font-medium text-overlay1">설명</span>
+              <input
+                value={draft.description}
+                onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                placeholder="언제 이 Skill을 써야 하는지 한 문장으로 — Agent가 이 문장만 보고 고릅니다"
+                className={field}
+              />
+
+              <span className="text-[11px] font-medium text-overlay1">범위</span>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {/* 똑같이 생긴 회색 select 두 개보다, 지금 어디에 두는지가 한눈에 보이는 편이 낫다 */}
+                <div className="flex shrink-0 rounded-lg bg-base p-0.5 ring-1 ring-surface0/80">
+                  {SCOPES.map((scope) => {
+                    const blocked = scopeBlocked(scope)
+                    return (
+                      <button
+                        key={scope}
+                        onClick={() => changeScope(scope)}
+                        disabled={Boolean(blocked)}
+                        title={blocked}
+                        className={`rounded-md px-3 py-1.5 text-[12px] font-medium ring-1 transition-colors ${
+                          draft.scope === scope
+                            ? SCOPE_META[scope].tone
+                            : 'ring-transparent text-overlay1 hover:text-text disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-overlay1'
+                        }`}
+                      >
+                        {SCOPE_META[scope].label}
+                      </button>
+                    )
+                  })}
+                </div>
+                {draft.scope === 'project' ? (
+                  <select value={draft.projectPath ?? ''} onChange={(e) => setDraft({ ...draft, projectPath: e.target.value })} className={`${field} w-56 shrink-0 cursor-pointer`}>
+                    {projects.map((project) => <option key={project.path} value={project.path}>{project.alias || project.path}</option>)}
+                  </select>
+                ) : draft.scope === 'agent' ? (
+                  <select value={draft.agentName ?? ''} onChange={(e) => setDraft({ ...draft, agentName: e.target.value })} className={`${field} w-56 shrink-0 cursor-pointer`}>
+                    {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.name}</option>)}
+                  </select>
+                ) : null}
+                <span className="min-w-0 flex-1 truncate text-[11px] text-overlay1">
+                  {SCOPE_META[draft.scope].hint}
+                </span>
+              </div>
+            </div>
+          </section>
           {error && <div className="rounded-lg bg-red/10 px-3 py-2 text-[12px] text-red">{error}</div>}
           <textarea value={draft.content} onChange={(e) => setDraft({ ...draft, content: e.target.value })} placeholder="작업 절차, 확인 사항, 완료 조건을 Markdown으로 작성합니다." spellCheck={false} className="min-h-0 flex-1 resize-none rounded-lg bg-mantle p-3 font-mono text-[13px] leading-relaxed text-text outline-none ring-1 ring-transparent focus:ring-lavender/40" />
         </main>
