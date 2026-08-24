@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ArrowUpToLine,
   Bot,
@@ -59,20 +59,32 @@ const when = (ms?: number): string =>
     : '—'
 
 /**
+ * 화면을 떠나도 목록을 남긴다.
+ *
+ * 목록을 만들려면 항목마다 파일 존재·수정시각을 확인하고 자동 메모리는 세션 기록에서
+ * 실제 작업 경로를 캐내야 한다. 화면이 사라질 때마다 버리면 Memory 탭을 누를 때마다
+ * 그 시간을 다시 기다린다. 다시 들어오면 캐시를 곧바로 보여주고 뒤에서 조용히 새로 읽는다.
+ */
+let cache: { entries: MemoryEntry[]; proposals: MemoryProposal[] } | undefined
+
+/**
  * Memory 편집.
  *
  * CLI 가 실제로 읽는 파일을 그대로 고친다. 앱이 따로 보관하지 않으므로
  * 앱 밖에서 CLI 를 직접 실행해도 똑같이 적용된다.
  */
 export default function MemoryScreen() {
-  const [entries, setEntries] = useState<MemoryEntry[]>([])
+  const [entries, setEntries] = useState<MemoryEntry[]>(() => cache?.entries ?? [])
   const [selected, setSelected] = useState<string>()
   const [draft, setDraft] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!cache)
+  /** 고른 항목의 내용을 읽는 중. 이전 내용이 남아 있으면 «안 바뀌었다»로 보인다. */
+  const [reading, setReading] = useState(false)
+  const [readError, setReadError] = useState<string>()
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [history, setHistory] = useState<MemoryEdit[]>([])
-  const [proposals, setProposals] = useState<MemoryProposal[]>([])
+  const [proposals, setProposals] = useState<MemoryProposal[]>(() => cache?.proposals ?? [])
   const [proposalBusy, setProposalBusy] = useState<number>()
   /** 여러 건일 때 지금 몇 번째를 보고 있는지. Memory 를 바꾸면 처음으로 돌아간다. */
   const [reviewCursor, setReviewCursor] = useState(0)
@@ -108,6 +120,46 @@ export default function MemoryScreen() {
       )
     : entries
 
+  /** 마지막으로 요청한 읽기 번호. 늦게 온 응답이 새로 고른 항목을 덮지 않게 한다. */
+  const readToken = useRef(0)
+  /** 지금 열어 둔 항목. 목록을 다시 읽는 콜백이 낡은 값을 보지 않도록 따로 들고 있다. */
+  const selectedRef = useRef<string | undefined>(selected)
+  selectedRef.current = selected
+
+  /**
+   * 항목을 열고 내용을 읽는다.
+   *
+   * 읽기마다 번호를 매겨 **마지막 요청만** 화면에 반영한다. 목록을 훑는 동안 사용자가
+   * 다른 항목을 누르면 두 읽기가 겹치고, 늦게 온 응답이 나중에 고른 항목의 내용을 덮어
+   * «눌렀는데 오른쪽이 안 바뀐다»로 보였다.
+   */
+  const openEntry = useCallback(async (e: MemoryEntry): Promise<void> => {
+    const token = ++readToken.current
+    selectedRef.current = e.id
+    setSelected(e.id)
+    setSaved(false)
+    setPromotionOpen(false)
+    setPromotionMessage(undefined)
+    setProposalError(undefined)
+    setReadError(undefined)
+    // 이전 항목의 내용을 남겨두지 않는다 — 머리글만 바뀌면 무엇을 보고 있는지 헷갈린다
+    setOriginal('')
+    setDraft('')
+    setReading(true)
+    try {
+      // 내용은 고른 것만 읽는다 — 자동 메모리는 100개가 넘을 수 있다
+      const text = await window.api.readMemory(e.id)
+      if (readToken.current !== token) return
+      setOriginal(text)
+      setDraft(text)
+    } catch (error) {
+      if (readToken.current !== token) return
+      setReadError(error instanceof Error ? error.message : String(error))
+    } finally {
+      if (readToken.current === token) setReading(false)
+    }
+  }, [])
+
   const load = useCallback(async () => {
     const [list, pending] = await Promise.all([
       window.api.listMemories(),
@@ -115,23 +167,23 @@ export default function MemoryScreen() {
     ])
     setEntries(list)
     setProposals(pending)
-    if (pending[0]) {
-      const target = list.find((entry) => entry.id === pending[0].entryId)
-      if (target) {
-        setSelected(target.id)
-        const text = await window.api.readMemory(target.id)
-        setOriginal(text)
-        setDraft(text)
-      }
-    }
     setLoading(false)
-    return list
-  }, [])
+    // 대기 제안이 있으면 그 항목을 열어 준다. 다만 이미 무엇을 보고 있으면 가로채지 않는다 —
+    // 뒤에서 목록을 새로 읽는 동안 사용자가 고른 항목을 낚아채면 화면이 제멋대로 움직인다.
+    if (selectedRef.current || !pending[0]) return
+    const target = list.find((item) => item.id === pending[0].entryId)
+    if (target) void openEntry(target)
+  }, [openEntry])
 
   useEffect(() => {
+    // 캐시가 있으면 그것을 보여준 채로 다시 읽는다. 파일이 밖에서 바뀌었을 수 있다.
     void load()
-    // 목록은 처음 한 번만 읽는다 — 편집 중에 밑에서 바뀌면 곤란하다
   }, [load])
+
+  // 다음에 이 화면에 들어올 때 기다리지 않도록 마지막 목록을 남긴다
+  useEffect(() => {
+    if (!loading) cache = { entries, proposals }
+  }, [entries, loading, proposals])
 
   useEffect(() => {
     if (!selected) return
@@ -143,15 +195,10 @@ export default function MemoryScreen() {
   }, [selected])
 
   async function open(e: MemoryEntry): Promise<void> {
+    // 같은 항목을 다시 누른 것으로 편집 중인 내용을 날리지 않는다
+    if (e.id === selected) return
     if (dirty && !confirm('저장하지 않은 변경이 있습니다. 버릴까요?')) return
-    setSelected(e.id)
-    setSaved(false)
-    setPromotionOpen(false)
-    setPromotionMessage(undefined)
-    // 내용은 고른 것만 읽는다 — 자동 메모리는 100개가 넘을 수 있다
-    const text = await window.api.readMemory(e.id)
-    setOriginal(text)
-    setDraft(text)
+    await openEntry(e)
   }
 
   function openPromotion(): void {
@@ -207,7 +254,14 @@ export default function MemoryScreen() {
 
   async function openProposal(proposal: MemoryProposal): Promise<void> {
     const target = entries.find((e) => e.id === proposal.entryId)
-    if (target) await open(target)
+    if (!target) {
+      // 목록에 없는 대상이면 눌러도 아무 일이 없다. 왜 안 열리는지는 말해 줘야 한다.
+      setProposalError(
+        `제안 대상 «${proposal.entryId.replace(/^file:/, '')}» 을 목록에서 찾지 못했습니다. 프로젝트가 목록에서 빠졌는지 확인하세요.`,
+      )
+      return
+    }
+    await open(target)
   }
 
   async function decideProposal(proposal: MemoryProposal, approve: boolean): Promise<void> {
@@ -263,6 +317,12 @@ export default function MemoryScreen() {
                 <span className="ml-1 text-overlay1">· {proposal.reason}</span>
               </button>
             ))}
+            {/* 오른쪽이 안 열리는 경우의 이유는 여기서만 보인다 */}
+            {proposalError && !entry && (
+              <div className="px-1.5 pb-1 pt-0.5 text-[10px] leading-relaxed text-red">
+                {proposalError}
+              </div>
+            )}
           </section>
         )}
 
@@ -349,6 +409,7 @@ export default function MemoryScreen() {
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 shrink-0 text-sapphire" />
                 <span className="truncate text-[14px] font-medium text-text">{entry.label}</span>
+                {reading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-overlay1" />}
                 <span
                   className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] ${
                     entry.readBy === 'both'
@@ -417,6 +478,14 @@ export default function MemoryScreen() {
           {proposalError && (
             <div className="mb-2 rounded-lg bg-red/10 px-3 py-2 text-[11px] text-red">
               {proposalError}
+            </div>
+          )}
+
+          {/* 읽기 실패를 조용히 넘기면 «빈 파일» 과 구별되지 않는다 */}
+          {readError && (
+            <div className="mb-2 flex items-start gap-1.5 rounded-lg bg-red/10 px-3 py-2 text-[11px] leading-relaxed text-red">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              내용을 읽지 못했습니다 — {readError}
             </div>
           )}
 
@@ -494,7 +563,9 @@ export default function MemoryScreen() {
               }
             }}
             spellCheck={false}
-            placeholder="이 범위에서 늘 기억해야 할 것을 적습니다."
+            // 읽는 중에 입력하면 뒤늦게 도착한 파일 내용이 그 입력을 덮는다
+            readOnly={reading}
+            placeholder={reading ? '내용을 읽고 있습니다.' : '이 범위에서 늘 기억해야 할 것을 적습니다.'}
             className={`min-h-48 min-w-0 flex-1 resize-none bg-mantle p-3 font-mono text-[13px] leading-relaxed text-text outline-none ring-1 ring-transparent placeholder:text-overlay0 focus:ring-lavender/40 ${
               entryProposals.length > 0 ? 'rounded-t-lg' : 'rounded-lg'
             }`}

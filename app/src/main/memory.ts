@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { DetectedRunner, MemoryEntry, MemoryProposal } from '@shared/session'
@@ -115,6 +125,21 @@ export function list(runners: DetectedRunner[], projects: string[]): MemoryEntry
   return out
 }
 
+/**
+ * 프로젝트 Memory 정본의 id.
+ *
+ * 세션을 시작할 때 제안 대상만 알면 되는데 `list()` 를 부르면 자동 메모리까지 전부 훑는다.
+ * 규칙이 하나뿐인 값은 목록 없이 바로 만든다.
+ */
+export function projectMemoryId(projectPath: string): string {
+  return FILE + join(projectPath, 'AGENTS.md')
+}
+
+/** 에이전트 Memory 의 id. */
+export function agentMemoryId(name: string): string {
+  return AGENT + name
+}
+
 export function read(id: string): string {
   if (id.startsWith(AGENT)) return library.read(id.slice(AGENT.length))?.workspace.memory ?? ''
   const path = id.slice(FILE.length)
@@ -229,19 +254,61 @@ function autoRoots(home: string): { dir: string; cwd: string }[] {
   return out
 }
 
+/** 기록 첫머리에서 읽어 볼 양. `cwd` 는 첫 줄에 있다. */
+const LOG_HEAD_BYTES = 4000
+
+/**
+ * 이미 알아낸 작업 경로. 디렉터리 이름과 cwd 의 대응은 바뀌지 않으므로 한 번만 캐낸다.
+ * 목록을 다시 읽을 때마다 기록 파일을 여는 것이 이 화면이 느린 주된 이유였다.
+ */
+const cwdCache = new Map<string, string>()
+
 /** 세션 기록에서 실제 작업 경로를 캐낸다. 못 찾으면 undefined. */
 function resolveCwd(projectDir: string): string | undefined {
+  const cached = cwdCache.get(projectDir)
+  if (cached) return cached
   try {
     const logs = readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'))
     for (const f of logs.slice(0, 3)) {
-      const head = readFileSync(join(projectDir, f), 'utf8').slice(0, 4000)
-      const m = head.match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/)
-      if (m) return JSON.parse(`"${m[1]}"`) as string
+      const cwd = cwdFromLogHead(readHead(join(projectDir, f), LOG_HEAD_BYTES))
+      if (cwd) {
+        cwdCache.set(projectDir, cwd)
+        return cwd
+      }
     }
   } catch {
     // 기록이 없거나 읽을 수 없으면 디렉터리 이름을 쓴다
   }
   return undefined
+}
+
+/** 기록 첫머리 문자열에서 `cwd` 값을 꺼낸다. */
+export function cwdFromLogHead(head: string): string | undefined {
+  const m = head.match(/"cwd"\s*:\s*"((?:[^"\\]|\\.)*)"/)
+  if (!m) return undefined
+  try {
+    return JSON.parse(`"${m[1]}"`) as string
+  } catch {
+    // 첫머리에서 잘려 이스케이프가 깨진 경우
+    return undefined
+  }
+}
+
+/**
+ * 파일 앞부분만 읽는다.
+ *
+ * 세션 기록(jsonl)은 수십 MB 까지 자란다. 전체를 읽어 앞 4KB 만 쓰면 Memory 목록 한 번에
+ * 기록 파일 전부를 메모리로 끌어올리는 셈이고, WSL UNC 경로에서는 그만큼 더 오래 걸린다.
+ */
+function readHead(path: string, bytes: number): string {
+  const fd = openSync(path, 'r')
+  try {
+    const buffer = Buffer.alloc(bytes)
+    const read = readSync(fd, buffer, 0, bytes, 0)
+    return buffer.subarray(0, read).toString('utf8')
+  } finally {
+    closeSync(fd)
+  }
 }
 
 function mdFiles(dir: string): string[] {

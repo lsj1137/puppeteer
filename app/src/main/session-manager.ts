@@ -310,11 +310,11 @@ export class SessionManager {
       title: prev?.title ?? input.prompt.slice(0, 80),
       // 이어가면 그동안 만진 파일 목록을 유지해야 동시 수정 감지가 끊기지 않는다
       touched: this.sessions.get(id)?.touched ?? new Set(),
-      memoryTargets: Object.fromEntries(
-        memory.list([input.runner], [input.cwd])
-          .filter((entry) => entry.scope === 'project' || (entry.scope === 'agent' && entry.id === `agent:${input.agentName}`))
-          .map((entry) => [entry.scope, entry.id]),
-      ),
+      // 목록 전체를 훑지 않는다 — 자동 메모리까지 뒤지면 세션 시작이 그만큼 늦어진다
+      memoryTargets: {
+        project: memory.projectMemoryId(input.cwd),
+        ...(agent ? { agent: memory.agentMemoryId(agent.name) } : {}),
+      },
     })
 
     // 선언만 되고 강제되지 않는 설정은 조용히 넘기지 않는다. 새 세션에서 한 번만 알린다.
