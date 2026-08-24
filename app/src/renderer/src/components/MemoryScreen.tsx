@@ -74,6 +74,8 @@ export default function MemoryScreen() {
   const [history, setHistory] = useState<MemoryEdit[]>([])
   const [proposals, setProposals] = useState<MemoryProposal[]>([])
   const [proposalBusy, setProposalBusy] = useState<number>()
+  /** 여러 건일 때 지금 몇 번째를 보고 있는지. Memory 를 바꾸면 처음으로 돌아간다. */
+  const [reviewCursor, setReviewCursor] = useState(0)
   const [proposalError, setProposalError] = useState<string>()
   const [promotionOpen, setPromotionOpen] = useState(false)
   const [promotionTarget, setPromotionTarget] = useState('')
@@ -90,6 +92,12 @@ export default function MemoryScreen() {
   const entry = entries.find((e) => e.id === selected)
   /** 지금 열어 둔 Memory 에 달린 대기 제안. 편집창 아래에 초록으로 이어 붙인다. */
   const entryProposals = proposals.filter((proposal) => proposal.entryId === entry?.id)
+  /**
+   * 지금 검토 중인 제안의 순번. 하나를 처리하면 목록이 줄어 같은 자리에 다음 제안이 온다.
+   * 마지막 것을 처리했을 때만 앞으로 당긴다.
+   */
+  const reviewIndex = Math.min(reviewCursor, Math.max(0, entryProposals.length - 1))
+  const reviewing = entryProposals[reviewIndex]
   const dirty = draft !== original
   const q = filter.trim().toLowerCase()
   const visible = q
@@ -129,6 +137,10 @@ export default function MemoryScreen() {
     if (!selected) return
     void window.api.memoryHistory(selected).then(setHistory)
   }, [selected, saved])
+
+  useEffect(() => {
+    setReviewCursor(0)
+  }, [selected])
 
   async function open(e: MemoryEntry): Promise<void> {
     if (dirty && !confirm('저장하지 않은 변경이 있습니다. 버릴까요?')) return
@@ -493,21 +505,42 @@ export default function MemoryScreen() {
             초록으로 이어 붙이면 그 자체가 저장될 모양의 미리보기가 된다.
             카드 껍데기(제목·배지·안내문·버튼 줄)를 걷어내 제안이 쌓여도 편집창을 밀어내지 않는다.
           */}
-          {entryProposals.length > 0 && (
+          {reviewing && (
             /*
-              스크롤을 겹치지 않는다. 바깥 편집 영역이 이미 세로로 스크롤되므로 여기서 또
-              스크롤 상자를 만들면 휠이 어디로 갈지 예측할 수 없다. 대신 긴 제안은 «더 보기»로
-              접어 높이를 줄인다 — 스크롤 대신 펼치기다.
+              한 번에 한 건만 보여준다. 제안은 어차피 하나씩 승인·거절하므로 전부 펼쳐 두면
+              기존 Memory 만 잘려 나간다. 몇 건 중 몇 번째인지와 이동만 위에 두고 본문은 하나만 둔다.
+              스크롤 상자도 겹치지 않는다 — 바깥 편집 영역이 이미 세로로 스크롤된다.
             */
             <div className="min-w-0 rounded-b-lg border-t-2 border-green/40 bg-green/8">
-              {entryProposals.map((proposal) => (
-                <ProposalTail
-                  key={proposal.id}
-                  proposal={proposal}
-                  busy={proposalBusy === proposal.id}
-                  onDecide={(approve) => void decideProposal(proposal, approve)}
-                />
-              ))}
+              {entryProposals.length > 1 && (
+                <div className="flex items-center gap-2 border-b border-green/15 px-3 py-1.5 text-[11px]">
+                  <span className="text-green">
+                    추가 제안 {reviewIndex + 1} / {entryProposals.length}
+                  </span>
+                  <div className="ml-auto flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setReviewCursor(reviewIndex - 1)}
+                      disabled={reviewIndex === 0}
+                      title="이전 제안"
+                      className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-30"
+                    ><ChevronRight className="h-3.5 w-3.5 rotate-180" /></button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewCursor(reviewIndex + 1)}
+                      disabled={reviewIndex >= entryProposals.length - 1}
+                      title="다음 제안"
+                      className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-30"
+                    ><ChevronRight className="h-3.5 w-3.5" /></button>
+                  </div>
+                </div>
+              )}
+              <ProposalTail
+                key={reviewing.id}
+                proposal={reviewing}
+                busy={proposalBusy === reviewing.id}
+                onDecide={(approve) => void decideProposal(reviewing, approve)}
+              />
             </div>
           )}
 
@@ -529,8 +562,11 @@ export default function MemoryScreen() {
   )
 }
 
-/** 몇 줄부터 접을지. 이보다 짧으면 접기 버튼조차 붙이지 않는다. */
-const PROPOSAL_PREVIEW_LINES = 8
+/**
+ * 아주 긴 제안만 접는다. 한 번에 한 건만 보여주므로 대개는 그대로 펼쳐 둔다 —
+ * 무엇을 승인하는지 다 보이는 편이 낫고, 이 값을 넘는 제안은 드물다.
+ */
+const PROPOSAL_PREVIEW_LINES = 20
 
 /**
  * 편집창 끝에 이어 붙는 추가 제안 한 건.
