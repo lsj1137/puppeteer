@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bell, Download, GitMerge, HelpCircle, ImagePlus, Keyboard, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
+import { Bell, Bot, Download, GitMerge, HelpCircle, ImagePlus, Keyboard, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
 import type { DetectedRunner, WorktreeIntegrationMode } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import type { AppUpdateState } from '@shared/app-update'
@@ -332,12 +332,25 @@ export default function Settings({
                 ['Alt + ↑ / ↓', '프로젝트 이동'],
                 ['Alt + ← / →', '세션 이동'],
                 ['', '프로젝트와 세션 탭을 드래그해 순서 변경'],
+                ['', '대화를 위로 올리면 우측 아래 버튼으로 맨 아래 복귀'],
               ]} />
               <HelpGroup icon={Keyboard} title="저장과 승인" tips={[
                 ['Ctrl/Cmd + S', 'Memory 저장'],
                 ['Space', '이번만 허용'],
                 ['Enter', '이 세션 동안 허용'],
                 ['Esc', '승인 거부'],
+              ]} />
+              <HelpGroup icon={Bot} title="Agent와 위임" tips={[
+                ['', '입력창 위 도구 모음에서 실행환경·Agent·승인·모델을 세션마다 바꿉니다'],
+                ['', 'Agent를 «자동 선택»으로 두면 첫 지시 내용으로 알아서 고릅니다'],
+                ['', '조사·확인은 보조 Agent에게 3개까지 동시에 맡깁니다'],
+                ['', '위임이 도는 동안 넣은 지시는 다음 지시로 예약됩니다'],
+              ]} />
+              <HelpGroup icon={GitMerge} title="Worktree와 Memory" tips={[
+                ['', '세션마다 전용 worktree에서 작업해 원본을 건드리지 않습니다'],
+                ['', '끝나면 설정에 따라 자동 병합하거나 병합을 제안합니다'],
+                ['', '충돌은 세션 헤더의 Git 아이콘에서 좌우 비교로 해결합니다'],
+                ['', 'Memory 제안은 왼쪽에서 고르고 오른쪽에서 ✓ 또는 ✕'],
               ]} />
             </div>
           </section>
