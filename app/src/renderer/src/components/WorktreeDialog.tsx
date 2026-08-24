@@ -278,7 +278,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6">
       <div className="max-h-[calc(100vh-3rem)] w-full max-w-lg overflow-auto rounded-lg border border-surface1 bg-mantle shadow-2xl">
-        <div className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
+        <div className="flex items-start gap-3 px-5 py-4">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal/15 text-teal">
             <GitBranch className="h-4 w-4" />
           </div>
@@ -367,7 +367,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           )}
 
           {!loading && canRebase && (
-            <div className="-mx-5 border-y border-surface0 bg-base/35 px-5 py-3">
+            <div className="-mx-5 bg-base/35 px-5 py-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 flex-1 items-center gap-2">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-mauve/15 text-mauve">
@@ -425,7 +425,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           )}
 
           {!loading && hasDirtyWork && !hasConflict && (
-            <div className="-mx-5 border-y border-surface0 bg-base/35 px-5 py-3">
+            <div className="-mx-5 bg-base/35 px-5 py-3">
               <div className="mb-2 flex items-center gap-2">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue/15 text-blue">
                   <GitCommitHorizontal className="h-3.5 w-3.5" />
@@ -502,7 +502,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-surface0 px-5 py-4">
+        <div className="flex items-center justify-between px-5 py-4">
           <span className="text-[11px] text-overlay1">
             {merged
               ? 'worktree 폴더 정리는 세션 기록을 보존합니다.'
@@ -542,7 +542,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
 
       {diff !== undefined && (
         <div className="fixed inset-6 z-[60] flex min-h-0 flex-col rounded-lg border border-surface1 bg-mantle shadow-2xl">
-          <div className="flex items-center gap-2 border-b border-surface0 px-4 py-3">
+          <div className="flex items-center gap-2 px-4 py-3">
             <FileDiff className="h-4 w-4 shrink-0 text-peach" />
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-text">Worktree diff</div>

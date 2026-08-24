@@ -236,7 +236,7 @@ export default function SkillsScreen({
             예전에는 라벨 없는 입력 넷이 같은 모양으로 쌓여 무엇을 적는 칸인지 채우기 전엔 알 수 없었다.
           */}
           <section className="rounded-xl bg-base/40 ring-1 ring-surface0">
-            <div className="flex items-start gap-2.5 p-3">
+            <div className="flex items-start gap-2.5 p-3 pb-2.5">
               <FileCode2 className="mt-1 h-4 w-4 shrink-0 text-yellow" />
               <div className="min-w-0 flex-1">
                 {/* 이름은 곧 제목이다. 입력칸처럼 보이지 않게 두고 편집만 가능하게 한다. */}
@@ -281,7 +281,7 @@ export default function SkillsScreen({
               </div>
             </div>
 
-            <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-surface0 px-3 py-3">
+            <div className="grid grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 px-3 pb-3">
               <span className="text-[11px] font-medium text-overlay1">설명</span>
               <input
                 value={draft.description}
@@ -338,7 +338,7 @@ export default function SkillsScreen({
       {importPreview && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-crust/70 p-6 backdrop-blur-[2px]">
           <section className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
-            <header className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
+            <header className="flex items-start gap-3 px-5 py-4">
               <FileInput className="mt-0.5 h-5 w-5 shrink-0 text-yellow" />
               <div className="min-w-0 flex-1">
                 <h2 className="text-[15px] font-semibold text-text">Skill 가져오기 검토</h2>
@@ -374,7 +374,7 @@ export default function SkillsScreen({
                 다음 단계에서 이름·설명·본문을 다시 편집한 뒤 저장합니다. 가져오기만으로 파일을 만들거나 기존 Skill을 덮어쓰지 않습니다.
               </div>
             </div>
-            <footer className="flex justify-end gap-2 border-t border-surface0 px-5 py-3">
+            <footer className="flex justify-end gap-2 px-5 py-3">
               <button onClick={() => setImportPreview(undefined)} className="rounded-md px-3 py-1.5 text-[12px] text-overlay1 hover:bg-surface0">취소</button>
               <button onClick={reviewImport} disabled={(importScope === 'project' && !importProject) || (importScope === 'agent' && !importAgent)} className="rounded-md bg-lavender/20 px-3 py-1.5 text-[12px] font-medium text-lavender hover:bg-lavender/30 disabled:opacity-40">편집기로 가져오기</button>
             </footer>

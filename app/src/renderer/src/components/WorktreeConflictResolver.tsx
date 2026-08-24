@@ -351,7 +351,7 @@ export default function WorktreeConflictResolver() {
   return (
     <div className="grid h-screen grid-cols-[260px_minmax(0,1fr)] bg-base text-text">
       <aside className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border-r border-surface0 bg-mantle">
-        <div className="border-b border-surface0 px-4 py-3">
+        <div className="px-4 py-3">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <GitPullRequestArrow className="h-4 w-4 text-mauve" />
             충돌 해결
@@ -384,7 +384,7 @@ export default function WorktreeConflictResolver() {
       </aside>
 
       <main className="grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto]">
-        <header className="flex items-center gap-3 border-b border-surface0 bg-mantle px-4 py-3">
+        <header className="flex items-center gap-3 bg-mantle px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="truncate font-mono text-sm font-semibold">{selectedPath}</div>
             <div className="text-[11px] text-overlay1">
@@ -533,7 +533,7 @@ export default function WorktreeConflictResolver() {
           )}
         </div>
 
-        <footer className="flex items-center gap-3 border-t border-surface0 bg-mantle px-4 py-3">
+        <footer className="flex items-center gap-3 bg-mantle px-4 py-3">
           {message && (
             <div className={`min-w-0 flex-1 truncate text-[12px] ${message.ok ? 'text-green' : 'text-red'}`}>
               {message.text}

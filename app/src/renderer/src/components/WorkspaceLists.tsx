@@ -275,7 +275,7 @@ export default function WorkspaceLists(props: Props) {
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6 backdrop-blur-[2px]">
           <section className="w-full max-w-lg overflow-hidden rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
-            <header className="flex items-start gap-3 border-b border-surface0 px-5 py-4">
+            <header className="flex items-start gap-3 px-5 py-4">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sapphire/15 text-sapphire">
                 <FolderOpen className="h-4 w-4" />
               </div>
@@ -337,7 +337,7 @@ export default function WorkspaceLists(props: Props) {
               {projectError && <div className="whitespace-pre-wrap rounded-lg bg-red/10 px-3 py-2 text-[11px] text-red">{projectError}</div>}
             </div>
 
-            <footer className="flex justify-end gap-2 border-t border-surface0 px-5 py-3">
+            <footer className="flex justify-end gap-2 px-5 py-3">
               <button type="button" disabled={projectSaving} onClick={requestProjectClose} className="rounded-md px-3 py-1.5 text-[12px] text-overlay1 hover:bg-surface0 disabled:opacity-40">취소</button>
               <button type="button" disabled={projectSaving} onClick={() => void saveProject()} className="rounded-md bg-sapphire/20 px-3.5 py-1.5 text-[12px] font-medium text-sapphire hover:bg-sapphire/30 disabled:opacity-40">
                 {projectSaving ? '확인 중…' : '저장'}
