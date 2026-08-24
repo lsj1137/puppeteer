@@ -235,7 +235,7 @@ export default function SkillsScreen({
             머리 영역은 «무엇을 만지는가»(이름·경로)와 «어디에 둘 것인가»(범위·대상)로 나눈다.
             예전에는 라벨 없는 입력 넷이 같은 모양으로 쌓여 무엇을 적는 칸인지 채우기 전엔 알 수 없었다.
           */}
-          <section className="rounded-xl bg-base/40 ring-1 ring-surface0">
+          <section className="rounded-xl bg-base/40">
             <div className="flex items-start gap-2.5 p-3 pb-2.5">
               <FileCode2 className="mt-1 h-4 w-4 shrink-0 text-yellow" />
               <div className="min-w-0 flex-1">
@@ -293,7 +293,7 @@ export default function SkillsScreen({
               <span className="text-[11px] font-medium text-overlay1">범위</span>
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {/* 똑같이 생긴 회색 select 두 개보다, 지금 어디에 두는지가 한눈에 보이는 편이 낫다 */}
-                <div className="flex shrink-0 rounded-lg bg-base p-0.5 ring-1 ring-surface0/80">
+                <div className="flex shrink-0 rounded-lg bg-base p-0.5">
                   {SCOPES.map((scope) => {
                     const blocked = scopeBlocked(scope)
                     return (

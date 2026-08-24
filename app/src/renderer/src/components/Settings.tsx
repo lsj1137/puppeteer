@@ -353,14 +353,15 @@ function HelpGroup({ icon: Icon, title, tips }: {
   tips: Array<[string, string]>
 }): React.ReactElement {
   return (
-    <section className="rounded-xl bg-base/70 p-3.5 ring-1 ring-surface0">
+    // 모달 자체에 테두리가 있으니 안쪽 묶음은 배경 톤만으로 구분한다
+    <section className="rounded-xl bg-base/70 p-3.5">
       <div className="mb-2.5 flex items-center gap-2 text-[12px] font-semibold text-text">
         <Icon className="h-4 w-4 text-sapphire" /> {title}
       </div>
       <div className="space-y-2">
         {tips.map(([keys, text]) => (
           <div key={`${keys}-${text}`} className="flex items-start gap-2 text-[11px] leading-relaxed text-subtext0">
-            {keys ? <kbd className="shrink-0 rounded bg-surface0 px-1.5 py-0.5 font-mono text-[10px] text-subtext1 ring-1 ring-surface1">{keys}</kbd> : <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-overlay1" />}
+            {keys ? <kbd className="shrink-0 rounded bg-surface1/70 px-1.5 py-0.5 font-mono text-[10px] text-subtext1">{keys}</kbd> : <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-overlay1" />}
             <span>{text}</span>
           </div>
         ))}

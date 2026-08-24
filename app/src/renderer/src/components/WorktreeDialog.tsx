@@ -277,7 +277,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-crust/70 p-6">
-      <div className="max-h-[calc(100vh-3rem)] w-full max-w-lg overflow-auto rounded-lg border border-surface1 bg-mantle shadow-2xl">
+      <div className="max-h-[calc(100vh-3rem)] w-full max-w-lg overflow-auto rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
         <div className="flex items-start gap-3 px-5 py-4">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-teal/15 text-teal">
             <GitBranch className="h-4 w-4" />
@@ -308,7 +308,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
             <button
               onClick={() => void openDiff()}
               disabled={diffLoading}
-              className="flex items-center gap-1.5 rounded-md border border-peach/30 bg-peach/10 px-2.5 py-1.5 text-[12px] font-medium text-peach hover:bg-peach/20 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded-md bg-peach/15 px-2.5 py-1.5 text-[12px] font-medium text-peach hover:bg-peach/25 disabled:opacity-40"
             >
               {diffLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -319,13 +319,13 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
             </button>
             <button
               onClick={() => void window.api.revealProject(worktree.origin)}
-              className="flex items-center gap-1.5 rounded-md border border-surface1 px-2.5 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
+              className="flex items-center gap-1.5 rounded-md bg-surface0/50 px-2.5 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
             >
               <FolderOpen className="h-3.5 w-3.5" /> 원본 폴더
             </button>
             <button
               onClick={() => void window.api.revealProject(worktree.path)}
-              className="flex items-center gap-1.5 rounded-md border border-surface1 px-2.5 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
+              className="flex items-center gap-1.5 rounded-md bg-surface0/50 px-2.5 py-1.5 text-[12px] text-subtext1 hover:bg-surface0 hover:text-text"
             >
               <FolderOpen className="h-3.5 w-3.5" /> Worktree 폴더
             </button>
@@ -340,7 +340,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           </div>
 
           {!loading && merged && (
-            <div className="flex gap-2 rounded-md border border-green/30 bg-green/5 px-3 py-2.5 text-[12px] text-green">
+            <div className="flex gap-2 rounded-md bg-green/10 px-3 py-2.5 text-[12px] text-green">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="min-w-0 leading-relaxed">
                 <div>원본 브랜치에 커밋이 반영되었습니다.</div>
@@ -353,14 +353,14 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           )}
 
           {!loading && status && !hasDirtyWork && !hasCommits && (
-            <div className="flex gap-2 rounded-md border border-surface1 bg-surface0/40 px-3 py-2.5 text-[12px] text-subtext1">
+            <div className="flex gap-2 rounded-md bg-surface0/40 px-3 py-2.5 text-[12px] text-subtext1">
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-overlay1" />
               <span className="leading-relaxed">아직 이 worktree에서 커밋된 변경이 없습니다.</span>
             </div>
           )}
 
           {!loading && status?.reason && !merged && (hasCommits || hasDirtyWork || status.originDirty) && (
-            <div className="flex gap-2 rounded-md border border-yellow/30 bg-yellow/5 px-3 py-2.5 text-[12px] text-yellow">
+            <div className="flex gap-2 rounded-md bg-yellow/10 px-3 py-2.5 text-[12px] text-yellow">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span className="leading-relaxed">{status.reason}</span>
             </div>
@@ -397,7 +397,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
           )}
 
           {!loading && conflictFiles.length > 0 && (
-            <div className="rounded-md border border-yellow/20 bg-yellow/5 p-2.5">
+            <div className="rounded-md bg-yellow/10 p-2.5">
               <div className="mb-2 flex items-center gap-2">
                 <div className="text-[11px] font-semibold text-yellow">충돌 파일</div>
                 <span className="rounded bg-yellow/10 px-1.5 py-0.5 text-[10px] text-yellow">
@@ -443,7 +443,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
               </div>
 
               <div className="flex flex-col gap-2">
-                <div className="min-w-0 flex-1 rounded-md border border-surface1 bg-mantle px-2.5 py-1.5 focus-within:border-blue">
+                <div className="min-w-0 flex-1 rounded-md bg-base px-2.5 py-1.5 ring-1 ring-transparent focus-within:ring-blue/50">
                   <textarea
                     rows={4}
                     value={commitMessage}
@@ -466,7 +466,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
                   <button
                     onClick={() => void generateMessage(true)}
                     disabled={busy || generatingMessage}
-                    className="flex min-h-8 items-center gap-1.5 rounded-md border border-surface1 px-2.5 py-1.5 text-[11px] text-subtext1 hover:bg-surface0 disabled:opacity-40"
+                    className="flex min-h-8 items-center gap-1.5 rounded-md bg-surface0/50 px-2.5 py-1.5 text-[11px] text-subtext1 hover:bg-surface0 disabled:opacity-40"
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${generatingMessage ? 'animate-spin' : ''}`} />
                     다시 생성
@@ -541,7 +541,7 @@ export default function WorktreeDialog({ sessionId, worktree, onChanged, onClose
       </div>
 
       {diff !== undefined && (
-        <div className="fixed inset-6 z-[60] flex min-h-0 flex-col rounded-lg border border-surface1 bg-mantle shadow-2xl">
+        <div className="fixed inset-6 z-[60] flex min-h-0 flex-col rounded-2xl bg-mantle shadow-2xl ring-1 ring-surface1">
           <div className="flex items-center gap-2 px-4 py-3">
             <FileDiff className="h-4 w-4 shrink-0 text-peach" />
             <div className="min-w-0 flex-1">
