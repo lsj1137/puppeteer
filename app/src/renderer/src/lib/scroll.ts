@@ -1,3 +1,8 @@
+/** 대화 항목의 DOM id. 스크롤 기준점으로 쓴다. */
+export function entryDomId(entryId: string): string {
+  return `conversation-entry-${entryId}`
+}
+
 /** 이 거리 안이면 «맨 아래를 보고 있다»로 본다. */
 export const BOTTOM_THRESHOLD = 48
 
@@ -31,4 +36,39 @@ export function isScrollRestoreSatisfied(target: number, actual: number): boolea
 /** 아직 도달하지 못했을 때 다시 시도할지. 무한 재시도는 «따라가기»를 영영 막는다. */
 export function shouldRetryScrollRestore(satisfied: boolean, attemptsLeft: number): boolean {
   return !satisfied && attemptsLeft > 0
+}
+
+export interface EntryBox {
+  id: string
+  /** 스크롤 컨테이너 위쪽을 0 으로 본 항목의 위치 */
+  top: number
+  bottom: number
+}
+
+export interface ScrollAnchor {
+  entryId: string
+  /** 컨테이너 위쪽에서 그 항목까지의 거리. 복원할 때 이 간격을 그대로 맞춘다. */
+  offset: number
+}
+
+/**
+ * 지금 화면 맨 위에 걸친 항목을 기준점으로 삼는다.
+ *
+ * 픽셀 위치만 저장하면 위쪽 내용의 높이가 바뀔 때 읽던 자리를 잃는다. 코드 강조가 나중에
+ * 적용되거나 접힌 카드가 펴지면 위쪽이 늘어나고, 같은 스크롤 값은 더 앞쪽 내용을 가리킨다.
+ * 항목을 기준으로 잡으면 위쪽이 얼마나 변하든 같은 자리로 돌아온다.
+ */
+export function pickScrollAnchor(entries: EntryBox[]): ScrollAnchor | undefined {
+  // 화면 위 경계(0)를 지나간 첫 항목. 맨 위 항목이 아직 아래에 있으면 그것을 쓴다.
+  const anchor = entries.find((entry) => entry.bottom > 0) ?? entries.at(-1)
+  return anchor ? { entryId: anchor.id, offset: anchor.top } : undefined
+}
+
+/** 기준 항목이 원래 간격에 오도록 옮길 스크롤 위치. */
+export function anchoredScrollTop(
+  currentScrollTop: number,
+  entryTop: number,
+  anchor: ScrollAnchor,
+): number {
+  return Math.max(0, currentScrollTop + entryTop - anchor.offset)
 }

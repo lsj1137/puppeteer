@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import type { MemoryProposal } from '@shared/session'
 import type { DelegationRun, SessionView } from '../lib/session-view'
+import { entryDomId } from '../lib/scroll'
 import { artifactTitle, lineCount } from './ArtifactPanel'
 import Markdown from './Markdown'
 import ToolEntry from './ToolEntry'
@@ -52,7 +53,7 @@ export default function ConversationEntries({
       {view.entries.map((entry) => {
         if (entry.kind === 'user') {
           return (
-            <div id={`conversation-entry-${entry.id}`} key={entry.id} className="min-w-0 max-w-full scroll-mt-6 rounded-lg bg-surface0/50 px-3.5 py-2.5">
+            <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0 max-w-full scroll-mt-6 rounded-lg bg-surface0/50 px-3.5 py-2.5">
               <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
                 나
               </div>
@@ -62,17 +63,25 @@ export default function ConversationEntries({
             </div>
           )
         }
-        if (entry.kind === 'tool') return <ToolEntry key={entry.id} entry={entry} />
+        if (entry.kind === 'tool') {
+          return (
+            <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0">
+              <ToolEntry entry={entry} />
+            </div>
+          )
+        }
         if (entry.kind === 'delegation') {
-          return <DelegationCard key={entry.id} runs={entry.runs} />
+          return (
+            <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0">
+              <DelegationCard runs={entry.runs} />
+            </div>
+          )
         }
         if (entry.kind === 'memory-proposal') {
           return (
-            <MemoryProposalCard
-              key={entry.id}
-              proposal={entry.proposal}
-              onOpenMemory={onOpenMemory}
-            />
+            <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0">
+              <MemoryProposalCard proposal={entry.proposal} onOpenMemory={onOpenMemory} />
+            </div>
           )
         }
         if (entry.kind === 'notice') {
@@ -81,17 +90,22 @@ export default function ConversationEntries({
           }
           if (entry.title === '승인 요청 시간 초과') {
             return (
-              <div key={entry.id} className="flex w-fit items-center gap-1.5 rounded-md bg-yellow/10 px-2 py-1 text-[12px] text-yellow">
+              <div id={entryDomId(entry.id)} key={entry.id} className="flex w-fit items-center gap-1.5 rounded-md bg-yellow/10 px-2 py-1 text-[12px] text-yellow">
                 <AlertTriangle className="h-3 w-3 shrink-0 text-yellow" />
                 <span>승인 요청 시간 초과</span>
               </div>
             )
           }
-          return <NoticeCard key={entry.id} level={entry.level} title={entry.title} text={entry.text} />
+          return (
+            <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0">
+              <NoticeCard level={entry.level} title={entry.title} text={entry.text} />
+            </div>
+          )
         }
         if (entry.isError) {
           return (
             <div
+              id={entryDomId(entry.id)}
               key={entry.id}
               className="flex gap-2 rounded-lg border border-red/50 bg-red/5 p-3 text-[12px] text-red"
             >
@@ -107,7 +121,7 @@ export default function ConversationEntries({
           )
         }
         return (
-          <div key={entry.id} className="min-w-0 max-w-full px-0.5">
+          <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0 max-w-full px-0.5">
             {entry.segments.map((segment, index) => {
               if (segment.type === 'md') return <Markdown key={index}>{segment.text}</Markdown>
               const artifact = view.artifacts.find(({ id }) => id === segment.artifactId)

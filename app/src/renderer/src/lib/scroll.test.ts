@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  anchoredScrollTop,
   BOTTOM_THRESHOLD,
+  entryDomId,
   isFollowingBottom,
   isScrollRestoreSatisfied,
+  pickScrollAnchor,
   SCROLL_RESTORE_ATTEMPTS,
   shouldRetryScrollRestore,
 } from './scroll'
@@ -45,5 +48,43 @@ describe('스크롤 복원', () => {
 
   it('도달했으면 남은 횟수와 무관하게 끝낸다', () => {
     expect(shouldRetryScrollRestore(true, SCROLL_RESTORE_ATTEMPTS)).toBe(false)
+  })
+})
+
+describe('기준 항목으로 위치 잡기', () => {
+  it('화면 위 경계에 걸친 항목을 기준으로 삼는다', () => {
+    const anchor = pickScrollAnchor([
+      { id: 'a', top: -300, bottom: -50 },
+      { id: 'b', top: -20, bottom: 180 },
+      { id: 'c', top: 200, bottom: 400 },
+    ])
+    expect(anchor).toEqual({ entryId: 'b', offset: -20 })
+  })
+
+  it('모두 위로 지나갔으면 마지막 항목을 쓴다', () => {
+    expect(pickScrollAnchor([{ id: 'a', top: -300, bottom: -50 }])).toEqual({
+      entryId: 'a',
+      offset: -300,
+    })
+  })
+
+  it('항목이 없으면 기준을 만들지 않는다', () => {
+    expect(pickScrollAnchor([])).toBeUndefined()
+  })
+
+  // 위쪽 내용이 늘어나면 같은 픽셀 위치는 더 앞쪽 내용을 가리킨다.
+  // 기준 항목을 원래 간격에 맞추면 위쪽이 얼마나 변하든 읽던 자리로 돌아온다.
+  it('위쪽이 늘어나도 기준 항목을 원래 간격에 맞춘다', () => {
+    // 저장 당시: 기준 항목이 컨테이너 위에서 -20px 에 있었다.
+    // 복원 시점: 위쪽이 늘어 그 항목이 +130px 로 밀렸다.
+    expect(anchoredScrollTop(1000, 130, { entryId: 'b', offset: -20 })).toBe(1150)
+  })
+
+  it('음수로 내려가지 않는다', () => {
+    expect(anchoredScrollTop(10, -500, { entryId: 'b', offset: 0 })).toBe(0)
+  })
+
+  it('DOM id 규칙은 한 곳에서만 만든다', () => {
+    expect(entryDomId('e12')).toBe('conversation-entry-e12')
   })
 })

@@ -61,10 +61,14 @@ import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
 import { useWorkspaceCommands } from './hooks/use-workspace-commands'
 import { approvalNavigationPath } from './lib/navigation'
 import {
+  anchoredScrollTop,
+  entryDomId,
   isFollowingBottom,
   isScrollRestoreSatisfied,
+  pickScrollAnchor,
   SCROLL_RESTORE_ATTEMPTS,
   shouldRetryScrollRestore,
+  type ScrollAnchor,
 } from './lib/scroll'
 import { AUTO_AGENT, resolveSessionAgent, shouldRouteAgent } from './lib/session-launch'
 import AgentRouteConfirm from './components/AgentRouteConfirm'
@@ -114,6 +118,7 @@ export default function App() {
     projectPath?: string
     sessionId?: string
     scrollTop?: number
+    anchor?: ScrollAnchor
     screen: 'project' | 'overview' | 'agents' | 'memory' | 'skills'
   } | undefined>(undefined)
   const [pendingPick, setPendingPick] = useState<string>()
@@ -230,10 +235,12 @@ export default function App() {
   const previousScrollSessionRef = useRef<string | undefined>(undefined)
   /** 승인 처리를 위해 잠시 떠났다가 복귀할 때만 적용할 대화 위치. */
   const pendingScrollRestoreRef = useRef<
-    { sessionId: string; scrollTop: number; attemptsLeft: number } | undefined
+    { sessionId: string; scrollTop: number; anchor?: ScrollAnchor; attemptsLeft: number } | undefined
   >(undefined)
   /** 같은 세션의 하단 승인 카드로 잠시 이동하기 전 읽던 위치. */
-  const inlineApprovalReturnRef = useRef<{ sessionId: string; scrollTop: number } | undefined>(undefined)
+  const inlineApprovalReturnRef = useRef<
+    { sessionId: string; scrollTop: number; anchor?: ScrollAnchor } | undefined
+  >(undefined)
   const tabBarRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<PromptInputHandle>(null)
   const focusPrompt = useCallback(() => taRef.current?.focus(), [])
@@ -457,10 +464,21 @@ export default function App() {
     if (!element) return
     const pendingRestore = pendingScrollRestoreRef.current
     if (activeSession && pendingRestore?.sessionId === activeSession) {
-      element.scrollTo({ top: pendingRestore.scrollTop })
+      // 기준 항목이 이미 그려졌으면 픽셀이 아니라 그 항목에 맞춘다. 위쪽 높이가 나중에 변해도
+      // 읽던 자리를 잃지 않는다(코드 강조·접힌 카드 등으로 실제로 변한다).
+      const anchorElement = pendingRestore.anchor
+        ? document.getElementById(entryDomId(pendingRestore.anchor.entryId))
+        : null
+      let target = pendingRestore.scrollTop
+      if (anchorElement && pendingRestore.anchor) {
+        const entryTop =
+          anchorElement.getBoundingClientRect().top - element.getBoundingClientRect().top
+        target = anchoredScrollTop(element.scrollTop, entryTop, pendingRestore.anchor)
+      }
+      element.scrollTo({ top: target })
       // 대화가 아직 다 그려지지 않았으면 브라우저가 최대 스크롤로 잘라낸다.
       // 실제 도달 여부로 판단해야 «바닥 따라가기»로 잘못 넘어가지 않는다.
-      const satisfied = isScrollRestoreSatisfied(pendingRestore.scrollTop, element.scrollTop)
+      const satisfied = isScrollRestoreSatisfied(target, element.scrollTop)
       if (shouldRetryScrollRestore(satisfied, pendingRestore.attemptsLeft)) {
         // 이벤트가 더 쌓이거나 코드 강조로 높이가 늘면 다음 렌더에서 다시 시도한다.
         pendingScrollRestoreRef.current = {
@@ -627,6 +645,7 @@ export default function App() {
         projectPath: active,
         sessionId: activeSession,
         scrollTop: screen === 'project' ? scrollRef.current?.scrollTop : undefined,
+        anchor: screen === 'project' ? currentScrollAnchor() : undefined,
         screen,
       }
     }
@@ -661,6 +680,7 @@ export default function App() {
         pendingScrollRestoreRef.current = {
           sessionId: previous.sessionId,
           scrollTop: previous.scrollTop,
+          anchor: previous.anchor,
           attemptsLeft: SCROLL_RESTORE_ATTEMPTS,
         }
       }
@@ -671,10 +691,28 @@ export default function App() {
     setScreen(previous.screen)
   }
 
+  /** 지금 화면 맨 위에 걸친 대화 항목. 픽셀보다 이게 정확한 기준이다. */
+  function currentScrollAnchor(): ScrollAnchor | undefined {
+    const element = scrollRef.current
+    if (!element) return undefined
+    const containerTop = element.getBoundingClientRect().top
+    const boxes = view.entries.flatMap((entry) => {
+      const node = document.getElementById(entryDomId(entry.id))
+      if (!node) return []
+      const rect = node.getBoundingClientRect()
+      return [{ id: entry.id, top: rect.top - containerTop, bottom: rect.bottom - containerTop }]
+    })
+    return pickScrollAnchor(boxes)
+  }
+
   function openInlineApprovals(): void {
     const element = scrollRef.current
     if (!activeSession || !element || myApprovals.length === 0) return
-    inlineApprovalReturnRef.current = { sessionId: activeSession, scrollTop: element.scrollTop }
+    inlineApprovalReturnRef.current = {
+      sessionId: activeSession,
+      scrollTop: element.scrollTop,
+      anchor: currentScrollAnchor(),
+    }
     followingBottomRef.current = true
     element.scrollTo({ top: element.scrollHeight, behavior: 'smooth' })
   }
