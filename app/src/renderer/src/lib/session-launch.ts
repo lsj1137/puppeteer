@@ -62,3 +62,17 @@ export function resolveSessionLaunch(
     continueSessionId: resumeCliSessionId ? activeSessionId : undefined,
   }
 }
+
+/**
+ * 세션 시작 응답이 돌아왔을 때 그 결과를 화면에 반영해도 되는지.
+ *
+ * `startSession` 은 CLI 를 띄우고 오느라 시간이 걸린다. 그 사이 사용자가 다른 프로젝트를
+ * 눌렀다면 왼쪽 목록은 새 프로젝트인데 대화창만 예전 세션으로 바뀌어 화면이 어긋난다.
+ * 요청을 보낼 때의 프로젝트와 지금 보고 있는 프로젝트가 같을 때만 활성 세션을 옮긴다.
+ */
+export function canApplyStartedSession(
+  requestedProjectPath: string,
+  currentProjectPath: string | undefined,
+): boolean {
+  return requestedProjectPath === currentProjectPath
+}

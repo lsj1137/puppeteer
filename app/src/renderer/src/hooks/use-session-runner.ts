@@ -1,7 +1,7 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { DetectedRunner, StoredProject, StoredSession } from '@shared/session'
-import { resolveSessionLaunch } from '../lib/session-launch'
+import { canApplyStartedSession, resolveSessionLaunch } from '../lib/session-launch'
 
 interface UseSessionRunnerOptions {
   activeProjectPath?: string
@@ -59,6 +59,10 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
     setSelectedArtifact,
   } = options
 
+  // 비동기 응답이 돌아온 «지금» 어느 프로젝트를 보고 있는지. 클로저가 캡처한 값은 낡을 수 있다.
+  const currentProjectRef = useRef(activeProjectPath)
+  currentProjectRef.current = activeProjectPath
+
   const run = useCallback(
     async (runnerId: string, text: string, cwd?: string): Promise<void> => {
       const runner = runners.find((candidate) => candidate.id === runnerId)
@@ -84,11 +88,15 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
           model,
         })
         setAttachments([])
+        void refresh(path)
+        // 기다리는 동안 다른 프로젝트로 옮겼다면 화면을 되돌리지 않는다.
+        // 세션은 이미 시작됐고 목록에도 올라오므로, 돌아와서 탭으로 열면 된다.
+        if (!canApplyStartedSession(path, currentProjectRef.current)) return
         setActiveSessionId(id)
         setSelectedArtifact(undefined)
-        void refresh(path)
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
+        if (!canApplyStartedSession(path, currentProjectRef.current)) return
         const key = sameRunner ? (activeSessionId ?? 'start-error') : 'start-error'
         failSessionView(key, reason)
         setActiveSessionId(key)
@@ -171,9 +179,10 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
           agentName: target.agentName ?? undefined,
         })
         setAttachments([])
+        void refresh(target.projectPath)
+        if (!canApplyStartedSession(target.projectPath, currentProjectRef.current)) return
         setActiveSessionId(id)
         setSelectedArtifact(undefined)
-        void refresh(target.projectPath)
       } catch (error) {
         failSessionView(
           sessionId,
@@ -198,12 +207,14 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
       if (!runner) return false
       try {
         const id = await window.api.startSession({ runner, cwd, prompt, agentName: freshAgent })
+        void refresh(cwd)
+        if (!canApplyStartedSession(cwd, currentProjectRef.current)) return true
         setActiveSessionId(id)
         setSelectedArtifact(undefined)
-        void refresh(cwd)
         return true
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
+        if (!canApplyStartedSession(cwd, currentProjectRef.current)) return false
         failSessionView('start-error', reason)
         setActiveSessionId('start-error')
         return false

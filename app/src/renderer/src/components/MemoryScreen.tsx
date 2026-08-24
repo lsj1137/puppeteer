@@ -494,36 +494,19 @@ export default function MemoryScreen() {
             카드 껍데기(제목·배지·안내문·버튼 줄)를 걷어내 제안이 쌓여도 편집창을 밀어내지 않는다.
           */}
           {entryProposals.length > 0 && (
-            <div className="max-h-[40vh] min-w-0 overflow-auto overscroll-contain rounded-b-lg border-t border-green/25 bg-green/8">
+            /*
+              스크롤을 겹치지 않는다. 바깥 편집 영역이 이미 세로로 스크롤되므로 여기서 또
+              스크롤 상자를 만들면 휠이 어디로 갈지 예측할 수 없다. 대신 긴 제안은 «더 보기»로
+              접어 높이를 줄인다 — 스크롤 대신 펼치기다.
+            */
+            <div className="min-w-0 rounded-b-lg border-t-2 border-green/40 bg-green/8">
               {entryProposals.map((proposal) => (
-                <div key={proposal.id} className="group border-b border-green/15 last:border-b-0">
-                  <div className="flex items-start gap-1.5 px-2 py-1.5">
-                    <span className="mt-px shrink-0 select-none font-mono text-[13px] leading-relaxed text-green">
-                      +
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="max-h-40 overflow-auto overscroll-contain whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-text">
-                        {proposal.content}
-                      </div>
-                      {/* 왜 추가하자는지가 승인 판단의 근거다. 한 줄로 줄이되 없애지는 않는다. */}
-                      <div className="mt-0.5 truncate text-[11px] text-overlay1" title={proposal.reason}>
-                        {proposal.reason}
-                      </div>
-                    </div>
-                    <button
-                      disabled={proposalBusy === proposal.id}
-                      onClick={() => void decideProposal(proposal, true)}
-                      title="이 내용을 Memory 끝에 추가"
-                      className="shrink-0 rounded-md p-1 text-green hover:bg-green/20 disabled:opacity-40"
-                    ><Check className="h-4 w-4" /></button>
-                    <button
-                      disabled={proposalBusy === proposal.id}
-                      onClick={() => void decideProposal(proposal, false)}
-                      title="거절"
-                      className="shrink-0 rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-red disabled:opacity-40"
-                    ><X className="h-4 w-4" /></button>
-                  </div>
-                </div>
+                <ProposalTail
+                  key={proposal.id}
+                  proposal={proposal}
+                  busy={proposalBusy === proposal.id}
+                  onDecide={(approve) => void decideProposal(proposal, approve)}
+                />
               ))}
             </div>
           )}
@@ -542,6 +525,73 @@ export default function MemoryScreen() {
           </div>
         )
       )}
+    </div>
+  )
+}
+
+/** 몇 줄부터 접을지. 이보다 짧으면 접기 버튼조차 붙이지 않는다. */
+const PROPOSAL_PREVIEW_LINES = 8
+
+/**
+ * 편집창 끝에 이어 붙는 추가 제안 한 건.
+ *
+ * 제안은 언제나 정본 끝에 붙으므로(`applyProposal`) 편집창 아래 초록으로 이으면
+ * 그 자체가 저장될 모양의 미리보기가 된다. 스크롤 상자를 만들지 않고 접기로 높이를 줄인다.
+ */
+function ProposalTail({
+  proposal,
+  busy,
+  onDecide,
+}: {
+  proposal: MemoryProposal
+  busy: boolean
+  onDecide: (approve: boolean) => void
+}) {
+  const lines = proposal.content.split('\n')
+  const long = lines.length > PROPOSAL_PREVIEW_LINES
+  const [open, setOpen] = useState(false)
+  const shown = open || !long ? proposal.content : lines.slice(0, PROPOSAL_PREVIEW_LINES).join('\n')
+
+  return (
+    <div className="border-b border-green/15 px-3 py-2 last:border-b-0">
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-text">
+            {shown}
+          </div>
+          {long && (
+            <button
+              type="button"
+              onClick={() => setOpen((current) => !current)}
+              className="mt-1 flex items-center gap-1 text-[11px] text-green hover:underline"
+            >
+              {open ? (
+                <><ChevronDown className="h-3 w-3 rotate-180" /> 접기</>
+              ) : (
+                <><ChevronDown className="h-3 w-3" /> {lines.length - PROPOSAL_PREVIEW_LINES}줄 더 보기</>
+              )}
+            </button>
+          )}
+          {/* 왜 추가하자는지가 승인 판단의 근거다. 한 줄로 줄이되 없애지는 않는다. */}
+          <div className="mt-1 truncate text-[11px] text-overlay1" title={proposal.reason}>
+            {proposal.reason}
+          </div>
+        </div>
+        <div className="flex shrink-0 gap-0.5">
+          <button
+            disabled={busy}
+            onClick={() => onDecide(true)}
+            title="이 내용을 Memory 끝에 추가"
+            className="rounded-md p-1.5 text-green hover:bg-green/20 disabled:opacity-40"
+          ><Check className="h-4 w-4" /></button>
+          <button
+            disabled={busy}
+            onClick={() => onDecide(false)}
+            title="거절"
+            className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-red disabled:opacity-40"
+          ><X className="h-4 w-4" /></button>
+        </div>
+      </div>
     </div>
   )
 }
