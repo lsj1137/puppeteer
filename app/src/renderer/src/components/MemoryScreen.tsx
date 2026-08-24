@@ -88,6 +88,8 @@ export default function MemoryScreen() {
   )
 
   const entry = entries.find((e) => e.id === selected)
+  /** 지금 열어 둔 Memory 에 달린 대기 제안. 편집창 아래에 초록으로 이어 붙인다. */
+  const entryProposals = proposals.filter((proposal) => proposal.entryId === entry?.id)
   const dirty = draft !== original
   const q = filter.trim().toLowerCase()
   const visible = q
@@ -400,50 +402,6 @@ export default function MemoryScreen() {
             </div>
           )}
 
-          {proposals
-            .filter((proposal) => proposal.entryId === entry.id)
-            .map((proposal) => {
-              return (
-                <div key={proposal.id} className="mb-2 min-w-0 overflow-hidden rounded-lg bg-mauve/10 ring-1 ring-mauve/25">
-                  <div className="flex items-start gap-2 px-3 py-2">
-                    <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-mauve" />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-1.5 text-[12px] font-medium text-text">
-                        <span>Memory 추가 제안</span>
-                        <span className="rounded bg-mauve/15 px-1.5 py-0.5 text-[10px] font-normal text-mauve">
-                          {proposal.scope === 'project' ? 'Project' : 'Agent'}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-subtext0">{proposal.reason}</div>
-                    </div>
-                    <button
-                      disabled={proposalBusy === proposal.id}
-                      onClick={() => void decideProposal(proposal, false)}
-                      className="rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-red disabled:opacity-40"
-                      title="거절"
-                    ><X className="h-3.5 w-3.5" /></button>
-                    <button
-                      disabled={proposalBusy === proposal.id}
-                      onClick={() => void decideProposal(proposal, true)}
-                      className="rounded-md bg-green/15 px-2.5 py-1 text-[11px] font-medium text-green hover:bg-green/25 disabled:opacity-40"
-                    >승인해 추가</button>
-                  </div>
-                  <div className="mx-3 mb-2 min-w-0 rounded-md border border-surface1 bg-base px-3 py-2.5">
-                    <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-overlay1">
-                      추가할 내용
-                    </div>
-                    {/* 160px 는 몇 줄만 보여 무엇을 승인하는지 알기 어려웠다. 창 높이에 맞춰 늘린다. */}
-                    <div className="max-h-[min(22rem,50vh)] overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-subtext1 overscroll-contain">
-                      {proposal.content}
-                    </div>
-                  </div>
-                  <div className="px-3 py-1.5 text-[10px] text-overlay1">
-                    승인하면 위 내용만 기존 Memory 끝에 추가합니다. 승인 전에는 정본을 변경하지 않습니다.
-                  </div>
-                </div>
-              )
-            })}
-
           {proposalError && (
             <div className="mb-2 rounded-lg bg-red/10 px-3 py-2 text-[11px] text-red">
               {proposalError}
@@ -525,8 +483,50 @@ export default function MemoryScreen() {
             }}
             spellCheck={false}
             placeholder="이 범위에서 늘 기억해야 할 것을 적습니다."
-            className="min-h-48 min-w-0 flex-1 resize-none rounded-lg bg-mantle p-3 font-mono text-[13px] leading-relaxed text-text outline-none ring-1 ring-transparent placeholder:text-overlay0 focus:ring-lavender/40"
+            className={`min-h-48 min-w-0 flex-1 resize-none bg-mantle p-3 font-mono text-[13px] leading-relaxed text-text outline-none ring-1 ring-transparent placeholder:text-overlay0 focus:ring-lavender/40 ${
+              entryProposals.length > 0 ? 'rounded-t-lg' : 'rounded-lg'
+            }`}
           />
+
+          {/*
+            제안은 언제나 정본 «끝»에 붙는다(`applyProposal`). 그래서 편집창 바로 아래에
+            초록으로 이어 붙이면 그 자체가 저장될 모양의 미리보기가 된다.
+            카드 껍데기(제목·배지·안내문·버튼 줄)를 걷어내 제안이 쌓여도 편집창을 밀어내지 않는다.
+          */}
+          {entryProposals.length > 0 && (
+            <div className="max-h-[40vh] min-w-0 overflow-auto overscroll-contain rounded-b-lg border-t border-green/25 bg-green/8">
+              {entryProposals.map((proposal) => (
+                <div key={proposal.id} className="group border-b border-green/15 last:border-b-0">
+                  <div className="flex items-start gap-1.5 px-2 py-1.5">
+                    <span className="mt-px shrink-0 select-none font-mono text-[13px] leading-relaxed text-green">
+                      +
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="max-h-40 overflow-auto overscroll-contain whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-text">
+                        {proposal.content}
+                      </div>
+                      {/* 왜 추가하자는지가 승인 판단의 근거다. 한 줄로 줄이되 없애지는 않는다. */}
+                      <div className="mt-0.5 truncate text-[11px] text-overlay1" title={proposal.reason}>
+                        {proposal.reason}
+                      </div>
+                    </div>
+                    <button
+                      disabled={proposalBusy === proposal.id}
+                      onClick={() => void decideProposal(proposal, true)}
+                      title="이 내용을 Memory 끝에 추가"
+                      className="shrink-0 rounded-md p-1 text-green hover:bg-green/20 disabled:opacity-40"
+                    ><Check className="h-4 w-4" /></button>
+                    <button
+                      disabled={proposalBusy === proposal.id}
+                      onClick={() => void decideProposal(proposal, false)}
+                      title="거절"
+                      className="shrink-0 rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-red disabled:opacity-40"
+                    ><X className="h-4 w-4" /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="mt-2 flex items-center gap-3 text-[11px] text-overlay1">
             <span>{draft.length.toLocaleString()}자</span>
