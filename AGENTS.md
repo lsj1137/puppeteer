@@ -35,3 +35,7 @@
 멀티 Agent 실행의 초기 버전은 Lead Agent 한 명만 파일을 수정하고, 보조 Agent는 병렬 조사와 결과 반환을 담당한다. 보조 Agent별 실행 상태·권한·토큰을 구분해서 표시한다.
 
 멀티 Agent에서 Lead Agent는 사용자가 미리 고르지 않아도 지시 내용으로 자동 선택될 수 있어야 하며(기존 router.ts 재사용), 보조 run은 Puppeteer Agent 없이 맨 CLI로도 실행할 수 있어야 한다. Agent 없는 보조는 Agent 정의의 도구·provider 가드가 없으므로 오케스트레이터가 읽기 전용과 provider 고정을 직접 강제한다.
+
+## 검증 실행 위치
+
+`npm run typecheck` / `npx vitest run` 은 WSL 쪽 worktree 경로에서 그대로 실행된다 — `app/node_modules` 가 Windows·WSL 양쪽에서 같은 경로로 잡히기 때문이다. 사용자에게 PowerShell 실행을 부탁할 필요 없이 직접 돌려 결과를 확인한다. 전체 테스트는 worktree Git 통합 테스트 때문에 약 80초 걸린다.
