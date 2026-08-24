@@ -16,6 +16,7 @@ import {
   TriangleAlert,
 } from 'lucide-react'
 import type { MemoryEdit, MemoryEntry, MemoryProposal, MemoryScope } from '@shared/session'
+import { proposalReviewIndex } from '../lib/memory-review'
 
 const SCOPES: {
   key: MemoryScope
@@ -133,10 +134,11 @@ export default function MemoryScreen() {
    * 다른 항목을 누르면 두 읽기가 겹치고, 늦게 온 응답이 나중에 고른 항목의 내용을 덮어
    * «눌렀는데 오른쪽이 안 바뀐다»로 보였다.
    */
-  const openEntry = useCallback(async (e: MemoryEntry): Promise<void> => {
+  const openEntry = useCallback(async (e: MemoryEntry, cursor = 0): Promise<void> => {
     const token = ++readToken.current
     selectedRef.current = e.id
     setSelected(e.id)
+    setReviewCursor(cursor)
     setSaved(false)
     setPromotionOpen(false)
     setPromotionMessage(undefined)
@@ -190,15 +192,15 @@ export default function MemoryScreen() {
     void window.api.memoryHistory(selected).then(setHistory)
   }, [selected, saved])
 
-  useEffect(() => {
-    setReviewCursor(0)
-  }, [selected])
-
-  async function open(e: MemoryEntry): Promise<void> {
-    // 같은 항목을 다시 누른 것으로 편집 중인 내용을 날리지 않는다
-    if (e.id === selected) return
+  async function open(e: MemoryEntry, cursor = 0): Promise<void> {
+    // 이미 열어 둔 항목이면 다시 읽지 않는다 — 편집 중인 내용을 날릴 이유가 없다.
+    // 순번만 옮겨 주면 오른쪽 화살표를 누른 것과 같아진다.
+    if (e.id === selected) {
+      setReviewCursor(cursor)
+      return
+    }
     if (dirty && !confirm('저장하지 않은 변경이 있습니다. 버릴까요?')) return
-    await openEntry(e)
+    await openEntry(e, cursor)
   }
 
   function openPromotion(): void {
@@ -261,7 +263,8 @@ export default function MemoryScreen() {
       )
       return
     }
-    await open(target)
+    // 왼쪽에서 고른 그 제안을 오른쪽에 띄운다 — 항목만 열면 늘 첫 제안이 보인다
+    await open(target, proposalReviewIndex(proposals, proposal))
   }
 
   async function decideProposal(proposal: MemoryProposal, approve: boolean): Promise<void> {
@@ -310,7 +313,12 @@ export default function MemoryScreen() {
               <button
                 key={proposal.id}
                 onClick={() => void openProposal(proposal)}
-                className="block w-full truncate rounded-md px-2 py-1.5 text-left text-[12px] text-subtext1 hover:bg-surface0/60 hover:text-text"
+                // 오른쪽에 떠 있는 그 제안을 왼쪽에서도 알아볼 수 있어야 한다
+                className={`block w-full truncate rounded-md px-2 py-1.5 text-left text-[12px] ${
+                  reviewing?.id === proposal.id
+                    ? 'bg-surface0 text-text'
+                    : 'text-subtext1 hover:bg-surface0/60 hover:text-text'
+                }`}
                 title={proposal.reason}
               >
                 {entries.find((e) => e.id === proposal.entryId)?.label ?? proposal.scope}

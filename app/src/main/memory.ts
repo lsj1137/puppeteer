@@ -59,12 +59,12 @@ function entry(
   let exists = false
   let updatedAt: number | undefined
   try {
-    if (existsSync(path)) {
-      exists = true
-      updatedAt = statSync(path).mtimeMs
-    }
+    // statSync 하나로 존재 여부와 수정시각을 함께 얻는다. existsSync 를 앞세우면
+    // 항목마다 파일 왕복이 두 번이고, WSL UNC 경로에서는 그 차이가 그대로 목록 지연이 된다.
+    updatedAt = statSync(path).mtimeMs
+    exists = true
   } catch {
-    // WSL 이 꺼져 있으면 UNC 접근이 실패한다 — 없는 것으로 두고 화면에서 알린다
+    // 없거나, WSL 이 꺼져 UNC 접근이 실패한 경우 — 없는 것으로 두고 화면에서 알린다
   }
   return { id: FILE + path, scope, label, location: path, content: '', exists, updatedAt, readBy }
 }
@@ -97,8 +97,8 @@ export function list(runners: DetectedRunner[], projects: string[]): MemoryEntry
 
   // 자동 메모리 — 홈마다 projects/*/memory 를 훑는다
   for (const home of homes.keys()) {
-    for (const { dir, cwd } of autoRoots(home)) {
-      for (const file of mdFiles(dir)) {
+    for (const { dir, files, cwd } of autoRoots(home)) {
+      for (const file of files) {
         const e = entry(join(dir, file), 'auto', file.replace(/\.md$/, ''))
         // MEMORY.md 는 색인이라 항상 위로 온다
         e.group = cwd
@@ -106,6 +106,7 @@ export function list(runners: DetectedRunner[], projects: string[]): MemoryEntry
       }
     }
   }
+  saveCwdCache()
 
   // 에이전트
   for (const a of library.list()) {
@@ -232,9 +233,9 @@ function bridgeNote(claudePath: string): string | undefined {
  * (한글 경로가 전부 `-` 가 된다). 그래서 이름을 해독하지 않고
  * 세션 기록(jsonl) 첫머리의 `cwd` 를 읽어 실제 경로를 알아낸다.
  */
-function autoRoots(home: string): { dir: string; cwd: string }[] {
+function autoRoots(home: string): { dir: string; files: string[]; cwd: string }[] {
   const root = join(home, '.claude', 'projects')
-  const out: { dir: string; cwd: string }[] = []
+  const out: { dir: string; files: string[]; cwd: string }[] = []
   let names: string[] = []
   try {
     names = readdirSync(root)
@@ -244,12 +245,10 @@ function autoRoots(home: string): { dir: string; cwd: string }[] {
 
   for (const name of names) {
     const dir = join(root, name, 'memory')
-    try {
-      if (!existsSync(dir)) continue
-    } catch {
-      continue
-    }
-    out.push({ dir, cwd: resolveCwd(join(root, name)) ?? name })
+    // 목록을 바로 읽는다. 없는 폴더는 빈 배열이라 existsSync 로 한 번 더 물을 필요가 없다.
+    const files = mdFiles(dir)
+    if (files.length === 0) continue
+    out.push({ dir, files, cwd: resolveCwd(join(root, name)) ?? name })
   }
   return out
 }
@@ -258,21 +257,55 @@ function autoRoots(home: string): { dir: string; cwd: string }[] {
 const LOG_HEAD_BYTES = 4000
 
 /**
- * 이미 알아낸 작업 경로. 디렉터리 이름과 cwd 의 대응은 바뀌지 않으므로 한 번만 캐낸다.
- * 목록을 다시 읽을 때마다 기록 파일을 여는 것이 이 화면이 느린 주된 이유였다.
+ * 이미 알아낸 작업 경로.
+ *
+ * 디렉터리 이름은 cwd 에서 만들어지므로 그 대응은 **바뀌지 않는다**. 목록을 읽을 때마다
+ * 기록 파일을 여는 것이 이 화면이 느린 주된 이유였으므로 한 번 캐낸 값은 앱 설정에 남겨
+ * 다음 실행에서도 쓴다. 지워진 폴더의 항목이 남아도 쓰이지 않으니 그대로 둔다.
  */
-const cwdCache = new Map<string, string>()
+const CWD_CACHE_KEY = 'memory_auto_cwd'
+let cwdCache: Map<string, string> | undefined
+/** 이번 실행에서 새로 알아낸 것이 있는지. 없으면 설정을 다시 쓰지 않는다. */
+let cwdCacheDirty = false
+
+function cwdMap(): Map<string, string> {
+  if (cwdCache) return cwdCache
+  cwdCache = new Map()
+  try {
+    const saved = db.getSetting(CWD_CACHE_KEY)
+    if (saved) {
+      for (const [dir, cwd] of Object.entries(JSON.parse(saved) as Record<string, string>)) {
+        if (typeof cwd === 'string') cwdCache.set(dir, cwd)
+      }
+    }
+  } catch {
+    // 형식이 깨졌으면 버리고 다시 캐낸다
+  }
+  return cwdCache
+}
+
+function saveCwdCache(): void {
+  if (!cwdCacheDirty || !cwdCache) return
+  cwdCacheDirty = false
+  try {
+    db.setSetting(CWD_CACHE_KEY, JSON.stringify(Object.fromEntries(cwdCache)))
+  } catch {
+    // 못 남겨도 이번 실행 동안은 메모리 캐시가 있다
+  }
+}
 
 /** 세션 기록에서 실제 작업 경로를 캐낸다. 못 찾으면 undefined. */
 function resolveCwd(projectDir: string): string | undefined {
-  const cached = cwdCache.get(projectDir)
+  const cache = cwdMap()
+  const cached = cache.get(projectDir)
   if (cached) return cached
   try {
     const logs = readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'))
     for (const f of logs.slice(0, 3)) {
       const cwd = cwdFromLogHead(readHead(join(projectDir, f), LOG_HEAD_BYTES))
       if (cwd) {
-        cwdCache.set(projectDir, cwd)
+        cache.set(projectDir, cwd)
+        cwdCacheDirty = true
         return cwd
       }
     }
