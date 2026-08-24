@@ -25,6 +25,8 @@ interface UseSessionRunnerOptions {
   setPendingPrompt: Dispatch<SetStateAction<string | undefined>>
   setProjects: Dispatch<SetStateAction<StoredProject[]>>
   setSelectedArtifact: Dispatch<SetStateAction<string | undefined>>
+  /** 예약해 둔 지시가 실제로 나갔을 때. 화면은 바꾸지 않고 알림만 띄운다. */
+  onQueuedSent?: (session: StoredSession) => void
 }
 
 interface FreshSessionOptions {
@@ -57,6 +59,7 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
     setPendingPrompt,
     setProjects,
     setSelectedArtifact,
+    onQueuedSent,
   } = options
 
   // 비동기 응답이 돌아온 «지금» 어느 프로젝트를 보고 있는지. 클로저가 캡처한 값은 낡을 수 있다.
@@ -88,10 +91,12 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
           model,
         })
         setAttachments([])
-        void refresh(path)
-        // 기다리는 동안 다른 프로젝트로 옮겼다면 화면을 되돌리지 않는다.
-        // 세션은 이미 시작됐고 목록에도 올라오므로, 돌아와서 탭으로 열면 된다.
-        if (!canApplyStartedSession(path, currentProjectRef.current)) return
+        // 기다리는 동안 다른 프로젝트로 옮겼다면 화면을 되돌리지 않는다. 세션 목록도 건드리지
+        // 않는다 — 지금 보고 있는 프로젝트의 탭이 남의 세션으로 바뀌면 더 헷갈린다.
+        // 세션은 이미 시작됐고, 돌아오면 목록에서 열 수 있다.
+        const stillHere = canApplyStartedSession(path, currentProjectRef.current)
+        void refresh(stillHere ? path : undefined)
+        if (!stillHere) return
         setActiveSessionId(id)
         setSelectedArtifact(undefined)
       } catch (error) {
@@ -179,10 +184,11 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
           agentName: target.agentName ?? undefined,
         })
         setAttachments([])
-        void refresh(target.projectPath)
-        if (!canApplyStartedSession(target.projectPath, currentProjectRef.current)) return
-        setActiveSessionId(id)
-        setSelectedArtifact(undefined)
+        // 예약한 지시는 사용자가 다른 곳을 보는 동안 나간다. 화면을 그 세션으로 끌고 가면
+        // 보던 것이 갑자기 사라진다 — 활성 세션은 그대로 두고 알림만 띄운다.
+        const stillHere = canApplyStartedSession(target.projectPath, currentProjectRef.current)
+        void refresh(stillHere ? target.projectPath : undefined)
+        onQueuedSent?.(target)
       } catch (error) {
         failSessionView(
           sessionId,
@@ -190,15 +196,7 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
         )
       }
     },
-    [
-      attachments,
-      failSessionView,
-      refresh,
-      runners,
-      setActiveSessionId,
-      setAttachments,
-      setSelectedArtifact,
-    ],
+    [attachments, failSessionView, onQueuedSent, refresh, runners, setAttachments],
   )
 
   const startFreshSession = useCallback(
@@ -207,8 +205,9 @@ export function useSessionRunner(options: UseSessionRunnerOptions) {
       if (!runner) return false
       try {
         const id = await window.api.startSession({ runner, cwd, prompt, agentName: freshAgent })
-        void refresh(cwd)
-        if (!canApplyStartedSession(cwd, currentProjectRef.current)) return true
+        const stillHere = canApplyStartedSession(cwd, currentProjectRef.current)
+        void refresh(stillHere ? cwd : undefined)
+        if (!stillHere) return true
         setActiveSessionId(id)
         setSelectedArtifact(undefined)
         return true

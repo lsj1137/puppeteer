@@ -210,8 +210,19 @@ export default function App() {
     if (!session || session.hidden) return
     setCompletionToasts((current) => current.some(({ session: item }) => item.id === session.id)
       ? current
-      : [{ session, closing: false }, ...current])
+      : [{ session, closing: false, kind: 'completed' }, ...current])
   }, [refresh])
+
+  /**
+   * 예약한 지시가 나갔다고만 알린다. 화면을 그 세션으로 끌고 가지 않는다 —
+   * 다른 것을 보던 중에 갑자기 바뀌면 사용자가 흐름을 잃는다.
+   */
+  const showQueuedSentToast = useCallback((session: StoredSession): void => {
+    setCompletionToasts((current) => [
+      { session, closing: false, kind: 'queued-sent' },
+      ...current.filter(({ session: item }) => item.id !== session.id),
+    ])
+  }, [])
   const {
     views,
     addDiffArtifact,
@@ -301,6 +312,7 @@ export default function App() {
     refresh,
     setActiveSessionId: setActiveSession,
     setAttachments,
+    onQueuedSent: showQueuedSentToast,
     setNextRunnerId,
     setPendingPrompt: setPendingPick,
     setProjects,
@@ -838,6 +850,17 @@ export default function App() {
       setCompletionToasts((current) => current.filter(({ session }) => session.id !== sessionId))
     }, 180)
   }, [])
+
+  // 예약 전송 알림은 «지금 나갔다»만 알리면 된다. 세션 완료와 달리 사용자가 누를 일이 적으니
+  // 잠시 뒤 스스로 사라진다. 완료 알림은 놓치면 안 되므로 그대로 남긴다.
+  useEffect(() => {
+    const queued = completionToasts.filter(({ kind, closing }) => kind === 'queued-sent' && !closing)
+    if (queued.length === 0) return
+    const timers = queued.map(({ session }) =>
+      window.setTimeout(() => dismissCompletionToast(session.id), 4000),
+    )
+    return () => timers.forEach((timer) => window.clearTimeout(timer))
+  }, [completionToasts, dismissCompletionToast])
 
   useEffect(() => {
     if (activeSession && completionToasts.some(({ session, closing }) =>
