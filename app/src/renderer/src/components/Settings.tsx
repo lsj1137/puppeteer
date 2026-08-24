@@ -310,7 +310,7 @@ export default function Settings({
               <HelpCircle className="mt-1 h-4 w-4 shrink-0 text-sapphire" />
               <div className="min-w-0 flex-1">
                 <h2 className="text-[16px] font-semibold text-text">Puppeteer 사용 팁</h2>
-                <p className="mt-0.5 text-[11px] text-overlay1">Esc 또는 닫기 버튼으로 닫습니다.</p>
+                <p className="mt-0.5 text-[12px] text-overlay1">Esc 또는 닫기 버튼으로 닫습니다.</p>
               </div>
               <button onClick={() => setShowHelp(false)} title="닫기" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
                 <X className="h-4 w-4" />
@@ -355,13 +355,13 @@ function HelpGroup({ icon: Icon, title, tips }: {
   return (
     // 모달 자체에 테두리가 있으니 안쪽 묶음은 배경 톤만으로 구분한다
     <section className="rounded-xl bg-base/70 p-3.5">
-      <div className="mb-2.5 flex items-center gap-2 text-[12px] font-semibold text-text">
+      <div className="mb-2.5 flex items-center gap-2 text-[13px] font-semibold text-text">
         <Icon className="h-4 w-4 text-sapphire" /> {title}
       </div>
       <div className="space-y-2">
         {tips.map(([keys, text]) => (
-          <div key={`${keys}-${text}`} className="flex items-start gap-2 text-[11px] leading-relaxed text-subtext0">
-            {keys ? <kbd className="shrink-0 rounded bg-surface1/70 px-1.5 py-0.5 font-mono text-[10px] text-subtext1">{keys}</kbd> : <span className="mt-[7px] h-1 w-1 shrink-0 rounded-full bg-overlay1" />}
+          <div key={`${keys}-${text}`} className="flex items-start gap-2 text-[12px] leading-relaxed text-subtext0">
+            {keys ? <kbd className="shrink-0 rounded bg-surface1/70 px-1.5 py-0.5 font-mono text-[11px] text-subtext1">{keys}</kbd> : <span className="mt-[8px] h-1 w-1 shrink-0 rounded-full bg-overlay1" />}
             <span>{text}</span>
           </div>
         ))}
