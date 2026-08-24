@@ -508,39 +508,46 @@ export default function MemoryScreen() {
           {reviewing && (
             /*
               한 번에 한 건만 보여준다. 제안은 어차피 하나씩 승인·거절하므로 전부 펼쳐 두면
-              기존 Memory 만 잘려 나간다. 몇 건 중 몇 번째인지와 이동만 위에 두고 본문은 하나만 둔다.
-              스크롤 상자도 겹치지 않는다 — 바깥 편집 영역이 이미 세로로 스크롤된다.
+              기존 Memory 만 잘려 나간다. 몇 건 중 몇 번째인지와 이동·결정은 머리줄에 모으고,
+              본문은 늘 같은 높이를 차지한다. 머리줄도 한 건일 때 숨기지 않는다 —
+              있다 없다 하면 그것만으로 편집창 높이가 달라진다.
             */
             <div className="min-w-0 rounded-b-lg border-t-2 border-green/40 bg-green/8">
-              {entryProposals.length > 1 && (
-                <div className="flex items-center gap-2 border-b border-green/15 px-3 py-1.5 text-[11px]">
-                  <span className="text-green">
-                    추가 제안 {reviewIndex + 1} / {entryProposals.length}
-                  </span>
-                  <div className="ml-auto flex items-center gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setReviewCursor(reviewIndex - 1)}
-                      disabled={reviewIndex === 0}
-                      title="이전 제안"
-                      className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-30"
-                    ><ChevronRight className="h-3.5 w-3.5 rotate-180" /></button>
-                    <button
-                      type="button"
-                      onClick={() => setReviewCursor(reviewIndex + 1)}
-                      disabled={reviewIndex >= entryProposals.length - 1}
-                      title="다음 제안"
-                      className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-30"
-                    ><ChevronRight className="h-3.5 w-3.5" /></button>
-                  </div>
+              <div className="flex items-center gap-2 border-b border-green/15 px-3 py-1.5 text-[11px]">
+                <span className="text-green">
+                  추가 제안 {reviewIndex + 1} / {entryProposals.length}
+                </span>
+                <div className="ml-auto flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setReviewCursor(reviewIndex - 1)}
+                    disabled={reviewIndex === 0}
+                    title="이전 제안"
+                    className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-30"
+                  ><ChevronRight className="h-3.5 w-3.5 rotate-180" /></button>
+                  <button
+                    type="button"
+                    onClick={() => setReviewCursor(reviewIndex + 1)}
+                    disabled={reviewIndex >= entryProposals.length - 1}
+                    title="다음 제안"
+                    className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-30"
+                  ><ChevronRight className="h-3.5 w-3.5" /></button>
+                  <span className="mx-1 h-3.5 w-px bg-green/25" />
+                  <button
+                    disabled={proposalBusy === reviewing.id}
+                    onClick={() => void decideProposal(reviewing, true)}
+                    title="이 내용을 Memory 끝에 추가"
+                    className="rounded p-1 text-green hover:bg-green/20 disabled:opacity-40"
+                  ><Check className="h-4 w-4" /></button>
+                  <button
+                    disabled={proposalBusy === reviewing.id}
+                    onClick={() => void decideProposal(reviewing, false)}
+                    title="거절"
+                    className="rounded p-1 text-overlay1 hover:bg-surface0 hover:text-red disabled:opacity-40"
+                  ><X className="h-4 w-4" /></button>
                 </div>
-              )}
-              <ProposalTail
-                key={reviewing.id}
-                proposal={reviewing}
-                busy={proposalBusy === reviewing.id}
-                onDecide={(approve) => void decideProposal(reviewing, approve)}
-              />
+              </div>
+              <ProposalTail key={reviewing.id} proposal={reviewing} />
             </div>
           )}
 
@@ -563,70 +570,32 @@ export default function MemoryScreen() {
 }
 
 /**
- * 아주 긴 제안만 접는다. 한 번에 한 건만 보여주므로 대개는 그대로 펼쳐 둔다 —
- * 무엇을 승인하는지 다 보이는 편이 낫고, 이 값을 넘는 제안은 드물다.
+ * 제안 본문 높이. 내용 길이에 따라 늘었다 줄면 위 편집창이 매번 밀려서
+ * 다음 제안으로 넘길 때마다 화면이 흔들린다. 항상 같은 높이를 쓰고 긴 내용만 안에서 스크롤한다.
+ * 13px · leading-relaxed 기준 여덟 줄쯤.
  */
-const PROPOSAL_PREVIEW_LINES = 20
+const PROPOSAL_BODY_HEIGHT = 'h-44'
 
 /**
  * 편집창 끝에 이어 붙는 추가 제안 한 건.
  *
  * 제안은 언제나 정본 끝에 붙으므로(`applyProposal`) 편집창 아래 초록으로 이으면
- * 그 자체가 저장될 모양의 미리보기가 된다. 스크롤 상자를 만들지 않고 접기로 높이를 줄인다.
+ * 그 자체가 저장될 모양의 미리보기가 된다. 이동·승인은 머리줄에 있고 여기는 내용만 담는다.
  */
-function ProposalTail({
-  proposal,
-  busy,
-  onDecide,
-}: {
-  proposal: MemoryProposal
-  busy: boolean
-  onDecide: (approve: boolean) => void
-}) {
-  const lines = proposal.content.split('\n')
-  const long = lines.length > PROPOSAL_PREVIEW_LINES
-  const [open, setOpen] = useState(false)
-  const shown = open || !long ? proposal.content : lines.slice(0, PROPOSAL_PREVIEW_LINES).join('\n')
-
+function ProposalTail({ proposal }: { proposal: MemoryProposal }) {
   return (
-    <div className="border-b border-green/15 px-3 py-2 last:border-b-0">
-      <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="whitespace-pre-wrap break-words font-mono text-[13px] leading-relaxed text-text">
-            {shown}
-          </div>
-          {long && (
-            <button
-              type="button"
-              onClick={() => setOpen((current) => !current)}
-              className="mt-1 flex items-center gap-1 text-[11px] text-green hover:underline"
-            >
-              {open ? (
-                <><ChevronDown className="h-3 w-3 rotate-180" /> 접기</>
-              ) : (
-                <><ChevronDown className="h-3 w-3" /> {lines.length - PROPOSAL_PREVIEW_LINES}줄 더 보기</>
-              )}
-            </button>
-          )}
-          {/* 왜 추가하자는지가 승인 판단의 근거다. 한 줄로 줄이되 없애지는 않는다. */}
-          <div className="mt-1 truncate text-[11px] text-overlay1" title={proposal.reason}>
-            {proposal.reason}
-          </div>
-        </div>
-        <div className="flex shrink-0 gap-0.5">
-          <button
-            disabled={busy}
-            onClick={() => onDecide(true)}
-            title="이 내용을 Memory 끝에 추가"
-            className="rounded-md p-1.5 text-green hover:bg-green/20 disabled:opacity-40"
-          ><Check className="h-4 w-4" /></button>
-          <button
-            disabled={busy}
-            onClick={() => onDecide(false)}
-            title="거절"
-            className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-red disabled:opacity-40"
-          ><X className="h-4 w-4" /></button>
-        </div>
+    <div className="min-w-0">
+      <div
+        className={`${PROPOSAL_BODY_HEIGHT} overflow-y-auto whitespace-pre-wrap break-words px-3 py-2 font-mono text-[13px] leading-relaxed text-text`}
+      >
+        {proposal.content}
+      </div>
+      {/* 왜 추가하자는지가 승인 판단의 근거다. 한 줄로 줄이되 없애지는 않는다. */}
+      <div
+        className="truncate border-t border-green/15 px-3 py-1.5 text-[11px] text-overlay1"
+        title={proposal.reason}
+      >
+        {proposal.reason}
       </div>
     </div>
   )
