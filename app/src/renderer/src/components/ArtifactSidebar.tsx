@@ -166,8 +166,10 @@ export default function ArtifactSidebar({
     return (
       <aside
         className={`${area} flex gap-2 border-surface0 bg-mantle ${
+          // 세로에서는 위아래가 모두 다른 영역이다. 탭 바도 같은 mantle 이라
+          // 윗선이 없으면 탭 바에 붙은 한 덩어리로 보인다.
           portrait
-            ? 'items-center border-b px-2.5 py-1.5'
+            ? 'items-center border-y px-2.5 py-1.5'
             : 'flex-col items-center border-l py-2.5'
         }`}
       >
@@ -206,7 +208,9 @@ export default function ArtifactSidebar({
     <aside
       ref={sheetRef}
       className={`relative ${area} flex min-h-0 min-w-0 flex-col overflow-hidden bg-mantle ${
-        portrait ? 'border-b border-surface0' : 'border-l border-surface0'
+        // 세로에서는 위아래가 모두 다른 영역이다. 탭 바도 같은 mantle 이라
+        // 윗선이 없으면 탭 바에 붙은 한 덩어리로 보인다.
+        portrait ? 'border-y border-surface0' : 'border-l border-surface0'
       }`}
       style={portrait ? { height } : { width }}
     >
