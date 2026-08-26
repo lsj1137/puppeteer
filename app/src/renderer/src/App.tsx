@@ -123,11 +123,11 @@ const GRID_AREAS = {
     rail: 'col-start-1 row-start-1 row-end-5',
     header: 'col-start-2 row-start-1',
     home: 'col-start-2 row-start-1 row-end-5',
-    conversation: 'col-start-2 row-start-2',
     // Artifact 를 대화와 입력창 사이에 끼우면 «읽고 바로 답한다» 는 흐름이 끊긴다.
-    // 부수적인 패널이므로 맨 아래로 내리고 대화와 입력창을 붙여 둔다.
-    composer: 'col-start-2 row-start-3',
-    artifact: 'col-start-2 row-start-4',
+    // 참고용 패널이므로 탭 바로 아래에 붙여 두고 대화·입력창은 그대로 이어 둔다.
+    artifact: 'col-start-2 row-start-2',
+    conversation: 'col-start-2 row-start-3',
+    composer: 'col-start-2 row-start-4',
   },
 } as const
 
@@ -1070,8 +1070,8 @@ export default function App() {
         gridTemplateColumns: portrait
           ? `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr`
           : `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr ${artifactsOpen ? artifactW : 40}px`,
-        // 세로는 Artifact 가 대화 아래 칸을 쓴다. 접혀 있으면 손잡이 한 줄 높이다.
-        gridTemplateRows: portrait ? 'auto 1fr auto auto' : 'auto 1fr auto',
+        // 세로는 Artifact 가 탭 바로 아래 칸을 쓴다. 접혀 있으면 손잡이 한 줄 높이다.
+        gridTemplateRows: portrait ? 'auto auto 1fr auto' : 'auto 1fr auto',
       }}
     >
       {/* ── Rail ─────────────────────────────────── */}

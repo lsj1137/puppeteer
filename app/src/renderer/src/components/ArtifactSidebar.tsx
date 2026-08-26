@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelBottomClose, PanelBottomOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, PanelTopClose, PanelTopOpen, RefreshCw, Settings2 } from 'lucide-react'
 import type { ChangedFile, GitHistoryEntry, ProjectFileEntry, ProjectFilePreview, SessionWorktree, WorktreeStatus } from '@shared/session'
 import type { LayoutMode } from '../lib/layout-mode'
 import type { SessionView } from '../lib/session-view'
@@ -62,6 +62,7 @@ export default function ArtifactSidebar({
   const [worktreeStatus, setWorktreeStatus] = useState<WorktreeStatus>()
   const [gitLoading, setGitLoading] = useState(false)
   const initializedFileRoot = useRef<string | undefined>(undefined)
+  const sheetRef = useRef<HTMLElement>(null)
 
   const reloadGit = useCallback(async (): Promise<void> => {
     if (!rootPath) return
@@ -130,13 +131,17 @@ export default function ArtifactSidebar({
     localStorage.setItem('ws.sidebarTab', 'artifacts')
   }, [focusArtifactRequest])
   /**
-   * 가로에서는 좌측 모서리를 끌어 폭을, 세로에서는 위쪽 모서리를 끌어 높이를
+   * 가로에서는 좌측 모서리를 끌어 폭을, 세로에서는 아래쪽 모서리를 끌어 높이를
    * 바꾼다. 두 값은 따로 기억한다 — 배치를 오갈 때 서로 덮어쓰면 안 된다.
+   *
+   * 세로 시트는 탭 바 아래에 고정돼 있어 윗변 위치가 변하지 않는다. 그래서
+   * 창 높이가 아니라 시트 자신의 윗변에서 재야 커서와 모서리가 어긋나지 않는다.
    */
   const startResize = (event: React.PointerEvent): void => {
     event.preventDefault()
+    const top = sheetRef.current?.getBoundingClientRect().top ?? 0
     const move = (pointer: PointerEvent): void => {
-      if (portrait) setHeight(clampArtifactHeight(window.innerHeight - pointer.clientY, window.innerHeight))
+      if (portrait) setHeight(clampArtifactHeight(pointer.clientY - top, window.innerHeight))
       else setWidth(clampArtifactWidth(window.innerWidth - pointer.clientX))
     }
     const up = (): void => {
@@ -162,7 +167,7 @@ export default function ArtifactSidebar({
       <aside
         className={`${area} flex gap-2 border-surface0 bg-mantle ${
           portrait
-            ? 'items-center border-t px-2.5 py-1.5'
+            ? 'items-center border-b px-2.5 py-1.5'
             : 'flex-col items-center border-l py-2.5'
         }`}
       >
@@ -177,7 +182,7 @@ export default function ArtifactSidebar({
         >
           {portrait ? (
             <>
-              <PanelBottomOpen className="h-4 w-4" /> Artifacts
+              <PanelTopOpen className="h-4 w-4" /> Artifacts
             </>
           ) : (
             <PanelRightOpen className="h-4 w-4" />
@@ -199,12 +204,13 @@ export default function ArtifactSidebar({
 
   return (
     <aside
+      ref={sheetRef}
       className={`relative ${area} flex min-h-0 min-w-0 flex-col overflow-hidden bg-mantle ${
-        portrait ? 'border-t border-surface0' : 'border-l border-surface0'
+        portrait ? 'border-b border-surface0' : 'border-l border-surface0'
       }`}
       style={portrait ? { height } : { width }}
     >
-      {/* 끄는 모서리가 다르다 — 세로는 위쪽 가로줄, 가로는 좌측 세로줄 */}
+      {/* 끄는 모서리가 다르다 — 세로는 아래쪽 가로줄, 가로는 좌측 세로줄 */}
       {portrait && (
         <div
           onPointerDown={startResize}
@@ -214,7 +220,7 @@ export default function ArtifactSidebar({
           }}
           title={resizeHint}
           aria-label={resizeHint}
-          className="absolute left-0 top-0 z-10 h-1.5 w-full -translate-y-1/2 cursor-row-resize hover:bg-lavender/40"
+          className="absolute bottom-0 left-0 z-10 h-1.5 w-full translate-y-1/2 cursor-row-resize hover:bg-lavender/40"
         />
       )}
       {!portrait && (
@@ -251,7 +257,7 @@ export default function ArtifactSidebar({
         </div>
         <span className="flex-1" />
         <button onClick={onToggle} title="패널 접기" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
-          {portrait ? <PanelBottomClose className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
+          {portrait ? <PanelTopClose className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
         </button>
       </div>
 
