@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelBottomClose, PanelBottomOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
 import type { ChangedFile, GitHistoryEntry, ProjectFileEntry, ProjectFilePreview, SessionWorktree, WorktreeStatus } from '@shared/session'
 import type { LayoutMode } from '../lib/layout-mode'
 import type { SessionView } from '../lib/session-view'
@@ -158,21 +158,39 @@ export default function ArtifactSidebar({
 
   if (!open) {
     return (
-      <aside className={`${area} flex flex-col items-center gap-2 border-l border-surface0 bg-mantle py-2.5`}>
+      <aside
+        className={`${area} flex gap-2 border-surface0 bg-mantle ${
+          portrait
+            ? 'items-center border-t px-2.5 py-1.5'
+            : 'flex-col items-center border-l py-2.5'
+        }`}
+      >
         <button
           onClick={onToggle}
           title="Artifacts 펼치기"
-          className="rounded p-1.5 text-subtext0 hover:bg-surface0 hover:text-text"
+          className={
+            portrait
+              ? 'flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-subtext0 hover:bg-surface0 hover:text-text'
+              : 'rounded p-1.5 text-subtext0 hover:bg-surface0 hover:text-text'
+          }
         >
-          <PanelRightOpen className="h-4 w-4" />
+          {portrait ? (
+            <>
+              <PanelBottomOpen className="h-4 w-4" /> Artifacts
+            </>
+          ) : (
+            <PanelRightOpen className="h-4 w-4" />
+          )}
         </button>
         {view.artifacts.length > 0 && (
           <span className="rounded bg-sapphire/20 px-1 text-[11px] text-sapphire">
-            {view.artifacts.length}
+            {portrait ? `아티팩트 ${view.artifacts.length}` : view.artifacts.length}
           </span>
         )}
         {changes.length > 0 && (
-          <span className="rounded bg-peach/20 px-1 text-[11px] text-peach">{changes.length}</span>
+          <span className="rounded bg-peach/20 px-1 text-[11px] text-peach">
+            {portrait ? `변경 ${changes.length}` : changes.length}
+          </span>
         )}
       </aside>
     )
@@ -186,13 +204,23 @@ export default function ArtifactSidebar({
       style={portrait ? { height } : { width }}
     >
       <div
+        aria-label={`드래그로 ${portrait ? '높이' : '폭'} 조절 · 더블클릭으로 초기화`}
         onPointerDown={startResize}
         onDoubleClick={() => {
-          setWidth(380)
-          localStorage.setItem('ws.artifactW', '380')
+          if (portrait) {
+            setHeight(320)
+            localStorage.setItem('ws.artifactH', '320')
+          } else {
+            setWidth(380)
+            localStorage.setItem('ws.artifactW', '380')
+          }
         }}
         title="드래그로 폭 조절 · 더블클릭으로 초기화"
-        className="absolute left-0 top-0 z-10 h-full w-1.5 -translate-x-1/2 cursor-col-resize hover:bg-lavender/40"
+        className={`absolute left-0 top-0 z-10 hover:bg-lavender/40 ${
+          portrait
+            ? 'h-1.5 w-full -translate-y-1/2 cursor-row-resize'
+            : 'h-full w-1.5 -translate-x-1/2 cursor-col-resize'
+        }`}
       />
       <div className="flex shrink-0 items-center gap-1.5 px-2 py-2">
         <div className="flex min-w-0 items-center gap-0.5 rounded-lg bg-surface0/55 p-0.5">
@@ -217,7 +245,7 @@ export default function ArtifactSidebar({
         </div>
         <span className="flex-1" />
         <button onClick={onToggle} title="패널 접기" className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
-          <PanelRightClose className="h-3.5 w-3.5" />
+          {portrait ? <PanelBottomClose className="h-3.5 w-3.5" /> : <PanelRightClose className="h-3.5 w-3.5" />}
         </button>
       </div>
 
