@@ -124,8 +124,10 @@ const GRID_AREAS = {
     header: 'col-start-2 row-start-1',
     home: 'col-start-2 row-start-1 row-end-5',
     conversation: 'col-start-2 row-start-2',
-    artifact: 'col-start-2 row-start-3',
-    composer: 'col-start-2 row-start-4',
+    // Artifact 를 대화와 입력창 사이에 끼우면 «읽고 바로 답한다» 는 흐름이 끊긴다.
+    // 부수적인 패널이므로 맨 아래로 내리고 대화와 입력창을 붙여 둔다.
+    composer: 'col-start-2 row-start-3',
+    artifact: 'col-start-2 row-start-4',
   },
 } as const
 
