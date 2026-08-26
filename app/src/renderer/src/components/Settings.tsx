@@ -331,6 +331,7 @@ export default function Settings({
               <HelpGroup icon={Keyboard} title="빠른 이동" tips={[
                 ['Alt + ↑ / ↓', '프로젝트 이동'],
                 ['Alt + ← / →', '세션 이동'],
+                ['Ctrl + B', '왼쪽 사이드바 접기·펼치기'],
                 ['', '프로젝트와 세션 탭을 드래그해 순서 변경'],
                 ['', '대화를 위로 올리면 우측 아래 버튼으로 맨 아래 복귀'],
               ]} />

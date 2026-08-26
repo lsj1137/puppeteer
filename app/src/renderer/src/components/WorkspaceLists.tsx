@@ -16,10 +16,13 @@ interface Props {
   activeProjectPath?: string
   activeSessionId?: string
   approvals: ApprovalRequest[]
+  /** 레일이 접힘 — 프로젝트를 이니셜 버튼만으로 보여준다 */
+  collapsed?: boolean
   projects: StoredProject[]
   runners: DetectedRunner[]
   running: RunningSession[]
   onDropProject: (path: string) => void
+  onExpandRail?: () => void
   onJump: (sessionId: string, projectPath: string) => void | Promise<void>
   onOpenApproval: (approval: ApprovalRequest) => void | Promise<void>
   onPickFolder: () => void | Promise<void>
@@ -33,15 +36,21 @@ interface Props {
 const runnerLabel = (runner: DetectedRunner): string =>
   runnerEnvironmentLabel(runner) + (runner.version ? ` · ${runner.version}` : '')
 
+/** 접힌 레일의 프로젝트 아이콘에 쓸 한 글자. 한글·영문 모두 첫 글자면 충분히 구분된다. */
+const projectInitial = (project: StoredProject): string =>
+  (project.alias || baseName(project.path)).trim().charAt(0).toUpperCase() || '?'
+
 export default function WorkspaceLists(props: Props) {
   const {
     activeProjectPath,
     activeSessionId,
     approvals,
+    collapsed,
     projects,
     runners,
     running,
     onDropProject,
+    onExpandRail,
     onJump,
     onOpenApproval,
     onPickFolder,
@@ -100,6 +109,79 @@ export default function WorkspaceLists(props: Props) {
     }
   }
 
+
+  /**
+   * 접힌 레일. 프로젝트 전환은 여기서도 되어야 한다 — 프로젝트를 바꾸겠다고
+   * 매번 레일을 펼쳤다 접는 건 접는 의미가 없다.
+   */
+  if (collapsed) {
+    const firstApproval = approvals[0]
+    return (
+      <div className="flex w-full flex-col items-center gap-1">
+        {firstApproval && (
+          <button
+            onClick={() => void onOpenApproval(firstApproval)}
+            title={`승인 대기 ${approvals.length}건`}
+            aria-label={`승인 대기 ${approvals.length}건`}
+            className="relative rounded-md p-2 text-peach hover:bg-peach/10"
+          >
+            <ShieldAlert className="h-4 w-4" />
+            <span className="absolute -right-0.5 -top-0.5 rounded-full bg-peach px-1 text-[9px] font-medium leading-[14px] text-crust">
+              {approvals.length}
+            </span>
+          </button>
+        )}
+        {running.length > 0 && (
+          <button
+            onClick={onExpandRail}
+            title={`실행 중 ${running.length}건 — 펼쳐서 보기`}
+            aria-label={`실행 중 ${running.length}건`}
+            className="relative rounded-md p-2 text-green hover:bg-surface0"
+          >
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="absolute -right-0.5 -top-0.5 rounded-full bg-green px-1 text-[9px] font-medium leading-[14px] text-crust">
+              {running.length}
+            </span>
+          </button>
+        )}
+
+        {(firstApproval || running.length > 0) && projects.length > 0 && (
+          <span className="my-0.5 h-px w-6 bg-surface0" />
+        )}
+
+        {projects.map((project) => {
+          const active = project.path === activeProjectPath
+          const live = running.filter(({ projectPath }) => projectPath === project.path).length
+          return (
+            <button
+              key={project.path}
+              onClick={() => void onSelectProject(project.path)}
+              title={project.alias ? `${project.alias}\n${project.path}` : project.path}
+              className={`relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[13px] font-medium transition ${
+                active
+                  ? 'bg-surface1 text-text ring-1 ring-lavender/50'
+                  : 'bg-surface0/60 text-subtext0 hover:bg-surface0 hover:text-text'
+              }`}
+            >
+              {projectInitial(project)}
+              {live > 0 && (
+                <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-green ring-2 ring-mantle" />
+              )}
+            </button>
+          )
+        })}
+
+        <button
+          onClick={() => void onPickFolder()}
+          title="폴더 추가"
+          aria-label="폴더 추가"
+          className="rounded-md p-2 text-subtext0 hover:bg-surface0 hover:text-text"
+        >
+          <FolderPlus className="h-4 w-4" />
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>

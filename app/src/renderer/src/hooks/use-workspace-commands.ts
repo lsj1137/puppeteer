@@ -7,6 +7,7 @@ import {
   Loader2,
   MessageSquarePlus,
   Moon,
+  PanelLeftOpen,
   PanelRightOpen,
   Plus,
   ShieldAlert,
@@ -32,6 +33,7 @@ interface WorkspaceCommandOptions {
   agents: AgentDef[]
   activeProjectPath?: string
   artifactsOpen: boolean
+  railOpen: boolean
   theme: 'dark' | 'light'
   activeRunner?: DetectedRunner
   approvals: ApprovalRequest[]
@@ -45,6 +47,7 @@ interface WorkspaceCommandOptions {
   onNewAgent: (projectPath: string) => void
   onDeleteSession: (session: StoredSession) => void
   onToggleArtifacts: () => void
+  onToggleRail: () => void
   onToggleTheme: () => void
   onPickFolder: () => void
   onChooseRunner: () => void
@@ -59,6 +62,7 @@ export function useWorkspaceCommands({
   agents,
   activeProjectPath,
   artifactsOpen,
+  railOpen,
   theme,
   activeRunner,
   approvals,
@@ -72,6 +76,7 @@ export function useWorkspaceCommands({
   onNewAgent,
   onDeleteSession,
   onToggleArtifacts,
+  onToggleRail,
   onToggleTheme,
   onPickFolder,
   onChooseRunner,
@@ -105,6 +110,14 @@ export function useWorkspaceCommands({
       label: artifactsOpen ? 'Artifacts 패널 접기' : 'Artifacts 패널 펼치기',
       icon: PanelRightOpen,
       run: onToggleArtifacts,
+    },
+    {
+      id: 'act:rail',
+      group: '명령',
+      label: railOpen ? '사이드바 접기' : '사이드바 펼치기',
+      hint: 'Ctrl+B',
+      icon: PanelLeftOpen,
+      run: onToggleRail,
     },
     {
       id: 'act:theme',

@@ -9,6 +9,8 @@ import {
   KeyRound,
   Loader2,
   LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Settings2,
   ShieldAlert,
@@ -88,6 +90,17 @@ const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   'auth-required': { label: '로그인 필요', color: 'text-yellow' },
 }
 
+const RAIL_WIDTH = 264
+/** 접힌 레일 — 아이콘 하나(32) + 좌우 여백이 들어가는 최소 폭 */
+const RAIL_COLLAPSED_WIDTH = 52
+
+const RAIL_SCREENS = [
+  { id: 'agents', label: 'Agents', icon: Bot, tone: 'text-mauve' },
+  { id: 'memory', label: 'Memory', icon: Brain, tone: 'text-teal' },
+  { id: 'skills', label: 'Skills', icon: WandSparkles, tone: 'text-yellow' },
+  { id: 'overview', label: 'Overview', icon: LayoutDashboard, tone: 'text-sapphire' },
+] as const
+
 /**
  * 큰 이미지는 `String.fromCharCode(...arr)` 로 한 번에 못 바꾼다.
  * 인자 개수 제한에 걸려 RangeError 가 난다(스크린샷 몇 MB면 바로 터짐).
@@ -132,7 +145,6 @@ export default function App() {
   const [annotating, setAnnotating] = useState<number>()
   /** 프로젝트 화면 / 전역 화면(Overview·Agents) 전환 */
   const [screen, setScreen] = useState<'project' | 'overview' | 'agents' | 'memory' | 'skills'>('project')
-  const showOverview = screen === 'overview'
   const showAgents = screen === 'agents'
   const showMemory = screen === 'memory'
   const showSkills = screen === 'skills'
@@ -182,6 +194,7 @@ export default function App() {
   const [artifactW, setArtifactW] = useState(
     () => clampArtifactWidth(Number(localStorage.getItem('ws.artifactW')) || 380),
   )
+  const [railOpen, setRailOpen] = useState(() => localStorage.getItem('ws.rail') !== 'closed')
 
   const refresh = useCallback(async (projectPath?: string) => {
     const [nextRunning, nextCost] = await Promise.all([
@@ -236,6 +249,12 @@ export default function App() {
     setArtifactsOpen((v) => {
       localStorage.setItem('ws.artifacts', v ? 'closed' : 'open')
       return !v
+    })
+  }
+  function toggleRail(): void {
+    setRailOpen((open) => {
+      localStorage.setItem('ws.rail', open ? 'closed' : 'open')
+      return !open
     })
   }
   const theme = useTheme()
@@ -569,12 +588,17 @@ export default function App() {
     return () => window.removeEventListener('paste', onPaste)
   }, [active])
 
-  // Command Palette — Ctrl+Space
+  // Command Palette — Ctrl+Space · 사이드바 접기·펼치기 — Ctrl+B
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.ctrlKey && e.code === 'Space') {
         e.preventDefault()
         setPaletteOpen((v) => !v)
+        return
+      }
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'KeyB') {
+        e.preventDefault()
+        toggleRail()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -960,6 +984,7 @@ export default function App() {
     agents,
     activeProjectPath: active,
     artifactsOpen,
+    railOpen,
     theme,
     activeRunner,
     approvals,
@@ -978,6 +1003,7 @@ export default function App() {
       setConfirmDelSession(session)
     },
     onToggleArtifacts: toggleArtifacts,
+    onToggleRail: toggleRail,
     onToggleTheme: toggleTheme,
     onPickFolder: () => void pickFolder(),
     onChooseRunner: () => setPendingPick(''),
@@ -989,17 +1015,23 @@ export default function App() {
   return (
     <div
       className="grid h-full min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden bg-base text-text"
-      style={{ gridTemplateColumns: `264px 1fr ${artifactsOpen ? artifactW : 40}px` }}
+      style={{
+        gridTemplateColumns: `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr ${artifactsOpen ? artifactW : 40}px`,
+      }}
     >
       {/* ── Rail ─────────────────────────────────── */}
-      <aside className="col-start-1 row-start-1 row-end-4 flex flex-col gap-3.5 overflow-auto border-r border-surface0 bg-mantle p-2.5">
-        <div className="flex items-center gap-2 px-1 pt-1">
+      <aside
+        className={`col-start-1 row-start-1 row-end-4 flex flex-col overflow-y-auto overflow-x-hidden border-r border-surface0 bg-mantle ${
+          railOpen ? 'gap-3.5 p-2.5' : 'items-center gap-2 px-1.5 py-2.5'
+        }`}
+      >
+        <div className={railOpen ? 'flex items-center gap-2 px-1 pt-1' : 'flex flex-col items-center gap-1'}>
           <img
             src={theme === 'light' ? puppeteerLightIcon : puppeteerDarkIcon}
             alt=""
-            className="h-6 w-6 rounded-md"
+            className="h-6 w-6 shrink-0 rounded-md"
           />
-          <span className="flex-1 text-sm font-semibold">Puppeteer</span>
+          {railOpen && <span className="flex-1 truncate text-sm font-semibold">Puppeteer</span>}
           <button
             onClick={() => setSettingsOpen(true)}
             title="설정"
@@ -1010,54 +1042,46 @@ export default function App() {
               <span className="absolute right-0 top-0 h-1.5 w-1.5 rounded-full bg-mauve ring-2 ring-mantle" />
             )}
           </button>
-        </div>
-
-        <div className="flex flex-col gap-0.5">
           <button
-            onClick={() => setScreen('agents')}
-            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-              showAgents ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
-            }`}
+            onClick={toggleRail}
+            title={railOpen ? '사이드바 접기' : '사이드바 펼치기'}
+            aria-label={railOpen ? '사이드바 접기' : '사이드바 펼치기'}
+            aria-expanded={railOpen}
+            className="rounded-md p-1 text-overlay1 hover:bg-surface0 hover:text-text"
           >
-            <Bot className="h-4 w-4 text-mauve" />
-            Agents
-            {agents.length > 0 && (
-              <span className="ml-auto text-[11px] text-overlay1">{agents.length}</span>
+            {railOpen ? (
+              <PanelLeftClose className="h-4 w-4" />
+            ) : (
+              <PanelLeftOpen className="h-4 w-4" />
             )}
           </button>
+        </div>
 
-          <button
-            onClick={() => setScreen('memory')}
-            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-              showMemory ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
-            }`}
-          >
-            <Brain className="h-4 w-4 text-teal" />
-            Memory
-          </button>
-
-          <button
-            onClick={() => setScreen('skills')}
-            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-              showSkills ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
-            }`}
-          >
-            <WandSparkles className="h-4 w-4 text-yellow" />
-            Skills
-          </button>
-
-          <button
-            onClick={() => setScreen('overview')}
-            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-sm ${
-              showOverview ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'
-            }`}
-          >
-            <LayoutDashboard className="h-4 w-4 text-sapphire" />
-            Overview
-          </button>
+        <div className={`flex w-full flex-col ${railOpen ? 'gap-0.5' : 'items-center gap-1'}`}>
+          {RAIL_SCREENS.map(({ id, label, icon: Icon, tone }) => {
+            const current = screen === id
+            return (
+              <button
+                key={id}
+                onClick={() => setScreen(id)}
+                title={railOpen ? undefined : label}
+                aria-label={label}
+                className={`flex items-center rounded-md text-sm ${
+                  railOpen ? 'gap-2 px-2 py-1.5' : 'justify-center p-2'
+                } ${current ? 'bg-surface0 text-text' : 'text-subtext1 hover:bg-surface0/50'}`}
+              >
+                <Icon className={`h-4 w-4 ${tone}`} />
+                {railOpen && label}
+                {railOpen && id === 'agents' && agents.length > 0 && (
+                  <span className="ml-auto text-[11px] text-overlay1">{agents.length}</span>
+                )}
+              </button>
+            )
+          })}
         </div>
 
         <WorkspaceLists
+          collapsed={!railOpen}
           activeProjectPath={active}
           activeSessionId={activeSession}
           approvals={approvals}
@@ -1065,6 +1089,7 @@ export default function App() {
           runners={runners}
           running={running}
           onDropProject={setConfirmDrop}
+          onExpandRail={() => setRailOpen(true)}
           onJump={jumpTo}
           onOpenApproval={openApproval}
           onPickFolder={pickFolder}
@@ -1076,10 +1101,12 @@ export default function App() {
         />
 
         <UsageSummary
+          collapsed={!railOpen}
           cost={cost}
           limit={limit}
           sessionCost={view.cost}
           sessionTokens={view.tokens}
+          onExpandRail={() => setRailOpen(true)}
         />
       </aside>
 

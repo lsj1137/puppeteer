@@ -4,13 +4,23 @@ import type { CostTotals } from '@shared/session'
 import { formatTokens } from '../lib/session-view'
 
 interface Props {
+  /** 레일이 접힘 — 퍼센트만 세로로 보여주고 누르면 레일을 펼친다 */
+  collapsed?: boolean
   cost: CostTotals
   limit?: { ratio: number; label: string; remain: string }
   sessionCost: number
   sessionTokens: number
+  onExpandRail?: () => void
 }
 
-export default function UsageSummary({ cost, limit, sessionCost, sessionTokens }: Props) {
+export default function UsageSummary({
+  collapsed,
+  cost,
+  limit,
+  sessionCost,
+  sessionTokens,
+  onExpandRail,
+}: Props) {
   const [expanded, setExpanded] = useState(
     () => localStorage.getItem('ws.usageExpanded') === 'true',
   )
@@ -20,6 +30,35 @@ export default function UsageSummary({ cost, limit, sessionCost, sessionTokens }
       localStorage.setItem('ws.usageExpanded', String(!current))
       return !current
     })
+  }
+
+  if (collapsed) {
+    return (
+      <button
+        type="button"
+        onClick={onExpandRail}
+        title={
+          percent === undefined
+            ? '사용량 — 펼쳐서 보기'
+            : `사용량 ${percent}% · ${limit?.label} 한도 · ${limit?.remain} 남음`
+        }
+        aria-label="사용량 펼쳐서 보기"
+        className="mt-auto flex w-full flex-col items-center gap-1 rounded-md pt-2.5 text-overlay1 hover:text-text"
+      >
+        <Gauge className="h-3.5 w-3.5" />
+        <span className="flex h-10 w-1.5 flex-col justify-end overflow-hidden rounded-full bg-surface0">
+          <span
+            className={`block w-full rounded-full transition-all ${
+              (limit?.ratio ?? 0) > 0.85 ? 'bg-peach' : 'bg-green'
+            }`}
+            style={{ height: `${percent ?? 0}%` }}
+          />
+        </span>
+        <span className="font-mono text-[9px] tabular-nums text-subtext1">
+          {percent === undefined ? '--' : percent}
+        </span>
+      </button>
+    )
   }
 
   if (!expanded) {
