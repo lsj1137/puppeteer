@@ -50,6 +50,7 @@ export default function ArtifactSidebar({
   setHeight,
 }: Props) {
   const portrait = layout === 'portrait'
+  const resizeHint = `드래그로 ${portrait ? '높이' : '폭'} 조절 · 더블클릭으로 초기화`
   const [tab, setTab] = useState<'instructions' | 'git' | 'artifacts' | 'files'>(() =>
     (localStorage.getItem('ws.sidebarTab') as 'instructions' | 'git' | 'artifacts' | 'files') || 'artifacts',
   )
@@ -204,7 +205,6 @@ export default function ArtifactSidebar({
       style={portrait ? { height } : { width }}
     >
       <div
-        aria-label={`드래그로 ${portrait ? '높이' : '폭'} 조절 · 더블클릭으로 초기화`}
         onPointerDown={startResize}
         onDoubleClick={() => {
           if (portrait) {
@@ -216,6 +216,7 @@ export default function ArtifactSidebar({
           }
         }}
         title="드래그로 폭 조절 · 더블클릭으로 초기화"
+        aria-label={resizeHint}
         className={`absolute left-0 top-0 z-10 hover:bg-lavender/40 ${
           portrait
             ? 'h-1.5 w-full -translate-y-1/2 cursor-row-resize'
