@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Bell, Bot, Download, GitMerge, HelpCircle, ImagePlus, Keyboard, Moon, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
+import { Bell, Bot, Download, GitMerge, HelpCircle, ImagePlus, Keyboard, Maximize2, Moon, PanelBottom, PanelRight, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
 import type { DetectedRunner, WorktreeIntegrationMode } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import type { AppUpdateState } from '@shared/app-update'
+import { setLayoutPreference, useLayoutPreference } from '../hooks/use-layout-mode'
 
 /** 라벨 옆 물음표. 설명은 평소엔 숨고 필요할 때만 나온다. */
 function Hint({ text }: { text: string }): React.ReactElement {
@@ -60,6 +61,7 @@ export default function Settings({
   onClose: () => void
 }) {
   const [showHelp, setShowHelp] = useState(false)
+  const layoutPreference = useLayoutPreference()
 
   const Row = ({
     label,
@@ -135,6 +137,33 @@ export default function Settings({
               <Choice on={theme === 'light'} onPick={() => theme !== 'light' && onToggleTheme()}>
                 <Sun className="h-3.5 w-3.5" /> 라이트
               </Choice>
+            </div>
+          </Row>
+
+          <Row
+            label="화면 배치"
+            hint="자동은 창이 넓으면 가로, 높으면 세로로 바꿉니다. 배치가 바뀌는 게 거슬리면 하나로 고정하세요."
+          >
+            <div className="flex gap-1.5">
+              <Choice on={layoutPreference === 'auto'} onPick={() => setLayoutPreference('auto')}>
+                <Maximize2 className="h-3.5 w-3.5" /> 자동
+              </Choice>
+              <Choice
+                on={layoutPreference === 'landscape'}
+                onPick={() => setLayoutPreference('landscape')}
+              >
+                <PanelRight className="h-3.5 w-3.5" /> 가로 고정
+              </Choice>
+              <Choice
+                on={layoutPreference === 'portrait'}
+                onPick={() => setLayoutPreference('portrait')}
+              >
+                <PanelBottom className="h-3.5 w-3.5" /> 세로 고정
+              </Choice>
+            </div>
+            <div className="mt-1.5 text-[11px] leading-relaxed text-overlay1">
+              가로는 Artifacts 를 오른쪽에, 세로는 대화 아래에 둡니다. 세로에서는 왼쪽 사이드바가
+              접힌 채로 시작하며 접기·펼치기 상태는 배치별로 따로 기억합니다.
             </div>
           </Row>
 
@@ -334,6 +363,12 @@ export default function Settings({
                 ['Ctrl + B', '왼쪽 사이드바 접기·펼치기'],
                 ['', '프로젝트와 세션 탭을 드래그해 순서 변경'],
                 ['', '대화를 위로 올리면 우측 아래 버튼으로 맨 아래 복귀'],
+              ]} />
+              <HelpGroup icon={PanelBottom} title="화면 배치" tips={[
+                ['', '사이드바를 접으면 프로젝트가 첫 글자 버튼으로 남아 전환은 그대로 됩니다'],
+                ['', '창이 너비보다 높아지면 세로 배치로 바뀌고 Artifacts 가 대화 아래로 내려갑니다'],
+                ['', '세로에서는 사이드바가 접힌 채 시작하고, 접기 상태는 배치별로 따로 기억합니다'],
+                ['', '바뀌는 게 거슬리면 설정의 화면 배치에서 가로나 세로로 고정합니다'],
               ]} />
               <HelpGroup icon={Keyboard} title="저장과 승인" tips={[
                 ['Ctrl/Cmd + S', 'Memory 저장'],

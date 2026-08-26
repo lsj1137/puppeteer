@@ -158,7 +158,7 @@ export default function ArtifactSidebar({
 
   if (!open) {
     return (
-      <aside className="col-start-3 row-start-2 row-end-4 flex flex-col items-center gap-2 border-l border-surface0 bg-mantle py-2.5">
+      <aside className={`${area} flex flex-col items-center gap-2 border-l border-surface0 bg-mantle py-2.5`}>
         <button
           onClick={onToggle}
           title="Artifacts 펼치기"
@@ -180,8 +180,10 @@ export default function ArtifactSidebar({
 
   return (
     <aside
-      className="relative col-start-3 row-start-2 row-end-4 flex min-h-0 flex-col overflow-hidden border-l border-surface0 bg-mantle"
-      style={{ width }}
+      className={`relative ${area} flex min-h-0 min-w-0 flex-col overflow-hidden bg-mantle ${
+        portrait ? 'border-t border-surface0' : 'border-l border-surface0'
+      }`}
+      style={portrait ? { height } : { width }}
     >
       <div
         onPointerDown={startResize}
