@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, RefreshCw, Settings2 } from 'lucide-react'
 import type { ChangedFile, GitHistoryEntry, ProjectFileEntry, ProjectFilePreview, SessionWorktree, WorktreeStatus } from '@shared/session'
+import type { LayoutMode } from '../lib/layout-mode'
 import type { SessionView } from '../lib/session-view'
-import { clampArtifactWidth } from '../lib/session-view'
+import { clampArtifactHeight, clampArtifactWidth } from '../lib/session-view'
 import ArtifactPanel from './ArtifactPanel'
 import Code from './Code'
 
 interface Props {
+  /** 그리드 칸 — 가로는 우측 열, 세로는 대화 아래 행이다 */
+  area: string
   changes: ChangedFile[]
+  layout: LayoutMode
   open: boolean
   focusArtifactRequest: number
   selectedId?: string
   view: SessionView
   width: number
+  height: number
   rootPath?: string
   sessionId?: string
   worktree?: SessionWorktree | null
@@ -21,15 +26,19 @@ interface Props {
   onSelect: (id: string) => void
   onToggle: () => void
   setWidth: Dispatch<SetStateAction<number>>
+  setHeight: Dispatch<SetStateAction<number>>
 }
 
 export default function ArtifactSidebar({
+  area,
   changes,
+  layout,
   open,
   focusArtifactRequest,
   selectedId,
   view,
   width,
+  height,
   rootPath,
   sessionId,
   worktree,
@@ -38,7 +47,9 @@ export default function ArtifactSidebar({
   onSelect,
   onToggle,
   setWidth,
+  setHeight,
 }: Props) {
+  const portrait = layout === 'portrait'
   const [tab, setTab] = useState<'instructions' | 'git' | 'artifacts' | 'files'>(() =>
     (localStorage.getItem('ws.sidebarTab') as 'instructions' | 'git' | 'artifacts' | 'files') || 'artifacts',
   )
@@ -117,21 +128,29 @@ export default function ArtifactSidebar({
     setTab('artifacts')
     localStorage.setItem('ws.sidebarTab', 'artifacts')
   }, [focusArtifactRequest])
+  /**
+   * 가로에서는 좌측 모서리를 끌어 폭을, 세로에서는 위쪽 모서리를 끌어 높이를
+   * 바꾼다. 두 값은 따로 기억한다 — 배치를 오갈 때 서로 덮어쓰면 안 된다.
+   */
   const startResize = (event: React.PointerEvent): void => {
     event.preventDefault()
-    const move = (pointer: PointerEvent): void =>
-      setWidth(clampArtifactWidth(window.innerWidth - pointer.clientX))
+    const move = (pointer: PointerEvent): void => {
+      if (portrait) setHeight(clampArtifactHeight(window.innerHeight - pointer.clientY, window.innerHeight))
+      else setWidth(clampArtifactWidth(window.innerWidth - pointer.clientX))
+    }
     const up = (): void => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
-      setWidth((current) => {
-        localStorage.setItem('ws.artifactW', String(current))
+      const remember = portrait ? setHeight : setWidth
+      const key = portrait ? 'ws.artifactH' : 'ws.artifactW'
+      remember((current) => {
+        localStorage.setItem(key, String(current))
         return current
       })
     }
-    document.body.style.cursor = 'col-resize'
+    document.body.style.cursor = portrait ? 'row-resize' : 'col-resize'
     document.body.style.userSelect = 'none'
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)

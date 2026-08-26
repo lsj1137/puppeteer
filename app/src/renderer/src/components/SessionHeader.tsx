@@ -52,6 +52,8 @@ const RunnerIcon = ({ runner, className }: { runner: DetectedRunner; className?:
   runner.kind === 'wsl' ? <Terminal className={className} /> : <Monitor className={className} />
 
 interface SessionHeaderProps {
+  /** 그리드 칸 — 가로·세로 배치에서 차지하는 열·행이 다르다 */
+  area: string
   tabBarRef: RefObject<HTMLDivElement | null>
   activeSessionId?: string
   visibleTabs: StoredSession[]
@@ -81,6 +83,7 @@ type ComposerPanel = 'runner' | 'agent' | 'approval' | 'model' | 'commit'
 
 /** 프로젝트 화면 상단의 세션 탭과 세션별 실행 설정. */
 export default function SessionHeader({
+  area,
   tabBarRef,
   activeSessionId,
   visibleTabs,
@@ -121,7 +124,7 @@ export default function SessionHeader({
   }
 
   return (
-    <div className="col-start-2 col-end-4 row-start-1 z-20 flex items-end bg-mantle pl-2 pr-2 pt-1">
+    <div className={`${area} z-20 flex min-w-0 items-end bg-mantle pl-2 pr-2 pt-1`}>
       <div ref={tabBarRef} className="flex min-w-0 flex-1 items-end gap-0.5">
         <button
           onClick={onNewSession}

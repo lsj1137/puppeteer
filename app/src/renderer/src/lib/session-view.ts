@@ -203,6 +203,17 @@ export const timeLabel = (ms: number): string =>
 export const clampArtifactWidth = (width: number): number =>
   Math.max(280, Math.min(760, Math.round(width)))
 
+/**
+ * 세로 배치에서 Artifact 시트가 차지할 높이.
+ *
+ * 위쪽 한계는 창 높이에 맞춰 잡는다 — 고정값으로 두면 낮은 창에서 대화가
+ * 아예 안 보이는 높이까지 끌 수 있다. 창 높이를 모르면 상한만 뺀다.
+ */
+export const clampArtifactHeight = (height: number, windowHeight?: number): number => {
+  const ceiling = windowHeight ? Math.max(220, Math.round(windowHeight * 0.7)) : 900
+  return Math.max(160, Math.min(ceiling, Math.round(height)))
+}
+
 const MIN_TAB = 116
 const TAB_RESERVE = 44
 

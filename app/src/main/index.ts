@@ -129,7 +129,9 @@ function createWindow(getActiveWorkCount: () => number, onConfirmedClose: () => 
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1100,
+    // 세로 배치로 넘어가려면 높이가 너비를 넘겨야 한다. 최소 폭이 1100 이면
+    // 높이 1100 이 넘는 창에서만 세로가 되는데 그런 화면은 드물다.
+    minWidth: 760,
     minHeight: 700,
     show: false,
     autoHideMenuBar: true,

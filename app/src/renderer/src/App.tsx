@@ -54,9 +54,11 @@ import type {
 } from '@shared/session'
 import {
   EMPTY_SESSION_VIEW,
+  clampArtifactHeight,
   clampArtifactWidth,
   splitSessionTabs,
 } from './lib/session-view'
+import { useLayoutMode } from './hooks/use-layout-mode'
 import { useSessionViews } from './hooks/use-session-views'
 import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
@@ -100,6 +102,32 @@ const RAIL_SCREENS = [
   { id: 'skills', label: 'Skills', icon: WandSparkles, tone: 'text-yellow' },
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, tone: 'text-sapphire' },
 ] as const
+
+/**
+ * 그리드 칸 배정.
+ *
+ * 가로는 3열(레일·대화·Artifact) × 3행, 세로는 2열(레일·본문) × 4행이고
+ * Artifact 가 우측 칸에서 대화 아래 칸으로 내려간다. 좌표를 컴포넌트마다
+ * 하드코딩하면 배치를 바꿀 때 한 군데만 빠뜨려도 겹쳐 그려진다.
+ */
+const GRID_AREAS = {
+  landscape: {
+    rail: 'col-start-1 row-start-1 row-end-4',
+    header: 'col-start-2 col-end-4 row-start-1',
+    home: 'col-start-2 col-end-4 row-start-1 row-end-4',
+    conversation: 'col-start-2 row-start-2',
+    artifact: 'col-start-3 row-start-2 row-end-4',
+    composer: 'col-start-2 row-start-3',
+  },
+  portrait: {
+    rail: 'col-start-1 row-start-1 row-end-5',
+    header: 'col-start-2 row-start-1',
+    home: 'col-start-2 row-start-1 row-end-5',
+    conversation: 'col-start-2 row-start-2',
+    artifact: 'col-start-2 row-start-3',
+    composer: 'col-start-2 row-start-4',
+  },
+} as const
 
 /**
  * 큰 이미지는 `String.fromCharCode(...arr)` 로 한 번에 못 바꾼다.
@@ -194,7 +222,21 @@ export default function App() {
   const [artifactW, setArtifactW] = useState(
     () => clampArtifactWidth(Number(localStorage.getItem('ws.artifactW')) || 380),
   )
-  const [railOpen, setRailOpen] = useState(() => localStorage.getItem('ws.rail') !== 'closed')
+  const [artifactH, setArtifactH] = useState(
+    () => clampArtifactHeight(Number(localStorage.getItem('ws.artifactH')) || 320),
+  )
+  const layout = useLayoutMode()
+  const portrait = layout === 'portrait'
+  const areas = GRID_AREAS[layout]
+  /**
+   * 레일 상태를 배치별로 따로 기억한다. 가로에서 펼쳐 두고 세로로 넘어가면
+   * 좁은 창의 3분의 1을 레일이 먹는다 — 세로는 접힘에서 시작한다.
+   */
+  const [railOpenByLayout, setRailOpenByLayout] = useState(() => ({
+    landscape: localStorage.getItem('ws.rail') !== 'closed',
+    portrait: localStorage.getItem('ws.rail.portrait') === 'open',
+  }))
+  const railOpen = railOpenByLayout[layout]
 
   const refresh = useCallback(async (projectPath?: string) => {
     const [nextRunning, nextCost] = await Promise.all([
@@ -251,11 +293,16 @@ export default function App() {
       return !v
     })
   }
+  function setRail(open: boolean): void {
+    if (railOpen === open) return
+    localStorage.setItem(
+      layout === 'portrait' ? 'ws.rail.portrait' : 'ws.rail',
+      open ? 'open' : 'closed',
+    )
+    setRailOpenByLayout((current) => ({ ...current, [layout]: open }))
+  }
   function toggleRail(): void {
-    setRailOpen((open) => {
-      localStorage.setItem('ws.rail', open ? 'closed' : 'open')
-      return !open
-    })
+    setRail(!railOpen)
   }
   const theme = useTheme()
 
@@ -603,7 +650,9 @@ export default function App() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [])
+    // toggleRail 은 현재 배치와 레일 상태를 읽는다 — 둘이 바뀌면 다시 건다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layout, railOpen])
   // Alt+↑/↓ 프로젝트 이동 · Alt+←/→ 현재 프로젝트의 세션 이동
   useEffect(() => {
     const onNavigate = (event: KeyboardEvent): void => {
@@ -1014,14 +1063,18 @@ export default function App() {
 
   return (
     <div
-      className="grid h-full min-w-0 grid-rows-[auto_1fr_auto] overflow-hidden bg-base text-text"
+      className="grid h-full min-w-0 overflow-hidden bg-base text-text"
       style={{
-        gridTemplateColumns: `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr ${artifactsOpen ? artifactW : 40}px`,
+        gridTemplateColumns: portrait
+          ? `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr`
+          : `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr ${artifactsOpen ? artifactW : 40}px`,
+        // 세로는 Artifact 가 대화 아래 칸을 쓴다. 접혀 있으면 손잡이 한 줄 높이다.
+        gridTemplateRows: portrait ? 'auto 1fr auto auto' : 'auto 1fr auto',
       }}
     >
       {/* ── Rail ─────────────────────────────────── */}
       <aside
-        className={`col-start-1 row-start-1 row-end-4 flex flex-col overflow-y-auto overflow-x-hidden border-r border-surface0 bg-mantle ${
+        className={`${areas.rail} flex flex-col overflow-y-auto overflow-x-hidden border-r border-surface0 bg-mantle ${
           railOpen ? 'gap-3.5 p-2.5' : 'items-center gap-2 px-1.5 py-2.5'
         }`}
       >
@@ -1089,7 +1142,7 @@ export default function App() {
           runners={runners}
           running={running}
           onDropProject={setConfirmDrop}
-          onExpandRail={() => setRailOpen(true)}
+          onExpandRail={() => setRail(true)}
           onJump={jumpTo}
           onOpenApproval={openApproval}
           onPickFolder={pickFolder}
@@ -1106,13 +1159,14 @@ export default function App() {
           limit={limit}
           sessionCost={view.cost}
           sessionTokens={view.tokens}
-          onExpandRail={() => setRailOpen(true)}
+          onExpandRail={() => setRail(true)}
         />
       </aside>
 
       {/* ── Session Tabs ─────────────────────────── */}
       {!showHome && active && (
         <SessionHeader
+          area={areas.header}
           tabBarRef={tabBarRef}
           activeSessionId={activeSession}
           visibleTabs={visibleTabs}
@@ -1144,7 +1198,7 @@ export default function App() {
 
       {/* ── Conversation / Overview / Agents ─────── */}
       {showHome ? (
-        <main className="col-start-2 col-end-4 row-start-1 row-end-4 min-h-0 overflow-hidden">
+        <main className={`${areas.home} min-h-0 overflow-hidden`}>
           {showSkills ? (
             <SkillsScreen projects={projects} agents={agents} />
           ) : showMemory ? (
@@ -1189,7 +1243,7 @@ export default function App() {
         }}
         onWheel={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
         onTouchMove={() => window.dispatchEvent(new Event('workspace:user-interaction'))}
-        className="col-start-2 row-start-2 flex min-w-0 flex-col overflow-y-auto overflow-x-hidden px-5 py-4 [overflow-wrap:anywhere]"
+        className={`${areas.conversation} flex min-w-0 flex-col overflow-y-auto overflow-x-hidden px-5 py-4 [overflow-wrap:anywhere]`}
       >
         {/* 위로 스크롤됐을 때만 페이드를 띄운다. 항상 띄우면 첫 메시지를 가린다. */}
         <div
@@ -1264,7 +1318,7 @@ export default function App() {
           onClick={openInlineApprovals}
           title="하단 승인 요청 보기"
           aria-label={`승인 요청 ${myApprovals.length}개 보기`}
-          className={`col-start-2 row-start-2 z-20 mb-14 mr-3 self-end justify-self-end items-center gap-1.5 rounded-full border border-peach/40 bg-mantle/95 px-3 py-1.5 text-[11px] font-medium text-peach shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:bg-peach/10 ${myApprovals.length > 0 ? 'flex' : 'hidden'}`}
+          className={`${areas.conversation} z-20 mb-14 mr-3 self-end justify-self-end items-center gap-1.5 rounded-full border border-peach/40 bg-mantle/95 px-3 py-1.5 text-[11px] font-medium text-peach shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:bg-peach/10 ${myApprovals.length > 0 ? 'flex' : 'hidden'}`}
         >
           <ShieldAlert className="h-3.5 w-3.5" /> 승인 요청 {myApprovals.length}
         </button>
@@ -1279,7 +1333,7 @@ export default function App() {
           }}
           title="대화 맨 아래로"
           aria-label="대화 맨 아래로"
-          className="col-start-2 row-start-2 z-20 mb-3 mr-3 flex h-8 w-8 self-end justify-self-end items-center justify-center rounded-full border border-surface1 bg-mantle/95 text-subtext0 shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:bg-surface0 hover:text-text"
+          className={`${areas.conversation} z-20 mb-3 mr-3 flex h-8 w-8 self-end justify-self-end items-center justify-center rounded-full border border-surface1 bg-mantle/95 text-subtext0 shadow-lg backdrop-blur transition hover:-translate-y-0.5 hover:bg-surface0 hover:text-text`}
         >
           <ArrowDown className="h-4 w-4" />
         </button>
@@ -1288,9 +1342,13 @@ export default function App() {
       {/* ── Artifacts ────────────────────────────── */}
       {!showHome && (
         <ArtifactSidebar
+          area={areas.artifact}
+          layout={layout}
           open={artifactsOpen}
           width={artifactW}
           setWidth={setArtifactW}
+          height={artifactH}
+          setHeight={setArtifactH}
           view={view}
           changes={changes}
           selectedId={selectedArtifact}
@@ -1311,6 +1369,7 @@ export default function App() {
       {!showHome && (
         <SessionComposer
           ref={taRef}
+          area={areas.composer}
           active={Boolean(active)}
           activeSessionId={activeSession}
           attachments={attachments}

@@ -12,6 +12,8 @@ interface Attachment {
 }
 
 interface Props {
+  /** 그리드 칸 — 가로·세로 배치에서 차지하는 열·행이 다르다 */
+  area: string
   active: boolean
   activeSessionId?: string
   attachments: Attachment[]
@@ -49,6 +51,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
   ref,
 ) {
   const {
+    area,
     active,
     activeSessionId,
     attachments,
@@ -91,7 +94,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
   }, [onSubmitToSession, queuedPrompt, runningSessionIds])
 
   return (
-    <div className="col-start-2 row-start-3 min-w-0 overflow-visible bg-mantle p-2.5">
+    <div className={`${area} min-w-0 overflow-visible bg-mantle p-2.5`}>
       <AttachmentStrip
         attachments={attachments}
         onAnnotate={onAnnotate}
