@@ -54,12 +54,13 @@ import type {
 } from '@shared/session'
 import {
   EMPTY_SESSION_VIEW,
+  ARTIFACT_SHEET_BAR_HEIGHT,
   artifactWidthCeiling,
   clampArtifactHeight,
   clampArtifactWidth,
   splitSessionTabs,
 } from './lib/session-view'
-import { useLayoutMode, useViewportWidth } from './hooks/use-layout-mode'
+import { useLayoutMode, useViewportSize } from './hooks/use-layout-mode'
 import { useSessionViews } from './hooks/use-session-views'
 import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
@@ -245,8 +246,12 @@ export default function App() {
    * 저장된 폭은 그대로 두고 화면에 쓸 폭만 줄인다. 창을 좁혔다 다시 넓히면
    * 원래 폭으로 돌아와야 한다 — 저장값을 덮어쓰면 그 설정이 영영 사라진다.
    */
-  const artifactCeiling = artifactWidthCeiling(useViewportWidth(), railWidth)
+  const viewport = useViewportSize()
+  const artifactCeiling = artifactWidthCeiling(viewport.width, railWidth)
   const artifactWidth = Math.min(artifactW, artifactCeiling)
+  const artifactHeight = artifactsOpen
+    ? clampArtifactHeight(artifactH, viewport.height)
+    : ARTIFACT_SHEET_BAR_HEIGHT
   /** 크기를 끄는 동안에는 전환을 끈다 — 켜 두면 패널이 커서를 한 박자 늦게 쫓아온다. */
   const [artifactResizing, setArtifactResizing] = useState(false)
 
@@ -1078,14 +1083,15 @@ export default function App() {
       className={`grid h-full min-w-0 overflow-hidden bg-base text-text ${
         artifactResizing
           ? ''
-          : 'transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none'
+          : 'transition-[grid-template-columns,grid-template-rows] duration-200 ease-out motion-reduce:transition-none'
       }`}
       style={{
         gridTemplateColumns: portrait
           ? `${railWidth}px 1fr`
           : `${railWidth}px 1fr ${artifactsOpen ? artifactWidth : 40}px`,
-        // 세로는 Artifact 가 탭 바로 아래 칸을 쓴다. 접혀 있으면 손잡이 한 줄 높이다.
-        gridTemplateRows: portrait ? 'auto auto 1fr auto' : 'auto 1fr auto',
+        // 세로는 Artifact 가 탭 바로 아래 칸을 쓴다. 높이를 여기서 정해야
+        // 여닫을 때 값이 이어져 전환이 걸린다 — auto 로 두면 툭 끊긴다.
+        gridTemplateRows: portrait ? `auto ${artifactHeight}px 1fr auto` : 'auto 1fr auto',
       }}
     >
       {/* ── Rail ─────────────────────────────────── */}
@@ -1370,7 +1376,6 @@ export default function App() {
           maxWidth={artifactCeiling}
           onResizingChange={setArtifactResizing}
           setWidth={setArtifactW}
-          height={artifactH}
           setHeight={setArtifactH}
           view={view}
           changes={changes}

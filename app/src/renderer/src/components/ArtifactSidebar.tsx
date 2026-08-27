@@ -19,7 +19,6 @@ interface Props {
   width: number
   /** 창 폭에서 대화 몫을 뺀 뒤 남는 한계. 여기까지만 끌 수 있다. */
   maxWidth: number
-  height: number
   rootPath?: string
   sessionId?: string
   worktree?: SessionWorktree | null
@@ -43,7 +42,6 @@ export default function ArtifactSidebar({
   view,
   width,
   maxWidth,
-  height,
   rootPath,
   sessionId,
   worktree,
@@ -186,7 +184,7 @@ export default function ArtifactSidebar({
    * 탭 바에 붙은 한 덩어리로 보인다.
    */
   const collapsedSheet = (
-    <aside className={`${area} flex items-center gap-2 border-y border-surface0 bg-mantle px-2 py-1.5`}>
+    <aside className={`${area} flex h-10 items-center gap-2 overflow-hidden border-y border-surface0 bg-mantle px-2`}>
       <button
         onClick={onToggle}
         className="rounded-md px-1 py-0.5 text-[12px] text-subtext0 hover:bg-surface0 hover:text-text"
@@ -246,9 +244,8 @@ export default function ArtifactSidebar({
         // 윗선이 없으면 탭 바에 붙은 한 덩어리로 보인다.
         portrait ? 'border-y border-surface0' : 'border-l border-surface0'
       }`}
-      // 가로에서는 폭을 직접 주지 않는다. 그리드 칸이 이미 그 폭이라, 여기서 또
+      // 폭도 높이도 직접 주지 않는다. 그리드 칸이 이미 그 크기라, 여기서 또
       // 고정하면 칸만 전환되고 패널은 뚝 끊겨 따로 논다.
-      style={portrait ? { height } : undefined}
     >
       {/* 끄는 모서리가 다르다 — 세로는 아래쪽 가로줄, 가로는 좌측 세로줄 */}
       {portrait && (

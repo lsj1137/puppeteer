@@ -221,6 +221,14 @@ export const clampArtifactWidth = (width: number, ceiling = ARTIFACT_MAX_WIDTH):
   Math.max(ARTIFACT_MIN_WIDTH, Math.min(ceiling, Math.round(width)))
 
 /**
+ * 세로에서 접힌 Artifact 손잡이 한 줄의 높이.
+ *
+ * 그리드 행과 손잡이가 같은 값을 써야 여닫을 때 높이가 이어서 움직인다.
+ * 행을 `auto` 로 두면 접힘·펼침이 서로 다른 요소라 전환할 값이 없어 툭 끊긴다.
+ */
+export const ARTIFACT_SHEET_BAR_HEIGHT = 40
+
+/**
  * 세로 배치에서 Artifact 시트가 차지할 높이.
  *
  * 위쪽 한계는 창 높이에 맞춰 잡는다 — 고정값으로 두면 낮은 창에서 대화가

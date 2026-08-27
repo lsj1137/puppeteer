@@ -27,16 +27,24 @@ export function useLayoutPreference(): LayoutPreference {
   return useSyncExternalStore(subscribe, () => preference)
 }
 
-/** 창 폭. Artifact 패널이 대화를 얼마나 밀어내도 되는지 계산할 때 쓴다. */
-export function useViewportWidth(): number {
-  const [width, setWidth] = useState(() => window.innerWidth)
+/** 창 크기. Artifact 패널이 대화를 얼마나 밀어내도 되는지 계산할 때 쓴다. */
+export function useViewportSize(): { width: number; height: number } {
+  const [size, setSize] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }))
   useEffect(() => {
-    const onResize = (): void => setWidth(window.innerWidth)
+    const onResize = (): void =>
+      setSize((previous) =>
+        previous.width === window.innerWidth && previous.height === window.innerHeight
+          ? previous
+          : { width: window.innerWidth, height: window.innerHeight },
+      )
     onResize()
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  return width
+  return size
 }
 
 /**
