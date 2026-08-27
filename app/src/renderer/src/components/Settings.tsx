@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Bell, Bot, Download, GitMerge, HelpCircle, ImagePlus, Keyboard, Maximize2, Moon, PanelBottom, PanelRight, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
+import { Bell, BellOff, Bot, Download, GitMerge, GitPullRequest, HelpCircle, ImagePlus, Keyboard, Maximize2, Moon, PanelBottom, PanelRight, RefreshCw, RotateCcw, Settings2, Sun, X } from 'lucide-react'
 import type { DetectedRunner, WorktreeIntegrationMode } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import type { AppUpdateState } from '@shared/app-update'
@@ -176,7 +176,7 @@ export default function Settings({
                 <Bell className="h-3.5 w-3.5" /> 켜기
               </Choice>
               <Choice on={!notify} onPick={() => onToggleNotify(false)}>
-                끄기
+                <BellOff className="h-3.5 w-3.5" /> 끄기
               </Choice>
             </div>
             <div className="mt-1.5 text-[11px] leading-relaxed text-overlay1">
@@ -200,7 +200,7 @@ export default function Settings({
                 on={worktreeIntegrationMode === 'suggest'}
                 onPick={() => onWorktreeIntegrationModeChange('suggest')}
               >
-                병합 제안
+                <GitPullRequest className="h-3.5 w-3.5" /> 병합 제안
               </Choice>
             </div>
             <div className="mt-1.5 text-[11px] leading-relaxed text-overlay1">

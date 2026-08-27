@@ -247,6 +247,8 @@ export default function App() {
    */
   const artifactCeiling = artifactWidthCeiling(useViewportWidth(), railWidth)
   const artifactWidth = Math.min(artifactW, artifactCeiling)
+  /** 크기를 끄는 동안에는 전환을 끈다 — 켜 두면 패널이 커서를 한 박자 늦게 쫓아온다. */
+  const [artifactResizing, setArtifactResizing] = useState(false)
 
   const refresh = useCallback(async (projectPath?: string) => {
     const [nextRunning, nextCost] = await Promise.all([
@@ -1073,7 +1075,11 @@ export default function App() {
 
   return (
     <div
-      className="grid h-full min-w-0 overflow-hidden bg-base text-text"
+      className={`grid h-full min-w-0 overflow-hidden bg-base text-text ${
+        artifactResizing
+          ? ''
+          : 'transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none'
+      }`}
       style={{
         gridTemplateColumns: portrait
           ? `${railWidth}px 1fr`
@@ -1085,7 +1091,7 @@ export default function App() {
       {/* ── Rail ─────────────────────────────────── */}
       <aside
         className={`${areas.rail} flex flex-col overflow-y-auto overflow-x-hidden border-r border-surface0 bg-mantle ${
-          railOpen ? 'gap-3.5 p-2.5' : 'items-center gap-2 px-1.5 py-2.5'
+          railOpen ? 'gap-3.5 p-2.5' : 'items-center gap-2.5 px-1.5 py-2.5'
         }`}
       >
         <div className={railOpen ? 'flex items-center gap-2 px-1 pt-1' : 'flex flex-col items-center gap-1'}>
@@ -1120,6 +1126,9 @@ export default function App() {
           </button>
         </div>
 
+        {/* 접힌 레일은 전부 아이콘뿐이라 묶음 사이에 선이 없으면 한 줄로 읽힌다 */}
+        {!railOpen && <span className="h-px w-6 shrink-0 bg-surface0" />}
+
         <div className={`flex w-full flex-col ${railOpen ? 'gap-0.5' : 'items-center gap-1'}`}>
           {RAIL_SCREENS.map(({ id, label, icon: Icon, tone }) => {
             const current = screen === id
@@ -1142,6 +1151,8 @@ export default function App() {
             )
           })}
         </div>
+
+        {!railOpen && <span className="h-px w-6 shrink-0 bg-surface0" />}
 
         <WorkspaceLists
           collapsed={!railOpen}
@@ -1357,6 +1368,7 @@ export default function App() {
           open={artifactsOpen}
           width={artifactWidth}
           maxWidth={artifactCeiling}
+          onResizingChange={setArtifactResizing}
           setWidth={setArtifactW}
           height={artifactH}
           setHeight={setArtifactH}
