@@ -51,6 +51,7 @@ export default function ArtifactSidebar({
 }: Props) {
   const portrait = layout === 'portrait'
   const resizeHint = `드래그로 ${portrait ? '높이' : '폭'} 조절 · 더블클릭으로 초기화`
+  const expandHint = 'Artifacts 펼치기'
   const [tab, setTab] = useState<'instructions' | 'git' | 'artifacts' | 'files'>(() =>
     (localStorage.getItem('ws.sidebarTab') as 'instructions' | 'git' | 'artifacts' | 'files') || 'artifacts',
   )
@@ -162,42 +163,62 @@ export default function ArtifactSidebar({
     window.addEventListener('pointerup', up)
   }
 
+  /**
+   * 세로에서 접힌 패널.
+   *
+   * 펼친 상태의 접기 버튼이 오른쪽 끝에 있으므로 펼치기 버튼도 같은 자리에 둔다.
+   * 왼쪽에 두면 한 번 여닫을 때마다 커서가 창 폭만큼 왔다 갔다 한다.
+   *
+   * 위아래 테두리가 둘 다 필요하다 — 세션 탭 바도 같은 mantle 이라 윗선이 없으면
+   * 탭 바에 붙은 한 덩어리로 보인다.
+   */
+  const collapsedSheet = (
+    <aside className={`${area} flex items-center gap-2 border-y border-surface0 bg-mantle px-2 py-1.5`}>
+      <button
+        onClick={onToggle}
+        className="rounded-md px-1 py-0.5 text-[12px] text-subtext0 hover:bg-surface0 hover:text-text"
+      >
+        Artifacts
+      </button>
+      {view.artifacts.length > 0 && (
+        <span className="rounded bg-sapphire/20 px-1 text-[11px] text-sapphire">
+          아티팩트 {view.artifacts.length}
+        </span>
+      )}
+      {changes.length > 0 && (
+        <span className="rounded bg-peach/20 px-1 text-[11px] text-peach">
+          변경 {changes.length}
+        </span>
+      )}
+      <span className="flex-1" />
+      <button onClick={onToggle} title={expandHint} className="rounded-md p-1.5 text-overlay1 hover:bg-surface0 hover:text-text">
+        <PanelTopOpen className="h-3.5 w-3.5" />
+      </button>
+    </aside>
+  )
+
+  if (!open && portrait) return collapsedSheet
+
   if (!open) {
     return (
       <aside
-        className={`${area} flex gap-2 border-surface0 bg-mantle ${
-          // 세로에서는 위아래가 모두 다른 영역이다. 탭 바도 같은 mantle 이라
-          // 윗선이 없으면 탭 바에 붙은 한 덩어리로 보인다.
-          portrait
-            ? 'items-center border-y px-2.5 py-1.5'
-            : 'flex-col items-center border-l py-2.5'
-        }`}
+        className={`${area} flex flex-col items-center gap-2 border-l border-surface0 bg-mantle py-2.5`}
       >
         <button
           onClick={onToggle}
           title="Artifacts 펼치기"
-          className={
-            portrait
-              ? 'flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[12px] text-subtext0 hover:bg-surface0 hover:text-text'
-              : 'rounded p-1.5 text-subtext0 hover:bg-surface0 hover:text-text'
-          }
+          className="rounded p-1.5 text-subtext0 hover:bg-surface0 hover:text-text"
         >
-          {portrait ? (
-            <>
-              <PanelTopOpen className="h-4 w-4" /> Artifacts
-            </>
-          ) : (
-            <PanelRightOpen className="h-4 w-4" />
-          )}
+          <PanelRightOpen className="h-4 w-4" />
         </button>
         {view.artifacts.length > 0 && (
           <span className="rounded bg-sapphire/20 px-1 text-[11px] text-sapphire">
-            {portrait ? `아티팩트 ${view.artifacts.length}` : view.artifacts.length}
+            {view.artifacts.length}
           </span>
         )}
         {changes.length > 0 && (
           <span className="rounded bg-peach/20 px-1 text-[11px] text-peach">
-            {portrait ? `변경 ${changes.length}` : changes.length}
+            {changes.length}
           </span>
         )}
       </aside>
