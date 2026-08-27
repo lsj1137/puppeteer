@@ -58,6 +58,8 @@ function migrate(): void {
     );
     CREATE INDEX IF NOT EXISTS idx_session_project
       ON session(project_path, started_at DESC);
+    -- Overview 기간 필터는 프로젝트를 가리지 않고 시각만으로 훑는다
+    CREATE INDEX IF NOT EXISTS idx_session_started ON session(started_at DESC);
 
     CREATE TABLE IF NOT EXISTS event (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -518,6 +520,38 @@ export function projectStats(): ProjectStat[] {
        ORDER BY COALESCE(MAX(s.started_at), p.last_used_at, p.added_at) DESC`,
     )
     .all() as unknown as ProjectStat[]
+}
+
+/**
+ * 기간으로 거른 세션. Overview 에서 «그 주에 무엇을 했나» 를 볼 때 쓴다.
+ *
+ * 구간은 반열림(`from ≤ started_at < to`)이고 **시작 시각**을 기준으로 삼는다.
+ * 자정을 넘겨 끝난 세션이 이틀에 걸치면 합계가 맞지 않는다 — 기준은 하나여야 한다.
+ *
+ * 숨긴 세션은 뺀다. 사용자가 목록에서 안 보겠다고 한 것이다.
+ */
+export function sessionsInRange(
+  from: number,
+  to: number,
+  projectPath?: string,
+  limit = 500,
+): StoredSession[] {
+  const where = projectPath ? 'AND project_path = ?' : ''
+  const args: Array<string | number> = projectPath
+    ? [from, to, projectPath, limit]
+    : [from, to, limit]
+  return db
+    .prepare(
+      `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
+              runner_id AS runnerId, title, agent_name AS agentName, status,
+              cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt,
+              worktree, worktree_cleaned AS worktreeCleaned, approval_mode AS approvalMode, model
+       FROM session
+       WHERE started_at >= ? AND started_at < ? AND hidden = 0 ${where}
+       ORDER BY started_at DESC LIMIT ?`,
+    )
+    .all(...args)
+    .map(hydrate) as unknown as StoredSession[]
 }
 
 /** 프로젝트를 가리지 않는 최근 세션 */

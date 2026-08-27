@@ -377,6 +377,11 @@ app.whenReady().then(() => {
     recent: db.recentSessions(20),
     cost: db.costTotals(),
   }))
+  ipcMain.handle(
+    'overview:sessions',
+    (_e, from: number, to: number, projectPath?: string) =>
+      db.sessionsInRange(from, to, projectPath),
+  )
   ipcMain.handle('session:running', () => sessions.listRunning())
   ipcMain.handle('cost:totals', () => db.costTotals())
   ipcMain.handle('notify:setEnabled', (_e, v: boolean) => setNotifyEnabled(v))

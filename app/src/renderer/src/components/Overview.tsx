@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Folder, Loader2, ShieldAlert } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CalendarRange, Folder, Loader2, ShieldAlert } from 'lucide-react'
 import type {
   ApprovalRequest,
   CostTotals,
@@ -8,8 +8,17 @@ import type {
   SessionStatus,
   StoredSession,
 } from '@shared/session'
+import {
+  PERIOD_LABEL,
+  describeRange,
+  fromDateInput,
+  resolveRange,
+  type PeriodPreset,
+} from '../lib/period'
 
 const baseName = (p: string): string => p.split(/[\\/]/).filter(Boolean).pop() ?? p
+
+const PRESETS: PeriodPreset[] = ['today', 'thisWeek', 'lastWeek', 'thisMonth', 'lastMonth', 'all']
 
 const timeLabel = (ms: number | null): string =>
   ms
@@ -38,16 +47,61 @@ export default function Overview({
   onOpenApproval: (approval: ApprovalRequest) => void
 }) {
   const [projects, setProjects] = useState<ProjectStat[]>([])
-  const [recent, setRecent] = useState<StoredSession[]>([])
   const [cost, setCost] = useState<CostTotals>({ today: 0, month: 0, all: 0 })
+
+  const [preset, setPreset] = useState<PeriodPreset>(
+    () => (localStorage.getItem('ws.overviewPeriod') as PeriodPreset | null) ?? 'thisWeek',
+  )
+  const [customFrom, setCustomFrom] = useState('')
+  const [customTo, setCustomTo] = useState('')
+  const [projectFilter, setProjectFilter] = useState('')
+  const [sessions, setSessions] = useState<StoredSession[]>([])
+  const [loading, setLoading] = useState(false)
+
+  /**
+   * 기준 시각을 상태로 붙잡는다. 렌더마다 `Date.now()` 를 부르면 구간이 매번
+   * 새 값이 되어 조회가 끝없이 다시 돈다.
+   */
+  const [now, setNow] = useState(() => Date.now())
+  const range = useMemo(
+    () =>
+      resolveRange(preset, now, {
+        from: fromDateInput(customFrom),
+        to: fromDateInput(customTo),
+      }),
+    [preset, now, customFrom, customTo],
+  )
 
   useEffect(() => {
     void window.api.overviewStats().then((s) => {
       setProjects(s.projects)
-      setRecent(s.recent)
       setCost(s.cost)
     })
   }, [running.length, approvals.length])
+
+  const reloadSessions = useCallback(async (): Promise<void> => {
+    setLoading(true)
+    try {
+      setSessions(
+        await window.api.overviewSessions(range.from, range.to, projectFilter || undefined),
+      )
+    } finally {
+      setLoading(false)
+    }
+  }, [range.from, range.to, projectFilter])
+
+  useEffect(() => {
+    void reloadSessions()
+  }, [reloadSessions, running.length])
+
+  const choosePreset = (next: PeriodPreset): void => {
+    setPreset(next)
+    localStorage.setItem('ws.overviewPeriod', next)
+    // 같은 프리셋을 다시 누르는 것이 «지금 기준으로 새로고침» 이기도 하다
+    setNow(Date.now())
+  }
+
+  const totalCost = sessions.reduce((sum, s) => sum + s.costUsd, 0)
 
   const Stat = ({ label, value }: { label: string; value: string }): React.ReactElement => (
     <div className="rounded-lg bg-mantle px-4 py-3">
@@ -57,7 +111,8 @@ export default function Overview({
   )
 
   return (
-    <div className="space-y-5 overflow-auto px-5 py-4">
+    // `h-full min-h-0` 이 없으면 내용 높이만큼 늘어나 바깥에서 잘린다. 스크롤이 생기지 않는다.
+    <div className="h-full min-h-0 space-y-5 overflow-y-auto px-5 py-4">
       <div>
         <h1 className="mb-3 text-[16px] font-semibold text-text">Overview</h1>
         <div className="grid grid-cols-4 gap-3">
@@ -114,31 +169,32 @@ export default function Overview({
         <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-overlay1">
           프로젝트 {projects.length}
         </h2>
-        <div className="grid grid-cols-2 gap-2">
+        {/* 경로 줄을 제목 툴팁으로 옮겨 세 줄을 두 줄로 줄였다 */}
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] gap-1.5">
           {projects.map((p) => {
             const live = running.filter((r) => r.projectPath === p.path).length
             return (
               <button
                 key={p.path}
                 onClick={() => onOpenProject(p.path)}
-                className="rounded-lg bg-mantle px-3.5 py-3 text-left hover:bg-surface0/60"
+                title={p.path}
+                className="rounded-lg bg-mantle px-3 py-2 text-left hover:bg-surface0/60"
               >
-                <div className="mb-1 flex items-center gap-2">
-                  <Folder className="h-4 w-4 shrink-0 text-sapphire" />
-                  <span className="flex-1 truncate text-sm font-medium text-text">
+                <div className="flex items-center gap-1.5">
+                  <Folder className="h-3.5 w-3.5 shrink-0 text-sapphire" />
+                  <span className="flex-1 truncate text-[13px] font-medium text-text">
                     {p.alias || baseName(p.path)}
                   </span>
                   {live > 0 && (
-                    <span className="shrink-0 rounded bg-green/20 px-1.5 text-[11px] text-green">
-                      {live} 실행 중
+                    <span className="shrink-0 rounded bg-green/20 px-1 text-[10px] text-green">
+                      {live}
                     </span>
                   )}
                 </div>
-                <div className="truncate text-[11px] text-overlay1">{p.path}</div>
-                <div className="mt-2 flex items-center gap-3 text-[11px] text-subtext0">
-                  <span>세션 {p.sessionCount}</span>
-                  <span className="font-mono">${p.totalCostUsd.toFixed(3)}</span>
-                  <span className="ml-auto text-overlay1">{timeLabel(p.lastSessionAt)}</span>
+                <div className="mt-0.5 flex items-center gap-2 text-[11px] text-overlay1">
+                  <span>{p.sessionCount}회</span>
+                  <span className="font-mono">${p.totalCostUsd.toFixed(2)}</span>
+                  <span className="ml-auto truncate">{timeLabel(p.lastSessionAt)}</span>
                 </div>
               </button>
             )
@@ -147,11 +203,75 @@ export default function Overview({
       </section>
 
       <section>
-        <h2 className="mb-2 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-          최근 세션
-        </h2>
+        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <h2 className="text-[11px] font-medium uppercase tracking-wider text-overlay1">
+            세션 {sessions.length}
+          </h2>
+          <span className="flex items-center gap-1 text-[11px] text-subtext0">
+            <CalendarRange className="h-3.5 w-3.5" />
+            {describeRange(preset, range)}
+          </span>
+          {totalCost > 0 && (
+            <span className="font-mono text-[11px] tabular-nums text-overlay1">
+              ${totalCost.toFixed(3)}
+            </span>
+          )}
+          {loading && <Loader2 className="h-3 w-3 animate-spin text-overlay1" />}
+        </div>
+
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-0.5 rounded-lg bg-surface0/55 p-0.5">
+            {[...PRESETS, 'custom' as const].map((id) => (
+              <button
+                key={id}
+                onClick={() => choosePreset(id)}
+                className={`rounded-md px-2.5 py-1 text-[11px] transition-colors ${
+                  preset === id
+                    ? 'bg-base/85 text-text shadow-sm'
+                    : 'text-overlay1 hover:text-subtext1'
+                }`}
+              >
+                {PERIOD_LABEL[id]}
+              </button>
+            ))}
+          </div>
+
+          <select
+            value={projectFilter}
+            onChange={(event) => setProjectFilter(event.target.value)}
+            className="rounded-md bg-surface0/55 px-2 py-1 text-[11px] text-subtext1 outline-none"
+          >
+            <option value="">전체 프로젝트</option>
+            {projects.map((p) => (
+              <option key={p.path} value={p.path}>
+                {p.alias || baseName(p.path)}
+              </option>
+            ))}
+          </select>
+
+          {preset === 'custom' && (
+            <span className="flex items-center gap-1 text-[11px] text-overlay1">
+              <input
+                type="date"
+                value={customFrom}
+                max={customTo || undefined}
+                onChange={(event) => setCustomFrom(event.target.value)}
+                className="rounded-md bg-surface0/55 px-2 py-1 text-subtext1 outline-none"
+              />
+              –
+              <input
+                type="date"
+                value={customTo}
+                min={customFrom || undefined}
+                onChange={(event) => setCustomTo(event.target.value)}
+                className="rounded-md bg-surface0/55 px-2 py-1 text-subtext1 outline-none"
+              />
+            </span>
+          )}
+        </div>
+
         <div className="space-y-0.5">
-          {recent.map((s) => {
+          {sessions.map((s) => {
             const st = statusLabel(s.status)
             return (
               <button
@@ -171,7 +291,13 @@ export default function Overview({
               </button>
             )
           })}
-          {recent.length === 0 && <div className="px-3 text-[12px] text-overlay1">세션 없음</div>}
+          {sessions.length === 0 && !loading && (
+            <div className="px-3 py-2 text-[12px] text-overlay1">
+              {preset === 'custom' && !customFrom && !customTo
+                ? '날짜를 고르세요'
+                : '이 기간에 세션이 없습니다'}
+            </div>
+          )}
         </div>
       </section>
     </div>

@@ -233,6 +233,9 @@ const api = {
     recent: StoredSession[]
     cost: CostTotals
   }> => ipcRenderer.invoke('overview:stats'),
+  /** 기간으로 거른 세션. 구간은 반열림(`from ≤ 시작 시각 < to`)이다. */
+  overviewSessions: (from: number, to: number, projectPath?: string): Promise<StoredSession[]> =>
+    ipcRenderer.invoke('overview:sessions', from, to, projectPath),
   revealProject: (path: string): Promise<string> => ipcRenderer.invoke('project:reveal', path),
   listProjectFiles: (path: string): Promise<ProjectFileEntry[]> =>
     ipcRenderer.invoke('project:files', path),
