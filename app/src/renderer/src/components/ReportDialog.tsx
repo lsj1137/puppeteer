@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, Copy, FileText, Loader2, Save, Sparkles, X } from 'lucide-react'
+import { AlertTriangle, Check, Copy, FileText, Loader2, RotateCcw, Save, Sparkles, X } from 'lucide-react'
 import type { DetectedRunner, ReportFacts } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
 import { DEFAULT_REPORT_PROMPT, reportFileName } from '../lib/report-prompt'
+
+const PROMPT_KEY = 'ws.reportPrompt'
 
 interface Props {
   rangeLabel: string
@@ -28,7 +30,17 @@ export default function ReportDialog({
   facts,
   onClose,
 }: Props) {
-  const [prompt, setPrompt] = useState(DEFAULT_REPORT_PROMPT)
+  /**
+   * 요청 문구는 사람마다 보고 양식이 달라 한 번 다듬으면 계속 쓴다.
+   * 저장 버튼을 따로 두지 않고 고칠 때마다 저장한다 — 저장을 잊어 날리는 쪽이 더 나쁘다.
+   */
+  const [prompt, setPrompt] = useState(
+    () => localStorage.getItem(PROMPT_KEY) ?? DEFAULT_REPORT_PROMPT,
+  )
+  const editPrompt = (next: string): void => {
+    setPrompt(next)
+    localStorage.setItem(PROMPT_KEY, next)
+  }
   const [runnerId, setRunnerId] = useState(defaultRunnerId ?? runners[0]?.id ?? '')
   const [tab, setTab] = useState<'report' | 'facts'>('report')
   const [report, setReport] = useState('')
@@ -119,10 +131,21 @@ export default function ReportDialog({
           )}
 
           <label className="block">
-            <span className="text-[11px] text-subtext0">보고서 요청</span>
+            <span className="flex items-center gap-2 text-[11px] text-subtext0">
+              보고서 요청
+              <span className="text-overlay1">고치면 자동 저장되어 다음에도 그대로 씁니다</span>
+              <button
+                type="button"
+                onClick={() => editPrompt(DEFAULT_REPORT_PROMPT)}
+                disabled={prompt === DEFAULT_REPORT_PROMPT}
+                className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-40 disabled:hover:bg-transparent"
+              >
+                <RotateCcw className="h-3 w-3" /> 초기화
+              </button>
+            </span>
             <textarea
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
+              onChange={(event) => editPrompt(event.target.value)}
               spellCheck={false}
               className="mt-1 h-24 w-full resize-y rounded-lg bg-base p-3 text-[12px] leading-relaxed text-text outline-none ring-1 ring-transparent focus:ring-lavender/40"
             />
