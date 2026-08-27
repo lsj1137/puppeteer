@@ -54,11 +54,12 @@ import type {
 } from '@shared/session'
 import {
   EMPTY_SESSION_VIEW,
+  artifactWidthCeiling,
   clampArtifactHeight,
   clampArtifactWidth,
   splitSessionTabs,
 } from './lib/session-view'
-import { useLayoutMode } from './hooks/use-layout-mode'
+import { useLayoutMode, useViewportWidth } from './hooks/use-layout-mode'
 import { useSessionViews } from './hooks/use-session-views'
 import { useSessionRunner } from './hooks/use-session-runner'
 import { useWorkspaceNavigation } from './hooks/use-workspace-navigation'
@@ -239,6 +240,13 @@ export default function App() {
     portrait: localStorage.getItem('ws.rail.portrait') === 'open',
   }))
   const railOpen = railOpenByLayout[layout]
+  const railWidth = railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH
+  /**
+   * 저장된 폭은 그대로 두고 화면에 쓸 폭만 줄인다. 창을 좁혔다 다시 넓히면
+   * 원래 폭으로 돌아와야 한다 — 저장값을 덮어쓰면 그 설정이 영영 사라진다.
+   */
+  const artifactCeiling = artifactWidthCeiling(useViewportWidth(), railWidth)
+  const artifactWidth = Math.min(artifactW, artifactCeiling)
 
   const refresh = useCallback(async (projectPath?: string) => {
     const [nextRunning, nextCost] = await Promise.all([
@@ -1068,8 +1076,8 @@ export default function App() {
       className="grid h-full min-w-0 overflow-hidden bg-base text-text"
       style={{
         gridTemplateColumns: portrait
-          ? `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr`
-          : `${railOpen ? RAIL_WIDTH : RAIL_COLLAPSED_WIDTH}px 1fr ${artifactsOpen ? artifactW : 40}px`,
+          ? `${railWidth}px 1fr`
+          : `${railWidth}px 1fr ${artifactsOpen ? artifactWidth : 40}px`,
         // 세로는 Artifact 가 탭 바로 아래 칸을 쓴다. 접혀 있으면 손잡이 한 줄 높이다.
         gridTemplateRows: portrait ? 'auto auto 1fr auto' : 'auto 1fr auto',
       }}
@@ -1347,7 +1355,8 @@ export default function App() {
           area={areas.artifact}
           layout={layout}
           open={artifactsOpen}
-          width={artifactW}
+          width={artifactWidth}
+          maxWidth={artifactCeiling}
           setWidth={setArtifactW}
           height={artifactH}
           setHeight={setArtifactH}

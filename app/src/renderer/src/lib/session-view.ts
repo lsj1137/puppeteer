@@ -200,8 +200,25 @@ export const timeLabel = (ms: number): string =>
     minute: '2-digit',
   })
 
-export const clampArtifactWidth = (width: number): number =>
-  Math.max(280, Math.min(760, Math.round(width)))
+export const ARTIFACT_MIN_WIDTH = 280
+export const ARTIFACT_MAX_WIDTH = 760
+/** 대화가 이보다 좁아지면 코드 블록이 줄줄이 접혀 읽기 어렵다 */
+export const MIN_CONVERSATION_WIDTH = 380
+
+/**
+ * 창 폭에서 Artifact 패널이 차지해도 되는 최대 폭.
+ *
+ * 폭을 고정값으로만 잡으면 창을 좁혔을 때 패널은 그대로인 채 대화만 짓눌린다.
+ * 레일과 대화가 쓸 몫을 먼저 떼고 남는 만큼만 내준다.
+ */
+export const artifactWidthCeiling = (viewportWidth: number, railWidth: number): number =>
+  Math.max(
+    ARTIFACT_MIN_WIDTH,
+    Math.min(ARTIFACT_MAX_WIDTH, viewportWidth - railWidth - MIN_CONVERSATION_WIDTH),
+  )
+
+export const clampArtifactWidth = (width: number, ceiling = ARTIFACT_MAX_WIDTH): number =>
+  Math.max(ARTIFACT_MIN_WIDTH, Math.min(ceiling, Math.round(width)))
 
 /**
  * 세로 배치에서 Artifact 시트가 차지할 높이.

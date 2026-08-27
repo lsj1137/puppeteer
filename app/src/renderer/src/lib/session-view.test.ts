@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionEvent, StoredSession } from '@shared/session'
 import {
+  ARTIFACT_MAX_WIDTH,
+  ARTIFACT_MIN_WIDTH,
   EMPTY_SESSION_VIEW,
+  MIN_CONVERSATION_WIDTH,
+  artifactWidthCeiling,
+  clampArtifactHeight,
+  clampArtifactWidth,
   reduceSessionView,
   splitSessionTabs,
 } from './session-view'
@@ -178,5 +184,52 @@ describe('splitSessionTabs', () => {
 
     expect(visible.map(({ id }) => id)).toEqual(['one', 'four'])
     expect(overflow.map(({ id }) => id)).toEqual(['two', 'three'])
+  })
+})
+
+describe('artifactWidthCeiling', () => {
+  it('넓은 창에서는 상한이 그대로 걸린다', () => {
+    expect(artifactWidthCeiling(1920, 264)).toBe(ARTIFACT_MAX_WIDTH)
+  })
+
+  it('좁아지면 대화 몫을 먼저 떼고 남는 만큼만 내준다', () => {
+    // 1200 - 레일 264 - 대화 380 = 556
+    expect(artifactWidthCeiling(1200, 264)).toBe(1200 - 264 - MIN_CONVERSATION_WIDTH)
+  })
+
+  it('레일을 접으면 그만큼 패널이 더 넓어질 수 있다', () => {
+    expect(artifactWidthCeiling(1200, 52)).toBeGreaterThan(artifactWidthCeiling(1200, 264))
+  })
+
+  it('아무리 좁아도 패널 최소 폭 아래로는 내려가지 않는다', () => {
+    expect(artifactWidthCeiling(600, 264)).toBe(ARTIFACT_MIN_WIDTH)
+  })
+})
+
+describe('clampArtifactWidth', () => {
+  it('창 한계를 넘겨 끌 수 없다', () => {
+    expect(clampArtifactWidth(700, 500)).toBe(500)
+  })
+
+  it('한계를 안 주면 기본 상한을 쓴다', () => {
+    expect(clampArtifactWidth(9999)).toBe(ARTIFACT_MAX_WIDTH)
+  })
+
+  it('최소 폭이 창 한계보다 우선한다 — 폭 0짜리 패널은 쓸모가 없다', () => {
+    expect(clampArtifactWidth(10, 100)).toBe(ARTIFACT_MIN_WIDTH)
+  })
+})
+
+describe('clampArtifactHeight', () => {
+  it('창 높이의 70%를 넘기지 않는다', () => {
+    expect(clampArtifactHeight(900, 1000)).toBe(700)
+  })
+
+  it('창 높이를 모르면 상한만 건다', () => {
+    expect(clampArtifactHeight(9999)).toBe(900)
+  })
+
+  it('너무 낮게 끌어도 최소 높이는 남는다', () => {
+    expect(clampArtifactHeight(10, 1000)).toBe(160)
   })
 })

@@ -27,6 +27,18 @@ export function useLayoutPreference(): LayoutPreference {
   return useSyncExternalStore(subscribe, () => preference)
 }
 
+/** 창 폭. Artifact 패널이 대화를 얼마나 밀어내도 되는지 계산할 때 쓴다. */
+export function useViewportWidth(): number {
+  const [width, setWidth] = useState(() => window.innerWidth)
+  useEffect(() => {
+    const onResize = (): void => setWidth(window.innerWidth)
+    onResize()
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  return width
+}
+
 /**
  * 지금 써야 할 화면 배치.
  *

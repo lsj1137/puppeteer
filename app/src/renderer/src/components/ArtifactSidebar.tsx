@@ -17,6 +17,8 @@ interface Props {
   selectedId?: string
   view: SessionView
   width: number
+  /** 창 폭에서 대화 몫을 뺀 뒤 남는 한계. 여기까지만 끌 수 있다. */
+  maxWidth: number
   height: number
   rootPath?: string
   sessionId?: string
@@ -38,6 +40,7 @@ export default function ArtifactSidebar({
   selectedId,
   view,
   width,
+  maxWidth,
   height,
   rootPath,
   sessionId,
@@ -52,6 +55,11 @@ export default function ArtifactSidebar({
   const portrait = layout === 'portrait'
   const resizeHint = `드래그로 ${portrait ? '높이' : '폭'} 조절 · 더블클릭으로 초기화`
   const expandHint = 'Artifacts 펼치기'
+  /**
+   * 좁은 패널에서는 탭 글자를 지우고 아이콘만 남긴다. 넷을 글자까지 붙여 두면
+   * 줄이 넘쳐 접기 버튼이 밀려난다. 세로는 폭이 창 전체라 해당 없다.
+   */
+  const compactTabs = !portrait && width < 380
   const [tab, setTab] = useState<'instructions' | 'git' | 'artifacts' | 'files'>(() =>
     (localStorage.getItem('ws.sidebarTab') as 'instructions' | 'git' | 'artifacts' | 'files') || 'artifacts',
   )
@@ -143,7 +151,7 @@ export default function ArtifactSidebar({
     const top = sheetRef.current?.getBoundingClientRect().top ?? 0
     const move = (pointer: PointerEvent): void => {
       if (portrait) setHeight(clampArtifactHeight(pointer.clientY - top, window.innerHeight))
-      else setWidth(clampArtifactWidth(window.innerWidth - pointer.clientX))
+      else setWidth(clampArtifactWidth(window.innerWidth - pointer.clientX, maxWidth))
     }
     const up = (): void => {
       window.removeEventListener('pointermove', move)
@@ -270,12 +278,13 @@ export default function ArtifactSidebar({
           <button
             key={id}
             onClick={() => selectTab(id)}
-            className={`flex min-w-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[11px] transition-colors ${
-              tab === id ? 'bg-base/85 text-text shadow-sm' : 'text-overlay1 hover:text-subtext1'
-            }`}
+            title={label}
+            className={`flex min-w-0 items-center gap-1.5 rounded-md py-1.5 text-[11px] transition-colors ${
+              compactTabs ? 'px-2' : 'px-2.5'
+            } ${tab === id ? 'bg-base/85 text-text shadow-sm' : 'text-overlay1 hover:text-subtext1'}`}
           >
             <Icon className="h-3.5 w-3.5 shrink-0" />
-            <span>{label}</span>
+            {!compactTabs && <span>{label}</span>}
             {count > 0 && <span className="text-[10px] text-overlay1">{count}</span>}
           </button>
         ))}
