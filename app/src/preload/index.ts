@@ -28,6 +28,7 @@ import type {
   SessionDeleteResult,
   StoredEvent,
   StoredProject,
+  ReportFacts,
   StoredSession,
   WorktreeCommitResult,
   WorktreeCleanupResult,
@@ -236,6 +237,26 @@ const api = {
   /** 기간으로 거른 세션. 구간은 반열림(`from ≤ 시작 시각 < to`)이다. */
   overviewSessions: (from: number, to: number, projectPath?: string): Promise<StoredSession[]> =>
     ipcRenderer.invoke('overview:sessions', from, to, projectPath),
+  /** 기간 세션에서 뽑은 사실 번들. 모델을 거치지 않은 원본이다. */
+  reportFacts: (
+    from: number,
+    to: number,
+    rangeLabel: string,
+    projectPath?: string,
+  ): Promise<ReportFacts> =>
+    ipcRenderer.invoke('report:facts', from, to, rangeLabel, projectPath),
+  /** 세션을 만들지 않고 CLI 를 한 번만 돌려 보고서 본문을 받는다. */
+  generateReport: (
+    userPrompt: string,
+    facts: string,
+    runner: DetectedRunner,
+    cwd: string,
+    model?: string,
+  ): Promise<{ ok: boolean; text: string }> =>
+    ipcRenderer.invoke('report:generate', userPrompt, facts, runner, cwd, model),
+  /** 저장 위치를 사용자가 고른다. 취소하면 `undefined`. */
+  saveReport: (text: string, defaultName: string): Promise<string | undefined> =>
+    ipcRenderer.invoke('report:save', text, defaultName),
   revealProject: (path: string): Promise<string> => ipcRenderer.invoke('project:reveal', path),
   listProjectFiles: (path: string): Promise<ProjectFileEntry[]> =>
     ipcRenderer.invoke('project:files', path),

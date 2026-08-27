@@ -573,6 +573,15 @@ export interface SessionDeleteResult {
   message?: string
 }
 
+/** 기간 보고서에 쓸 사실 번들. 모델을 거치지 않은 원본이다. */
+export interface ReportFacts {
+  text: string
+  sessionCount: number
+  /** 분량 상한 때문에 제목만 남긴 세션 수 */
+  trimmedCount: number
+  totalCostUsd: number
+}
+
 /** Checkpoint 초안 — 세션을 넘길 때 쓸 텍스트 */
 export interface CheckpointDraft {
   sessionId: string

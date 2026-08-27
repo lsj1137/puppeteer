@@ -1251,6 +1251,8 @@ export default function App() {
             <Overview
               running={running}
               approvals={approvals}
+              runners={usableRunners}
+              defaultRunnerId={defaultRunnerId}
               statusLabel={(st) => STATUS[st]}
               onOpenProject={selectProject}
               onOpenSession={(id, path) => void jumpTo(id, path)}

@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CalendarRange, Folder, Loader2, ShieldAlert } from 'lucide-react'
+import { CalendarRange, FileText, Folder, Loader2, ShieldAlert } from 'lucide-react'
 import type {
   ApprovalRequest,
   CostTotals,
+  DetectedRunner,
   ProjectStat,
+  ReportFacts,
   RunningSession,
   SessionStatus,
   StoredSession,
 } from '@shared/session'
+import ReportDialog from './ReportDialog'
 import {
   PERIOD_LABEL,
   describeRange,
@@ -34,6 +37,8 @@ const timeLabel = (ms: number | null): string =>
 export default function Overview({
   running,
   approvals,
+  runners,
+  defaultRunnerId,
   statusLabel,
   onOpenProject,
   onOpenSession,
@@ -41,6 +46,9 @@ export default function Overview({
 }: {
   running: RunningSession[]
   approvals: ApprovalRequest[]
+  /** 보고서를 만들 CLI 후보. 세션과 무관한 일회성 호출에 쓴다. */
+  runners: DetectedRunner[]
+  defaultRunnerId?: string
   statusLabel: (s: SessionStatus) => { label: string; color: string }
   onOpenProject: (path: string) => void
   onOpenSession: (sessionId: string, projectPath: string) => void
@@ -102,6 +110,32 @@ export default function Overview({
   }
 
   const totalCost = sessions.reduce((sum, s) => sum + s.costUsd, 0)
+
+  const [reportFacts, setReportFacts] = useState<ReportFacts>()
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportLoading, setReportLoading] = useState(false)
+
+  /** 사실 번들은 열 때 한 번만 모은다. 세션 수만큼 기록을 읽으므로 미리 하지 않는다. */
+  const openReport = async (): Promise<void> => {
+    setReportLoading(true)
+    try {
+      setReportFacts(
+        await window.api.reportFacts(
+          range.from,
+          range.to,
+          describeRange(preset, range),
+          projectFilter || undefined,
+        ),
+      )
+      setReportOpen(true)
+    } finally {
+      setReportLoading(false)
+    }
+  }
+
+  const projectLabel = projectFilter
+    ? (projects.find((p) => p.path === projectFilter)?.alias ?? baseName(projectFilter))
+    : undefined
 
   const Stat = ({ label, value }: { label: string; value: string }): React.ReactElement => (
     <div className="rounded-lg bg-mantle px-4 py-3">
@@ -268,6 +302,21 @@ export default function Overview({
               />
             </span>
           )}
+
+          {/* 필터 줄 오른쪽 끝 — 지금 보고 있는 기간이 그대로 보고서 대상이다 */}
+          <button
+            type="button"
+            onClick={() => void openReport()}
+            disabled={reportLoading}
+            className="ml-auto flex items-center gap-1.5 rounded-md bg-sapphire/15 px-2.5 py-1 text-[11px] font-medium text-sapphire hover:bg-sapphire/25 disabled:opacity-40"
+          >
+            {reportLoading ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <FileText className="h-3.5 w-3.5" />
+            )}
+            선택된 기간 보고서 제작
+          </button>
         </div>
 
         <div className="space-y-0.5">
@@ -300,6 +349,19 @@ export default function Overview({
           )}
         </div>
       </section>
+
+      {reportOpen && (
+        <ReportDialog
+          rangeLabel={describeRange(preset, range)}
+          rangeStart={range.from}
+          projectLabel={projectLabel}
+          runners={runners}
+          defaultRunnerId={defaultRunnerId}
+          cwd={projectFilter || projects[0]?.path}
+          facts={reportFacts}
+          onClose={() => setReportOpen(false)}
+        />
+      )}
     </div>
   )
 }

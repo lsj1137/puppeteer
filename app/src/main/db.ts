@@ -528,7 +528,8 @@ export function projectStats(): ProjectStat[] {
  * 구간은 반열림(`from ≤ started_at < to`)이고 **시작 시각**을 기준으로 삼는다.
  * 자정을 넘겨 끝난 세션이 이틀에 걸치면 합계가 맞지 않는다 — 기준은 하나여야 한다.
  *
- * 숨긴 세션은 뺀다. 사용자가 목록에서 안 보겠다고 한 것이다.
+ * **숨긴 세션도 넣는다.** 숨김은 «탭 목록에서 치웠다» 는 뜻이지 «안 한 일» 이 아니다.
+ * 빼면 보고에서 일이 조용히 누락된다. 대신 `hidden` 을 실어 화면과 보고서가 표시한다.
  */
 export function sessionsInRange(
   from: number,
@@ -545,9 +546,10 @@ export function sessionsInRange(
       `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
               runner_id AS runnerId, title, agent_name AS agentName, status,
               cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt,
-              worktree, worktree_cleaned AS worktreeCleaned, approval_mode AS approvalMode, model
+              worktree, worktree_cleaned AS worktreeCleaned, hidden,
+              approval_mode AS approvalMode, model
        FROM session
-       WHERE started_at >= ? AND started_at < ? AND hidden = 0 ${where}
+       WHERE started_at >= ? AND started_at < ? ${where}
        ORDER BY started_at DESC LIMIT ?`,
     )
     .all(...args)

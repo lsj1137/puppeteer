@@ -7,6 +7,8 @@ import { SessionManager } from './session-manager'
 import * as db from './db'
 import * as library from './agent-library'
 import { route } from './router'
+import { runOnce } from './cli-once'
+import { buildFacts as buildReportFacts, buildPrompt as buildReportPrompt } from './report'
 import * as memory from './memory'
 import * as models from './models'
 import * as skills from './skill-library'
@@ -381,6 +383,55 @@ app.whenReady().then(() => {
     'overview:sessions',
     (_e, from: number, to: number, projectPath?: string) =>
       db.sessionsInRange(from, to, projectPath),
+  )
+
+  // ── 기간 보고서 ───────────────────────────────────────────
+  ipcMain.handle(
+    'report:facts',
+    (_e, from: number, to: number, rangeLabel: string, projectPath?: string) =>
+      buildReportFacts(db.sessionsInRange(from, to, projectPath), rangeLabel),
+  )
+  /**
+   * 세션을 만들지 않고 CLI 를 한 번만 돌린다. 세션으로 돌리면 목록이 오염되고
+   * 그 세션이 다음 기간 조회에 다시 잡힌다.
+   */
+  ipcMain.handle(
+    'report:generate',
+    async (
+      _e,
+      userPrompt: string,
+      facts: string,
+      runner: DetectedRunner,
+      cwd: string,
+      model?: string,
+    ): Promise<{ ok: boolean; text: string }> => {
+      try {
+        const text = await runOnce(buildReportPrompt(userPrompt, facts), runner, cwd, {
+          model,
+          // 보고서는 라우팅보다 오래 걸린다. 세션 수만큼 읽고 쓴다.
+          timeoutMs: 300_000,
+        })
+        return { ok: true, text }
+      } catch (error) {
+        return { ok: false, text: error instanceof Error ? error.message : String(error) }
+      }
+    },
+  )
+  ipcMain.handle(
+    'report:save',
+    async (_e, text: string, defaultName: string): Promise<string | undefined> => {
+      const result = await dialog.showSaveDialog({
+        title: '보고서 저장',
+        defaultPath: defaultName,
+        filters: [
+          { name: 'Markdown', extensions: ['md'] },
+          { name: '텍스트', extensions: ['txt'] },
+        ],
+      })
+      if (result.canceled || !result.filePath) return undefined
+      writeFileSync(result.filePath, text, 'utf8')
+      return result.filePath
+    },
   )
   ipcMain.handle('session:running', () => sessions.listRunning())
   ipcMain.handle('cost:totals', () => db.costTotals())
