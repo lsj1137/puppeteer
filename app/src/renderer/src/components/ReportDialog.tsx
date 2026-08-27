@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, Check, Copy, FileText, Loader2, RotateCcw, Save, Sparkles, X } from 'lucide-react'
 import type { DetectedRunner, ReportFacts } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
@@ -37,10 +37,17 @@ export default function ReportDialog({
   const [prompt, setPrompt] = useState(
     () => localStorage.getItem(PROMPT_KEY) ?? DEFAULT_REPORT_PROMPT,
   )
+  const [promptSaved, setPromptSaved] = useState(false)
+  const savedTimer = useRef<number | undefined>(undefined)
   const editPrompt = (next: string): void => {
     setPrompt(next)
     localStorage.setItem(PROMPT_KEY, next)
+    // 타이핑 중에는 계속 갱신되므로 마지막 입력 기준으로 다시 센다
+    setPromptSaved(true)
+    window.clearTimeout(savedTimer.current)
+    savedTimer.current = window.setTimeout(() => setPromptSaved(false), 1500)
   }
+  useEffect(() => () => window.clearTimeout(savedTimer.current), [])
   const [runnerId, setRunnerId] = useState(defaultRunnerId ?? runners[0]?.id ?? '')
   const [tab, setTab] = useState<'report' | 'facts'>('report')
   const [report, setReport] = useState('')
@@ -133,15 +140,23 @@ export default function ReportDialog({
           <label className="block">
             <span className="flex items-center gap-2 text-[11px] text-subtext0">
               보고서 요청
-              <span className="text-overlay1">고치면 자동 저장되어 다음에도 그대로 씁니다</span>
-              <button
-                type="button"
-                onClick={() => editPrompt(DEFAULT_REPORT_PROMPT)}
-                disabled={prompt === DEFAULT_REPORT_PROMPT}
-                className="ml-auto flex items-center gap-1 rounded px-1.5 py-0.5 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-40 disabled:hover:bg-transparent"
-              >
-                <RotateCcw className="h-3 w-3" /> 초기화
-              </button>
+              <span className="ml-auto flex items-center gap-2">
+                <span
+                  className={`flex items-center gap-0.5 text-green transition-opacity duration-200 motion-reduce:transition-none ${
+                    promptSaved ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  <Check className="h-3 w-3" /> 저장됨
+                </span>
+                <button
+                  type="button"
+                  onClick={() => editPrompt(DEFAULT_REPORT_PROMPT)}
+                  disabled={prompt === DEFAULT_REPORT_PROMPT}
+                  className="flex items-center gap-1 rounded px-1.5 py-0.5 text-overlay1 hover:bg-surface0 hover:text-text disabled:opacity-40 disabled:hover:bg-transparent"
+                >
+                  <RotateCcw className="h-3 w-3" /> 초기화
+                </button>
+              </span>
             </span>
             <textarea
               value={prompt}
