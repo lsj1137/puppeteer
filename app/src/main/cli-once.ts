@@ -64,7 +64,6 @@ export function runOnce(
     ? ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-']
     : [
         '-p',
-        prompt,
         ...(model ? ['--model', model] : []),
         '--output-format',
         'json',
@@ -76,14 +75,19 @@ export function runOnce(
   return new Promise((resolve, reject) => {
     const child = spawn(command, full, {
       cwd: runner.kind === 'wsl' ? undefined : cwd,
-      // Codex 는 프롬프트를 stdin 으로 받는다. 명령행 길이·따옴표 문제를 피한다.
-      stdio: [codex ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      // 프롬프트는 **양쪽 다 stdin** 으로 보낸다. 인자로 실으면 두 가지가 깨진다.
+      // 1) WSL 은 명령을 셸에 태우므로 프롬프트 안의 백틱이 명령 치환으로 해석된다.
+      //    보고서 사실 번들에는 파일 경로가 백틱으로 감싸여 들어간다.
+      // 2) Windows 명령행 한도를 넘으면 spawn 이 시작도 못 하고 ENAMETOOLONG 을 낸다.
+      // 세션 실행 경로도 같은 이유로 stdin 을 쓴다(`claude-cli.ts`).
+      stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
       windowsVerbatimArguments,
     })
-    if (codex) {
-      child.stdin?.end(prompt, 'utf8')
-    }
+    child.stdin?.on('error', () => {
+      // 자식이 먼저 죽으면 EPIPE 가 난다. 종료 처리에서 이유를 낸다.
+    })
+    child.stdin?.end(prompt, 'utf8')
 
     let out = ''
     let err = ''
