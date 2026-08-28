@@ -102,15 +102,42 @@ describe('buildRunnerCommand', () => {
     )
 
     expect(command.command).toBe('wsl.exe')
-    expect(command.args.slice(0, 6)).toEqual([
+    expect(command.args.slice(0, 9)).toEqual([
       '-d',
       'Ubuntu',
       '--cd',
       'C:\\repo',
-      '--',
+      // `--` 를 쓰면 명령이 로그인 셸에 실려 인자 안의 백틱이 실행된다
+      '-e',
+      'bash',
+      '-lc',
+      'exec "$0" "$@"',
       '/home/me/.npm-global/bin/claude',
     ])
-    expect(command.args.slice(6)).toEqual(cliArgs)
+    expect(command.args.slice(9)).toEqual(cliArgs)
+  })
+
+  it('WSL 인자를 셸에 노출하지 않는다 — 백틱이 든 Agent 지침이 실행되면 안 된다', () => {
+    const dangerous = JSON.stringify({
+      dev: { description: '`id`', prompt: '`kccai` 는 $(whoami) 가 아니다' },
+    })
+    const command = buildRunnerCommand(
+      runner({ kind: 'wsl', distro: 'Ubuntu', executable: '/usr/bin/claude' }),
+      'C:\\repo',
+      buildClaudeArgs({ prompt: 'hi', agentsJson: dangerous }),
+    )
+
+    // 셸 스크립트 자리는 고정 문자열뿐이고, 위험한 텍스트는 별개 인자로만 존재한다
+    expect(command.args).toContain('exec "$0" "$@"')
+    expect(command.args).toContain(dangerous)
+    expect(command.args.filter((a) => a.includes('$0'))).toHaveLength(1)
+    expect(command.args).not.toContain('--')
+  })
+
+  it('시스템 프롬프트는 인자가 아니라 stdin 으로 간다', () => {
+    const systemPrompt = '`AGENTS.md` 를 지켜라'
+    expect(buildClaudeArgs({ prompt: '지시' }).join(' ')).not.toContain('AGENTS.md')
+    expect(buildClaudePrompt({ prompt: '지시', systemPrompt })).toContain('`AGENTS.md`')
   })
 
   it('wraps Windows native npm shims with cmd.exe on Windows hosts', () => {

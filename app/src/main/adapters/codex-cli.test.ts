@@ -56,14 +56,18 @@ describe('buildCodexArgs', () => {
     const command = buildRunnerCommand(runner, 'C:\\repo', cliArgs)
 
     expect(command.command).toBe('wsl.exe')
-    expect(command.args.slice(0, 6)).toEqual([
+    expect(command.args.slice(0, 9)).toEqual([
       '-d',
       'Ubuntu',
       '--cd',
       'C:\\repo',
-      '--',
+      // `--` 를 쓰면 명령이 로그인 셸에 실려 인자 안의 백틱이 실행된다
+      '-e',
+      'bash',
+      '-lc',
+      'exec "$0" "$@"',
       '/home/me/.npm-global/bin/codex',
     ])
-    expect(command.args.slice(6)).toEqual(cliArgs)
+    expect(command.args.slice(9)).toEqual(cliArgs)
   })
 })

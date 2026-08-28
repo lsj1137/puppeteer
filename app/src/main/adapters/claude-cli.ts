@@ -370,6 +370,15 @@ export function buildRunnerCommand(
     // WSL 은 interop 으로 Windows PATH 를 뒤에 붙이므로, 바 `claude` 로 실행하면
     // Windows 에 설치된 확장자 없는 npm 래퍼가 잡혀 다른 자격증명을 쓰게 된다.
     // wsl --cd 는 Windows 경로를 받아 알아서 변환해준다.
+    //
+    // **`--` 가 아니라 `-e` 다.** `--` 는 wsl 자신의 옵션 파싱만 끝낼 뿐, 명령은
+    // 그대로 **기본 로그인 셸에 실린다**. 그러면 인자 안의 백틱과 `$( )` 가 셸에서
+    // 평가된다 — `--agents` 로 넘기는 Agent 지침은 마크다운이라 인라인 코드 백틱이
+    // 흔하고, 그 안의 텍스트가 실제 명령으로 실행된다(임의 명령 실행).
+    //
+    // `-e` 로 셸을 끊되 로그인 환경은 그대로 둬야 해서 `bash -lc` 를 한 겹 세운다.
+    // 스크립트는 **고정 문자열**이고 실행 파일과 인자는 `$0`·`$@` 로 받으므로
+    // 내용이 다시 해석되지 않는다. 문자열을 조립해 넣으면 같은 구멍이 다시 난다.
     return {
       command: 'wsl.exe',
       args: [
@@ -377,7 +386,10 @@ export function buildRunnerCommand(
         opts.runner.distro ?? 'Ubuntu',
         '--cd',
         opts.cwd,
-        '--',
+        '-e',
+        'bash',
+        '-lc',
+        'exec "$0" "$@"',
         opts.runner.executable,
         ...args,
       ],
