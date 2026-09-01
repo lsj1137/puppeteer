@@ -125,7 +125,12 @@ export default function SessionHeader({
 
   return (
     <div className={`${area} z-20 flex min-w-0 items-end bg-mantle pl-2 pr-2 pt-1`}>
-      <div ref={tabBarRef} className="flex min-w-0 flex-1 items-end gap-0.5">
+      {/*
+        탭이 넘쳐도 **여기서 잘라낸다**. 넘침을 허용하면 오른쪽 버튼 묶음(체크포인트·
+        Worktree)이 화면 밖으로 밀려 사라진다 — `shrink-0` 는 «줄이지 않는다» 일 뿐
+        «밀리지 않는다» 가 아니다.
+      */}
+      <div ref={tabBarRef} className="flex min-w-0 flex-1 items-end gap-0.5 overflow-hidden">
         <button
           onClick={onNewSession}
           title="새 세션"
@@ -252,8 +257,15 @@ export default function SessionHeader({
           )
         })}
 
-        {(overflowTabs.length > 0 || hiddenSessions.length > 0) && (
-          <div className="relative shrink-0">
+      </div>
+
+      {/*
+        넘침 버튼은 탭 목록 **밖**에 둔다. 안에 두면 두 가지가 깨진다.
+        ① 탭과 함께 잘려 나가 «다른 세션» 으로 갈 길이 사라진다
+        ② 목록을 열면 잘리는 영역에 갇혀 반쯤만 보인다
+      */}
+      {(overflowTabs.length > 0 || hiddenSessions.length > 0) && (
+        <div className="relative shrink-0">
             <button
               onClick={onToggleTabMenu}
               title={`다른 세션 ${overflowTabs.length + hiddenSessions.length}개`}
@@ -265,7 +277,11 @@ export default function SessionHeader({
             {tabMenuOpen && (
               <>
                 <div className="fixed inset-0 z-30" onClick={onCloseTabMenu} />
-                <div className="absolute left-0 top-full z-40 mt-1 max-h-80 w-72 overflow-auto rounded-lg border border-surface1 bg-mantle py-1 shadow-lg">
+                {/*
+                  버튼이 오른쪽 끝에 붙으므로 **왼쪽으로 펼친다**. `left-0` 이면 목록이
+                  창 밖으로 나가 잘린다. 폭·높이도 창 크기를 넘지 않게 묶는다.
+                */}
+                <div className="absolute right-0 top-full z-40 mt-1 max-h-[min(20rem,60vh)] w-[min(18rem,calc(100vw-2rem))] overflow-auto rounded-lg border border-surface1 bg-mantle py-1 shadow-lg">
                   {overflowTabs.map((session) => (
                     <button
                       key={session.id}
@@ -300,9 +316,8 @@ export default function SessionHeader({
                 </div>
               </>
             )}
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="mb-1 flex shrink-0 items-center gap-1.5 pl-2">
         {worktree && selectedSession && (
