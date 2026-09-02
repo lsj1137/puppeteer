@@ -295,8 +295,9 @@ export default function SessionHeader({
                       <span className="truncate">{session.title || '새 세션'}</span>
                     </button>
                   ))}
+                  {/* 구분은 여백과 라벨로 한다 — 가로 선을 두지 않는다(기술스택 §13) */}
                   {hiddenSessions.length > 0 && (
-                    <div className="mt-1 border-t border-surface0 pt-1">
+                    <div className="mt-2">
                       <div className="px-3 py-1 text-[10px] font-medium uppercase tracking-wider text-overlay1">
                         숨긴 세션
                       </div>
@@ -738,7 +739,7 @@ export function ComposerSettings({
                 </div>
               )}
               <form
-                className="mt-1.5 flex items-center gap-1.5 border-t border-surface0 pt-2"
+                className="mt-2.5 flex items-center gap-1.5"
                 onSubmit={(e) => {
                   e.preventDefault()
                   void Promise.resolve(onChangeModel(modelDraft.trim() || null))
