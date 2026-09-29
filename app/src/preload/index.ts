@@ -19,6 +19,8 @@ import type {
   MemoryEntry,
   MemoryEdit,
   MemoryProposal,
+  CliUpdatePlan,
+  CliUpdateResult,
   ModelChoices,
   SkillDef,
   SkillImportPreview,
@@ -116,6 +118,10 @@ const api = {
     ipcRenderer.invoke('session:setModel', sessionId, model),
   listModels: (runner: DetectedRunner): Promise<ModelChoices> =>
     ipcRenderer.invoke('model:list', runner),
+  cliUpdatePlan: (runner: DetectedRunner): Promise<CliUpdatePlan> =>
+    ipcRenderer.invoke('cli:updatePlan', runner),
+  updateCli: (runner: DetectedRunner): Promise<CliUpdateResult> =>
+    ipcRenderer.invoke('cli:update', runner),
   listEvents: (sessionId: string): Promise<StoredEvent[]> =>
     ipcRenderer.invoke('session:events', sessionId),
   listOpenApprovals: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke('approval:open'),

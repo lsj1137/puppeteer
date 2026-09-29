@@ -27,6 +27,8 @@ import type {
   AgentDef,
   ApprovalMode,
   ApprovalRequest,
+  CliUpdatePlan,
+  CliUpdateResult,
   DetectedRunner,
   ModelChoices,
   RunningSession,
@@ -81,6 +83,12 @@ const PROVIDER_ORDER = ['claude-cli', 'codex-cli', 'claude-agent-sdk']
 
 /** 세션 도구 모음에서 한 번에 하나만 열리는 오버레이 */
 type ComposerPanel = 'runner' | 'agent' | 'approval' | 'model' | 'commit'
+
+/** 모델 패널 안의 CLI 업데이트 진행. 실행 전에 무엇을 돌릴지 보여주고 확인을 받는다. */
+type CliUpdateView =
+  | { phase: 'confirm'; plan: CliUpdatePlan }
+  | { phase: 'running' }
+  | { phase: 'done'; result: CliUpdateResult; from?: string }
 
 /** 프로젝트 화면 상단의 세션 탭과 세션별 실행 설정. */
 export default function SessionHeader({
@@ -415,6 +423,43 @@ export function ComposerSettings({
   const [modelChoices, setModelChoices] = useState<ModelChoices>()
   const [modelDraft, setModelDraft] = useState('')
   const [redetecting, setRedetecting] = useState(false)
+  const [cliUpdate, setCliUpdate] = useState<CliUpdateView>()
+  const hasBlockedModel = modelChoices?.options.some((option) => option.disabled) ?? false
+
+  const loadModelChoices = (runner: DetectedRunner): Promise<void> =>
+    window.api
+      .listModels(runner)
+      .then(setModelChoices)
+      .catch((e: unknown) =>
+        setModelChoices({
+          options: [],
+          note: `모델 목록을 불러오지 못했습니다: ${e instanceof Error ? e.message : String(e)}`,
+        }),
+      )
+
+  const startCliUpdate = async (): Promise<void> => {
+    if (!activeRunner) return
+    setCliUpdate({ phase: 'confirm', plan: await window.api.cliUpdatePlan(activeRunner) })
+  }
+
+  const runCliUpdate = async (): Promise<void> => {
+    if (!activeRunner) return
+    const runner = activeRunner
+    setCliUpdate({ phase: 'running' })
+    const result = await window.api
+      .updateCli(runner)
+      .catch((e: unknown): CliUpdateResult => ({
+        ok: false,
+        command: '',
+        output: e instanceof Error ? e.message : String(e),
+      }))
+    // 올라간 버전을 보여주려면 다시 탐지해야 한다. 모델 목록도 새 CLI 기준으로 다시 읽는다.
+    if (result.ok) {
+      await Promise.resolve(onRefreshRunners?.())
+      await loadModelChoices(runner)
+    }
+    setCliUpdate({ phase: 'done', result, from: runner.version })
+  }
 
   const refreshRunners = (): void => {
     if (!onRefreshRunners || redetecting) return
@@ -426,6 +471,7 @@ export function ComposerSettings({
   useEffect(() => {
     if (panel !== 'model' || !activeRunner) return
     setModelDraft(model ?? '')
+    setCliUpdate(undefined)
     let alive = true
     void window.api
       .listModels(activeRunner)
@@ -731,6 +777,82 @@ export function ComposerSettings({
               <div className="px-1.5 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-overlay1">
                 이 세션의 모델
               </div>
+              {activeRunner && (hasBlockedModel || cliUpdate) && (
+                <div className="mb-2 rounded-lg bg-yellow/10 px-2.5 py-2 text-[12px] leading-relaxed">
+                  {!cliUpdate && (
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0 flex-1 text-yellow">
+                        이 실행 환경의 CLI{activeRunner.version ? `(${activeRunner.version})` : ''}가 낮아 못 쓰는 모델이 있습니다.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void startCliUpdate()}
+                        className="shrink-0 rounded-md bg-yellow/20 px-2 py-1 text-[11px] font-medium text-yellow hover:bg-yellow/30"
+                      >
+                        CLI 업데이트
+                      </button>
+                    </div>
+                  )}
+                  {cliUpdate?.phase === 'confirm' && ('unsupported' in cliUpdate.plan ? (
+                    <div className="flex items-start gap-2">
+                      <span className="min-w-0 flex-1 text-yellow">{cliUpdate.plan.unsupported}</span>
+                      <button type="button" onClick={() => setCliUpdate(undefined)} className="shrink-0 text-[11px] text-overlay1 hover:text-text">
+                        닫기
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-subtext1">다음 명령으로 CLI를 올립니다.</div>
+                      <div className="mt-1 break-all rounded bg-surface0/60 px-2 py-1 font-mono text-[11px] text-text">
+                        {cliUpdate.plan.command}
+                      </div>
+                      <div className="mt-1 text-[11px] text-overlay1">
+                        이 CLI로 도는 세션이 있으면 끝난 뒤에 하세요. Windows는 실행 중인 CLI 파일을 바꾸지 못합니다.
+                      </div>
+                      <div className="mt-1.5 flex justify-end gap-1.5">
+                        <button type="button" onClick={() => setCliUpdate(undefined)} className="rounded-md px-2 py-1 text-[11px] text-overlay1 hover:text-text">
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void runCliUpdate()}
+                          className="rounded-md bg-yellow/20 px-2.5 py-1 text-[11px] font-medium text-yellow hover:bg-yellow/30"
+                        >
+                          실행
+                        </button>
+                      </div>
+                    </>
+                  ))}
+                  {cliUpdate?.phase === 'running' && (
+                    <div className="flex items-center gap-1.5 text-subtext1">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" /> 업데이트 중… (최대 5분)
+                    </div>
+                  )}
+                  {cliUpdate?.phase === 'done' && (cliUpdate.result.ok ? (
+                    <>
+                      <div className="flex items-center gap-1.5 font-medium text-green">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        업데이트했습니다{cliUpdate.from && activeRunner.version ? ` — ${cliUpdate.from} → ${activeRunner.version}` : ''}
+                      </div>
+                      {/* 모델 캐시는 CLI 가 실제 세션을 띄울 때만 갱신된다. 업데이트 직후엔 회색 항목이 남아 있을 수 있다. */}
+                      <div className="mt-0.5 text-[11px] text-overlay1">
+                        Opus·Sonnet 별칭은 바로 새 모델로 붙습니다. 회색 항목은 이 CLI로 세션을 한 번 실행하면 정리됩니다.
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-1.5 font-medium text-red">
+                        <ShieldAlert className="h-3.5 w-3.5" /> 업데이트하지 못했습니다
+                      </div>
+                      {cliUpdate.result.output && (
+                        <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-all rounded bg-surface0/60 px-2 py-1 font-mono text-[11px] text-subtext1">
+                          {cliUpdate.result.output}
+                        </pre>
+                      )}
+                    </>
+                  ))}
+                </div>
+              )}
               <div className="max-h-64 overflow-auto">
                 <button
                   onClick={() => { void Promise.resolve(onChangeModel(null)); setPanel(undefined) }}

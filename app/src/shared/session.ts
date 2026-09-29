@@ -178,6 +178,18 @@ export interface ModelChoices {
   note?: string
 }
 
+/** CLI 업데이트를 실행하기 전에 보여줄 계획. 못 하면 이유만 준다. */
+export type CliUpdatePlan = { command: string } | { unsupported: string }
+
+/** CLI 업데이트 실행 결과 */
+export interface CliUpdateResult {
+  ok: boolean
+  /** 실행한 명령(표시용) */
+  command: string
+  /** 출력 끝부분. 실패했을 때 원인을 보여주는 용도다. */
+  output: string
+}
+
 /** 탐지된 실행 환경 1건 */
 export interface DetectedRunner {
   id: string
