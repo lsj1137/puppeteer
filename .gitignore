@@ -1,5 +1,7 @@
 # ── 의존성 · 빌드 산출물 ────────────────────────────────
-node_modules/
+# worktree 는 node_modules 를 원본으로 잇는다(junction). WSL Git 은 그걸 디렉터리가 아닌
+# 링크로 봐서 `node_modules/` 에 안 걸리므로 끝 슬래시를 뺀다.
+node_modules
 out/
 dist/
 build/

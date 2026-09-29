@@ -1,5 +1,7 @@
 # 루트 .gitignore 가 대부분을 덮는다. 여기는 앱 전용 산출물만.
-node_modules/
+# worktree 는 node_modules 를 원본으로 잇는다(junction). WSL Git 은 그걸 디렉터리가 아닌
+# 링크로 봐서 `node_modules/` 에 안 걸리므로 끝 슬래시를 뺀다.
+node_modules
 out/
 dist/
 release/
