@@ -158,6 +158,13 @@ export interface ModelOption {
   value: string
   label: string
   detail?: string
+  /**
+   * CLI 가 «아직 못 쓴다»고 표시한 모델. 고를 수 없고 `value` 도 자리표시자다.
+   * Claude CLI 는 버전이 낮아 못 쓰는 신규 모델을 이렇게 내려준다
+   * (`cc-update-required-1` + "Update to 2.1.280+ to use Opus 5.5").
+   * 숨기지 않고 이유와 함께 보여줘야 «왜 새 모델이 없지»에 답이 된다.
+   */
+  disabled?: boolean
 }
 
 /**

@@ -482,6 +482,14 @@ export default function App() {
     setDefaultRunnerId(id)
   }, [runners, defaultRunnerId])
 
+  /**
+   * CLI 탐지는 앱을 켤 때 한 번만 한다. CLI 를 업데이트하면 버전도, 쓸 수 있는 모델도
+   * 바뀌므로 앱을 다시 켜지 않고 다시 탐지할 길을 둔다.
+   */
+  async function redetectRunners(): Promise<void> {
+    setRunners(await window.api.detectRunners())
+  }
+
   function changeDefaultRunner(runnerId: string): void {
     if (!usableRunners.some((r) => r.id === runnerId)) return
     localStorage.setItem('ws.defaultRunner', runnerId)
@@ -1430,6 +1438,7 @@ export default function App() {
           onAnnotate={setAnnotating}
           onAttachFiles={attachFiles}
           onChooseRunner={chooseRunner}
+          onRefreshRunners={redetectRunners}
           onSelectAgent={(name) => void changeSessionAgent(name)}
           onEditAgent={(agent) => {
             setEditing({ agent, isNew: false })

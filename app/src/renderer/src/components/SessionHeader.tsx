@@ -16,6 +16,7 @@ import {
   Monitor,
   Pencil,
   Plus,
+  RefreshCw,
   ShieldAlert,
   WandSparkles,
   ShieldCheck,
@@ -377,6 +378,7 @@ export function ComposerSettings({
   appliedModel,
   forceRunnerOpen,
   onChooseRunner,
+  onRefreshRunners,
   onSelect,
   onEdit,
   onNew,
@@ -397,6 +399,8 @@ export function ComposerSettings({
   /** CLI가 session-meta로 알려준 실제 적용 모델 */
   appliedModel?: string
   forceRunnerOpen: boolean
+  /** CLI 를 업데이트하면 버전·모델 목록이 바뀐다. 앱을 다시 켜지 않고 다시 탐지한다. */
+  onRefreshRunners?: () => void | Promise<void>
   onSelect: (name?: string) => void
   onEdit: (agent: AgentDef) => void
   onNew: () => void
@@ -410,6 +414,13 @@ export function ComposerSettings({
   const [commitExpanded, setCommitExpanded] = useState(false)
   const [modelChoices, setModelChoices] = useState<ModelChoices>()
   const [modelDraft, setModelDraft] = useState('')
+  const [redetecting, setRedetecting] = useState(false)
+
+  const refreshRunners = (): void => {
+    if (!onRefreshRunners || redetecting) return
+    setRedetecting(true)
+    void Promise.resolve(onRefreshRunners()).finally(() => setRedetecting(false))
+  }
 
   // 후보는 실행 환경마다 다르고 Codex는 CLI 캐시에서 읽으므로, 패널을 열 때 그때의 값을 받는다.
   useEffect(() => {
@@ -586,7 +597,21 @@ export function ComposerSettings({
           <div className="fixed inset-0 z-30" onClick={() => setPanel(undefined)} />
           {panel === 'runner' && (
           <div className="absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(28rem,70vh)] w-[min(24rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-surface1 bg-mantle p-2 shadow-xl">
-            <div className="px-1.5 pb-1.5 text-[10px] font-medium uppercase tracking-wider text-overlay1">실행 환경</div>
+            <div className="flex items-center gap-2 px-1.5 pb-1.5">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-overlay1">실행 환경</span>
+              {onRefreshRunners && (
+                <button
+                  type="button"
+                  onClick={refreshRunners}
+                  disabled={redetecting}
+                  title="CLI를 다시 탐지해 버전과 모델 목록을 갱신합니다"
+                  className="ml-auto flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-overlay1 hover:bg-surface0 hover:text-subtext1 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`h-3 w-3 ${redetecting ? 'animate-spin' : ''}`} />
+                  {redetecting ? '탐지 중' : '다시 탐지'}
+                </button>
+              )}
+            </div>
             {runnerLocked && activeRunner ? (
               <div className="mb-2 flex items-center gap-2 rounded-lg bg-surface0/60 px-2.5 py-2 text-[12px] text-subtext1">
                 <RunnerIcon runner={activeRunner} className="h-4 w-4 text-sapphire" />
@@ -716,15 +741,29 @@ export function ComposerSettings({
                     Agent에 지정된 모델이 있으면 그것을, 없으면 CLI 기본값을 씁니다.
                   </span>
                 </button>
-                {modelChoices?.options.map((option) => (
+                {/* 못 쓰는 모델의 value 는 자리표시자라 key 에 순번을 섞는다(서로 겹칠 수 있다). */}
+                {modelChoices?.options.map((option, index) => (
                   <button
-                    key={option.value}
+                    key={`${option.value}:${index}`}
+                    disabled={option.disabled}
                     onClick={() => { void Promise.resolve(onChangeModel(option.value)); setPanel(undefined) }}
-                    className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${model === option.value ? 'bg-surface1' : 'hover:bg-surface0'}`}
+                    className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${
+                      option.disabled
+                        ? 'cursor-not-allowed opacity-60'
+                        : model === option.value ? 'bg-surface1' : 'hover:bg-surface0'
+                    }`}
                   >
                     <span className="flex items-baseline gap-1.5">
-                      <span className="text-[13px] font-medium text-text">{option.label}</span>
-                      <span className="truncate font-mono text-[12px] text-overlay1">{option.value}</span>
+                      <span className={`text-[13px] font-medium ${option.disabled ? 'text-subtext0' : 'text-text'}`}>
+                        {option.label}
+                      </span>
+                      {option.disabled ? (
+                        <span className="shrink-0 rounded bg-yellow/15 px-1.5 py-0.5 text-[10px] font-semibold text-yellow">
+                          CLI 업데이트 필요
+                        </span>
+                      ) : (
+                        <span className="truncate font-mono text-[12px] text-overlay1">{option.value}</span>
+                      )}
                     </span>
                     {option.detail && (
                       <span className="mt-0.5 block text-[12px] leading-relaxed text-overlay1">{option.detail}</span>

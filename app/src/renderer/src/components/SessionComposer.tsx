@@ -35,6 +35,7 @@ interface Props {
   onAnnotate: (index: number) => void
   onAttachFiles: (files: FileList) => void | Promise<void>
   onChooseRunner: (runnerId: string) => void | Promise<void>
+  onRefreshRunners: () => void | Promise<void>
   onSelectAgent: (name?: string) => void
   onEditAgent: (agent: AgentDef) => void
   onNewAgent: () => void
@@ -73,6 +74,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     onAnnotate,
     onAttachFiles,
     onChooseRunner,
+    onRefreshRunners,
     onSelectAgent,
     onEditAgent,
     onNewAgent,
@@ -120,6 +122,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
         runners={runners}
         commitNotice={commitNotice}
         onChooseRunner={onChooseRunner}
+        onRefreshRunners={onRefreshRunners}
         agentName={agentName}
         agents={agents}
         approvalMode={approvalMode}
