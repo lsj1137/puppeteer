@@ -12,10 +12,23 @@ interface DiffFile {
   deletions: number
 }
 
+const TEST_FILE = /\.(test|spec)\.[^.]+$/
+const DOC_FILE = /(^|\/)(docs?|README)(\/|\.|$)/i
+/** 저장소 설정 파일 — 점 파일(.gitignore 등)과 lock 파일 */
+const CONFIG_FILE = /(^|\/)(\.[^/]+|package-lock\.json)$/
+
 const labelFor = (path: string): string => {
-  const name = path.split('/').pop() ?? path
-  return name.replace(/\.(test|spec)\b/, ' 테스트').replace(/\.[^.]+$/, '')
+  const segments = path.split('/')
+  const name = segments.pop() ?? path
+  // .gitignore 처럼 점으로 시작하는 파일은 이름 전체가 확장자로 잘리지 않게 그대로 쓴다.
+  if (/^\.[^.]+$/.test(name)) return name
+  const label = name.replace(/\.(test|spec)\b/, ' 테스트').replace(/\.[^.]+$/, '')
+  // index 는 어느 모듈인지 알 수 없어 상위 폴더를 붙인다.
+  const parent = segments.pop()
+  return /^index( 테스트)?$/.test(label) && parent ? `${parent}/${label}` : label
 }
+
+const changeSize = (file: DiffFile): number => file.additions + file.deletions
 
 /** git diff에서 제목과 파일별 변경 요약을 만든다. */
 export function generateCommitMessage(diff: string): GeneratedCommitMessage {
@@ -58,11 +71,24 @@ export function generateCommitMessage(diff: string): GeneratedCommitMessage {
     return { subject: 'chore: 작업 변경 반영', body: [], value: 'chore: 작업 변경 반영' }
   }
 
-  const onlyDocs = files.every(({ path }) => /(^|\/)(docs?|README)(\/|\.|$)/i.test(path))
-  const onlyTests = files.every(({ path }) => /\.(test|spec)\.[^.]+$/.test(path))
+  const onlyDocs = files.every(({ path }) => DOC_FILE.test(path))
+  const onlyTests = files.every(({ path }) => TEST_FILE.test(path))
+  const onlyMeta = files.every(({ path }) => DOC_FILE.test(path) || CONFIG_FILE.test(path))
   const addedHook = files.find(({ path, added }) => added && /\/hooks?\/use-[^/]+\.[^.]+$/.test(path))
-  const testsChanged = files.some(({ path }) => /\.(test|spec)\.[^.]+$/.test(path))
-  const primary = addedHook ?? files.find(({ path }) => !/\.(test|spec)\.[^.]+$/.test(path)) ?? files[0]
+  const testsChanged = files.some(({ path }) => TEST_FILE.test(path))
+  // 소스 파일 중에서 대표를 고른다. 새 파일이 있으면 기능 추가로 보고 우선한다 —
+  // untracked 새 파일은 diff 끝에 줄 수 없이 붙으므로 순서·크기로는 뽑히지 않는다.
+  // 없으면 가장 많이 바뀐 파일을 쓴다.
+  const sources = files.filter(({ path }) => !TEST_FILE.test(path) && !DOC_FILE.test(path) && !CONFIG_FILE.test(path))
+  const largest = (list: DiffFile[]): DiffFile | undefined =>
+    list.reduce<DiffFile | undefined>((best, file) => (!best || changeSize(file) > changeSize(best) ? file : best), undefined)
+  const primary =
+    addedHook ??
+    largest(sources.filter(({ added }) => added)) ??
+    largest(sources) ??
+    files.find(({ path }) => !TEST_FILE.test(path)) ??
+    files[0]
+  const metaPrimary = files.find(({ path }) => CONFIG_FILE.test(path)) ?? primary
   const packageVersion = source.match(/^\+\s*"version":\s*"([^\"]+)"/m)?.[1]
   const versionChanged = Boolean(
     packageVersion &&
@@ -74,6 +100,7 @@ export function generateCommitMessage(diff: string): GeneratedCommitMessage {
   if (versionChanged) subject = `chore: 버전 ${packageVersion}로 갱신`
   else if (onlyDocs) subject = `docs: ${files.length === 1 ? labelFor(primary.path) : `문서 ${files.length}개`} 갱신`
   else if (onlyTests) subject = `test: ${files.length === 1 ? labelFor(primary.path) : '회귀 테스트'} 보강`
+  else if (onlyMeta) subject = `chore: ${labelFor(metaPrimary.path)}${files.length > 1 ? ` 외 ${files.length - 1}개` : ''} 갱신`
   else if (addedHook) subject = `refactor: ${labelFor(addedHook.path)} 훅 분리`
   else if (primary.added) subject = `feat: ${labelFor(primary.path)} 추가`
   else subject = `refactor: ${labelFor(primary.path)} 개선`
