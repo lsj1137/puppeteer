@@ -1,4 +1,5 @@
 import type { StoredSession } from '@shared/session'
+import { isSlashCommand } from '@shared/slash-command'
 import { sessionRunPath } from './navigation'
 
 export interface SessionLaunch {
@@ -19,12 +20,14 @@ export const AUTO_AGENT = '__auto__'
  *
  * 세션이 이미 있으면 그 세션의 Agent 가 정본이라 라우팅할 일이 없다.
  * 즉 자동 선택은 새 세션의 첫 지시에서만 의미가 있다.
+ * 슬래시 명령은 고를 Agent 가 없는 CLI 명령이라 라우터(모델 호출)를 태우지 않는다.
  */
 export function shouldRouteAgent(
   pickedAgent: string | undefined,
   activeSessionId: string | undefined,
+  text = '',
 ): boolean {
-  return pickedAgent === AUTO_AGENT && !activeSessionId
+  return pickedAgent === AUTO_AGENT && !activeSessionId && !isSlashCommand(text)
 }
 
 /**

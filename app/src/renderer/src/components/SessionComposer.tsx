@@ -21,6 +21,8 @@ interface Props {
   historyKey: string
   promptHistory: string[]
   runningSessionIds: string[]
+  /** 슬래시 명령 자동완성 후보(`/` 제외). 비어 있으면 자동완성을 띄우지 않는다. */
+  slashCommands: string[]
   runners: DetectedRunner[]
   showRunnerPicker: boolean
   activeRunner?: DetectedRunner
@@ -60,6 +62,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
     historyKey,
     promptHistory,
     runningSessionIds,
+    slashCommands,
     runners,
     showRunnerPicker,
     activeRunner,
@@ -160,6 +163,7 @@ const SessionComposer = forwardRef<PromptInputHandle, Props>(function SessionCom
           historyKey={historyKey}
           initialHistory={promptHistory}
           queued={Boolean(visibleQueuedPrompt)}
+          slashCommands={slashCommands}
           onQueue={(text) => {
             if (activeSessionId) setQueuedPrompt({ text, sessionId: activeSessionId })
           }}

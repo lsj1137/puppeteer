@@ -6,6 +6,7 @@ import {
   ChevronUp,
   FileCode2,
   Loader2,
+  ShieldAlert,
   Sparkles,
   Users,
   X,
@@ -20,6 +21,8 @@ import ToolEntry from './ToolEntry'
 interface Props {
   selectedArtifact?: string
   view: SessionView
+  /** 승인 카드가 떠 있는 보조 run. 위임 카드에서 어느 보조가 멈춰 있는지 보여준다. */
+  waitingRunIds?: string[]
   onSelectArtifact: (id: string) => void
   onOpenMemory?: () => void
 }
@@ -28,6 +31,7 @@ interface Props {
 export default function ConversationEntries({
   selectedArtifact,
   view,
+  waitingRunIds = [],
   onSelectArtifact,
   onOpenMemory,
 }: Props) {
@@ -73,7 +77,7 @@ export default function ConversationEntries({
         if (entry.kind === 'delegation') {
           return (
             <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0">
-              <DelegationCard runs={entry.runs} />
+              <DelegationCard runs={entry.runs} waitingRunIds={waitingRunIds} />
             </div>
           )
         }
@@ -200,9 +204,11 @@ function NoticeCard({
  * 위임 카드. 보조 run 의 대화 전체는 싣지 않고 상태·비용과 반환 요약만 접어서 보여준다.
  * 보조 메시지를 그대로 흘리면 Lead 가 말한 것처럼 보인다.
  */
-function DelegationCard({ runs }: { runs: DelegationRun[] }) {
+function DelegationCard({ runs, waitingRunIds }: { runs: DelegationRun[]; waitingRunIds: string[] }) {
   const [openRunId, setOpenRunId] = useState<string>()
+  const isWaiting = (run: DelegationRun): boolean => run.ok === undefined && waitingRunIds.includes(run.runId)
   const running = runs.filter((run) => run.ok === undefined).length
+  const waiting = runs.filter(isWaiting).length
   const failed = runs.filter((run) => run.ok === false).length
   const cost = runs.reduce((sum, run) => sum + (run.costUsd ?? 0), 0)
 
@@ -214,6 +220,7 @@ function DelegationCard({ runs }: { runs: DelegationRun[] }) {
         <span className="text-overlay1">
           {running > 0 ? `${running}개 실행 중` : failed > 0 ? `${failed}개 실패` : '완료'}
         </span>
+        {waiting > 0 && <span className="text-peach">· {waiting}개 승인 대기</span>}
         {cost > 0 && <span className="ml-auto font-mono text-[11px] text-overlay1">${cost.toFixed(4)}</span>}
       </div>
       <div className="space-y-1">
@@ -226,7 +233,9 @@ function DelegationCard({ runs }: { runs: DelegationRun[] }) {
                 onClick={() => setOpenRunId(open ? undefined : run.runId)}
                 className="flex w-full items-start gap-2 px-2.5 py-2 text-left hover:bg-surface0/50"
               >
-                {run.ok === undefined ? (
+                {isWaiting(run) ? (
+                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-peach" />
+                ) : run.ok === undefined ? (
                   <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-mauve" />
                 ) : run.ok ? (
                   <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green" />
@@ -236,7 +245,7 @@ function DelegationCard({ runs }: { runs: DelegationRun[] }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-text">{run.task}</span>
                   <span className="block truncate text-[11px] text-overlay1">
-                    {run.agentName || 'Agent 없음'} · {run.status}
+                    {run.agentName || 'Agent 없음'} · {isWaiting(run) ? '승인 대기 — 아래 승인 카드에서 결정' : run.status}
                   </span>
                 </span>
               </button>

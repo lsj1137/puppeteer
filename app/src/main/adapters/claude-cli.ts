@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
 import type { DetectedRunner, SessionEvent } from '@shared/session'
+import { isSlashCommand } from '@shared/slash-command'
 
 export interface StartOptions {
   runner: DetectedRunner
@@ -37,8 +38,12 @@ export interface StartOptions {
 /**
  * 승인을 물을 도구.
  * 읽기 계열(Read/Glob/Grep)은 hook 을 거치지 않게 해서 승인 요청 자체를 줄인다.
+ *
+ * WebFetch·WebSearch 도 권한이 필요한 도구다. `-p` 모드는 사람에게 물을 수 없어서 hook 이
+ * 없으면 CLI 가 곧바로 거부한다 — 세션이 자동 승인이어도 그 설정이 닿지 않는다. 실제로 웹 조사
+ * 위임 6건이 전부 «haven't granted it yet» 으로 한 페이지도 못 열고 끝났다.
  */
-const GATED_TOOLS = 'Bash|PowerShell|Write|Edit|NotebookEdit'
+const GATED_TOOLS = 'Bash|PowerShell|Write|Edit|NotebookEdit|WebFetch|WebSearch'
 
 /**
  * Claude Code CLI 를 stream-json 으로 구동하는 어댑터.
@@ -169,6 +174,7 @@ export class ClaudeCliAdapter {
               apiKeySource: ev.apiKeySource,
               tools: ev.tools ?? [],
               memoryPaths: ev.memory_paths,
+              slashCommands: Array.isArray(ev.slash_commands) ? ev.slash_commands : undefined,
             },
           })
           this.emit({ t: 'status', status: 'running' })
@@ -488,10 +494,17 @@ export function buildClaudeArgs(
   return cliArgs
 }
 
-/** Windows 명령행 한도와 무관하게 stdin으로 보낼 Claude 입력 전문. */
+/**
+ * Windows 명령행 한도와 무관하게 stdin으로 보낼 Claude 입력 전문.
+ *
+ * 슬래시 명령에는 앱 지침을 붙이지 않는다. CLI 는 입력이 `/` 로 시작할 때만 명령으로
+ * 처리하므로, 지침을 앞에 붙이면 명령이 일반 메시지가 되어 모델로 넘어간다.
+ * 그 턴에는 Memory 제안·위임 블록을 받지 못하는 대가가 있다.
+ */
 export function buildClaudePrompt(
   opts: Pick<StartOptions, 'prompt' | 'systemPrompt'>,
 ): string {
+  if (isSlashCommand(opts.prompt)) return opts.prompt.trimStart()
   return opts.systemPrompt
     ? `${opts.systemPrompt}\n\n---\n\n${opts.prompt}`
     : opts.prompt

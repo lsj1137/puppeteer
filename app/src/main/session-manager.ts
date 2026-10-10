@@ -130,8 +130,8 @@ const TERMINAL: SessionStatus[] = ['completed', 'failed', 'stopped', 'auth-requi
 const SUB_RUN_DISALLOWED = ['Write', 'Edit', 'NotebookEdit', 'Bash', 'PowerShell']
 
 const SUB_RUN_INSTRUCTION = `당신은 다른 Agent가 위임한 조사를 수행하는 보조 실행입니다. 결과는 사람이 아니라 위임한 Agent에게 전달됩니다.
-- 파일을 수정하거나 만들 수 없고 명령도 실행할 수 없습니다. Read·Grep·Glob 으로만 조사하세요.
-  (Bash 를 시도하면 승인 대기로 멈춰 아무 결과도 못 냅니다.)
+- 파일을 수정하거나 만들 수 없고 명령도 실행할 수 없습니다. 코드·문서는 Read·Grep·Glob 으로 조사하세요.
+- 웹 조사는 WebSearch·WebFetch 로 할 수 있습니다. 세션 승인 정책을 따르므로 거부되면 다시 시도하지 말고 거부됐다고 적으세요.
 - 마지막 응답이 그대로 전달됩니다. 인사말 없이 확인한 내용과 근거(파일 경로·줄 번호 등)를 적으세요.
 - 확인하지 못한 것은 추측하지 말고 확인하지 못했다고 적으세요.
 - 다른 보조에게 다시 위임할 수 없습니다.`

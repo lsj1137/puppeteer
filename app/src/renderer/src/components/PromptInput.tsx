@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import { Send } from 'lucide-react'
+import { matchSlashCommands, slashQuery } from '@shared/slash-command'
 
 export interface PromptInputHandle {
   focus: () => void
@@ -11,6 +12,7 @@ interface Props {
   historyKey: string
   initialHistory: string[]
   queued: boolean
+  slashCommands: string[]
   onQueue: (text: string) => void
   onSubmit: (text: string) => void
 }
@@ -32,10 +34,17 @@ function keepLatestDuplicates(items: string[]): string[] {
 
 /** 입력 중 App 전체가 다시 렌더링되지 않도록 값과 높이를 로컬에서 관리한다. */
 const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptInput(
-  { active, busy, historyKey, initialHistory, queued, onQueue, onSubmit },
+  { active, busy, historyKey, initialHistory, queued, slashCommands, onQueue, onSubmit },
   ref,
 ) {
   const [value, setValue] = useState('')
+  const [slashIndex, setSlashIndex] = useState(0)
+  /** Esc 로 닫은 입력값. 같은 값인 동안은 다시 띄우지 않는다. */
+  const [slashDismissed, setSlashDismissed] = useState<string>()
+  const query = slashQuery(value)
+  const suggestions =
+    query === undefined || slashDismissed === value ? [] : matchSlashCommands(slashCommands, query)
+  const highlighted = Math.min(slashIndex, Math.max(0, suggestions.length - 1))
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const historyRef = useRef<string[]>([])
   const historyIndexRef = useRef(0)
@@ -94,49 +103,108 @@ const PromptInput = forwardRef<PromptInputHandle, Props>(function PromptInput(
     setValue(next === history.length ? draftRef.current : history[next])
   }
 
+  const completeSlash = (name: string): void => {
+    setValue(`/${name} `)
+    setSlashIndex(0)
+    textareaRef.current?.focus()
+  }
+
   return (
     <>
-      <textarea
-        ref={textareaRef}
-        rows={1}
-        value={value}
-        onChange={(event) => {
-          setValue(event.target.value)
-          window.dispatchEvent(new Event('workspace:user-interaction'))
-        }}
-        onKeyDown={(event) => {
-          const target = event.currentTarget
-          // Alt+방향키는 전역 프로젝트·세션 탐색 단축키에 맡긴다.
-          if (event.altKey && event.key.startsWith('Arrow')) return
-          if (event.key === 'ArrowUp' && target.selectionStart === 0) {
-            event.preventDefault()
-            event.stopPropagation()
-            recall(-1)
-            return
+      <div className="relative flex min-w-0 flex-1">
+        {suggestions.length > 0 && (
+          <div
+            role="listbox"
+            className="absolute bottom-full left-0 z-40 mb-1.5 max-h-[min(20rem,50vh)] w-[min(22rem,calc(100vw-2rem))] overflow-auto rounded-xl border border-surface1 bg-mantle p-1 shadow-xl"
+          >
+            {suggestions.map((name, index) => (
+              <button
+                key={name}
+                type="button"
+                role="option"
+                aria-selected={index === highlighted}
+                // 클릭 전에 입력창 포커스가 빠지지 않게 한다.
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setSlashIndex(index)}
+                onClick={() => completeSlash(name)}
+                className={`block w-full truncate rounded-md px-2.5 py-1.5 text-left font-mono text-xs ${
+                  index === highlighted ? 'bg-lavender/15 text-text' : 'text-subtext1 hover:bg-surface0'
+                }`}
+              >
+                /{name}
+              </button>
+            ))}
+          </div>
+        )}
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={value}
+          onChange={(event) => {
+            setValue(event.target.value)
+            setSlashIndex(0)
+            window.dispatchEvent(new Event('workspace:user-interaction'))
+          }}
+          onKeyDown={(event) => {
+            const target = event.currentTarget
+            // Alt+방향키는 전역 프로젝트·세션 탐색 단축키에 맡긴다.
+            if (event.altKey && event.key.startsWith('Arrow')) return
+            // 자동완성이 떠 있으면 방향키·Tab·Enter·Esc 는 목록이 먼저 받는다.
+            if (suggestions.length > 0 && !event.nativeEvent.isComposing) {
+              if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+                event.preventDefault()
+                event.stopPropagation()
+                const step = event.key === 'ArrowUp' ? -1 : 1
+                setSlashIndex((highlighted + step + suggestions.length) % suggestions.length)
+                return
+              }
+              if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
+                event.preventDefault()
+                const name = suggestions[highlighted]
+                // 이미 다 친 명령에서 Enter 면 고를 게 없으니 바로 보낸다.
+                if (event.key === 'Enter' && query === name) submit()
+                else completeSlash(name)
+                return
+              }
+              if (event.key === 'Escape') {
+                event.preventDefault()
+                event.stopPropagation()
+                setSlashDismissed(value)
+                return
+              }
+            }
+            if (event.key === 'ArrowUp' && target.selectionStart === 0) {
+              event.preventDefault()
+              event.stopPropagation()
+              recall(-1)
+              return
+            }
+            if (event.key === 'ArrowDown' && target.selectionStart === value.length) {
+              event.preventDefault()
+              event.stopPropagation()
+              recall(1)
+              return
+            }
+            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+              event.preventDefault()
+              submit()
+            }
+          }}
+          placeholder={
+            !active
+              ? '먼저 프로젝트를 추가하세요'
+              : busy
+                ? queued
+                  ? '다음 지시가 예약됨 · 새 내용으로 교체할 수 있습니다'
+                  : '실행 중 · 다음 지시를 미리 입력하고 Enter로 예약'
+                : slashCommands.length > 0
+                  ? '지시를 입력하고 Enter · Shift+Enter 줄바꿈 · / 로 명령 · 이미지는 붙여넣기/드래그'
+                  : '지시를 입력하고 Enter · Shift+Enter 줄바꿈 · 이미지는 붙여넣기/드래그'
           }
-          if (event.key === 'ArrowDown' && target.selectionStart === value.length) {
-            event.preventDefault()
-            event.stopPropagation()
-            recall(1)
-            return
-          }
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-            event.preventDefault()
-            submit()
-          }
-        }}
-        placeholder={
-          !active
-            ? '먼저 프로젝트를 추가하세요'
-            : busy
-              ? queued
-                ? '다음 지시가 예약됨 · 새 내용으로 교체할 수 있습니다'
-                : '실행 중 · 다음 지시를 미리 입력하고 Enter로 예약'
-              : '지시를 입력하고 Enter · Shift+Enter 줄바꿈 · 이미지는 붙여넣기/드래그'
-        }
-        disabled={!active}
-        className="flex-1 rounded-lg border border-surface1 bg-base px-3 py-2.5 text-sm leading-relaxed text-text outline-none placeholder:text-overlay1 focus:border-lavender/60 disabled:opacity-50"
-      />
+          disabled={!active}
+          className="flex-1 rounded-lg border border-surface1 bg-base px-3 py-2.5 text-sm leading-relaxed text-text outline-none placeholder:text-overlay1 focus:border-lavender/60 disabled:opacity-50"
+        />
+      </div>
       <button
         onClick={submit}
         disabled={!active || !value.trim()}

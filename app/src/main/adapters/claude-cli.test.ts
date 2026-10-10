@@ -71,6 +71,10 @@ describe('buildClaudeArgs', () => {
     const settings = JSON.parse(args[args.indexOf('--settings') + 1]) as {
       hooks: { PreToolUse: { matcher: string; hooks: { command: string; timeout: number }[] }[] }
     }
+    // -p 모드에서 hook 을 안 거치는 권한 도구는 승인 정책과 무관하게 거부된다.
+    expect(settings.hooks.PreToolUse[0].matcher.split('|')).toEqual(
+      expect.arrayContaining(['Bash', 'Write', 'WebFetch', 'WebSearch']),
+    )
     expect(settings.hooks.PreToolUse[0].hooks[0]).toEqual({
       type: 'command',
       command: 'bash approve.sh /tmp/approvals',
@@ -84,6 +88,12 @@ describe('buildClaudeArgs', () => {
     expect(prompt.startsWith(long)).toBe(true)
     expect(prompt.endsWith('계속해줘')).toBe(true)
     expect(buildClaudeArgs({ prompt: long })).not.toContain(long)
+  })
+
+  // CLI 는 입력이 `/` 로 시작할 때만 명령으로 처리한다. 지침을 앞에 붙이면 모델로 새어 나간다.
+  it('sends slash commands without the app system prompt', () => {
+    expect(buildClaudePrompt({ prompt: '/context', systemPrompt: '앱 지침' })).toBe('/context')
+    expect(buildClaudePrompt({ prompt: '/home/me 봐줘', systemPrompt: '앱 지침' })).toMatch(/^앱 지침/)
   })
 })
 

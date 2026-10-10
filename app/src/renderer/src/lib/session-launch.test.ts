@@ -83,4 +83,9 @@ describe('shouldRouteAgent', () => {
     expect(shouldRouteAgent('explorer', undefined)).toBe(false)
     expect(shouldRouteAgent(undefined, undefined)).toBe(false)
   })
+
+  it('슬래시 명령은 라우터를 태우지 않는다', () => {
+    expect(shouldRouteAgent(AUTO_AGENT, undefined, '/context')).toBe(false)
+    expect(shouldRouteAgent(AUTO_AGENT, undefined, '리뷰해줘')).toBe(true)
+  })
 })

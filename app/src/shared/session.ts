@@ -91,6 +91,8 @@ export interface SessionMeta {
   tools: string[]
   /** CLI 가 알려주는 메모리 경로 — 앱이 추측하지 않는다 */
   memoryPaths?: Record<string, string>
+  /** CLI 가 이 세션에서 받는 슬래시 명령 이름(`/` 제외). Claude 만 알려준다. */
+  slashCommands?: string[]
 }
 
 /** result 이벤트에서 추출. 비용은 CLI 가 계산해준다. */

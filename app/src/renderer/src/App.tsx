@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDown,
@@ -349,6 +349,27 @@ export default function App() {
   const activeRunnerId =
     nextRunnerId ?? selectedSessionRunnerId ?? activeProject?.runnerId ?? defaultRunnerId
   const activeRunner = runners.find((r) => r.id === activeRunnerId)
+  /**
+   * 슬래시 명령 자동완성 후보. CLI 가 세션 init 때 알려준 목록이 정본이다.
+   * 새 세션은 아직 init 전이라, 같은 실행환경에서 마지막으로 받은 목록을 쓴다 —
+   * WSL 과 Windows 는 설치된 Skill 이 달라 실행환경별로 따로 둔다.
+   */
+  const slashCommandsKey = activeRunnerId ? `ws.slashCommands.${activeRunnerId}` : undefined
+  const liveSlashCommands = view.meta?.slashCommands
+  const slashCommands = useMemo<string[]>(() => {
+    if (activeRunner?.provider !== 'claude-cli') return []
+    if (liveSlashCommands?.length) return liveSlashCommands
+    try {
+      const stored = JSON.parse(slashCommandsKey ? (localStorage.getItem(slashCommandsKey) ?? '[]') : '[]')
+      return Array.isArray(stored) ? stored.filter((item): item is string => typeof item === 'string') : []
+    } catch {
+      return []
+    }
+  }, [activeRunner?.provider, liveSlashCommands, slashCommandsKey])
+  useEffect(() => {
+    if (slashCommandsKey && liveSlashCommands?.length)
+      localStorage.setItem(slashCommandsKey, JSON.stringify(liveSlashCommands))
+  }, [liveSlashCommands, slashCommandsKey])
   /**
    * 세션이 한 번 시작되면 실행 환경을 못 바꾼다.
    * 세션 기록이 러너 홈마다 따로라(WSL ~/.claude · Windows %USERPROFILE% · Codex ~/.codex)
@@ -848,7 +869,7 @@ export default function App() {
    * 새 세션의 첫 지시에서만 해당한다 — 이어가는 턴은 세션의 Agent 가 정본이다.
    */
   async function submitOrRoute(text: string): Promise<void> {
-    if (!shouldRouteAgent(pickedAgent, activeSession)) {
+    if (!shouldRouteAgent(pickedAgent, activeSession, text)) {
       submit(text)
       return
     }
@@ -1300,6 +1321,7 @@ export default function App() {
         <div className="space-y-2.5">
           <ConversationEntries
             view={view}
+            waitingRunIds={myApprovals.flatMap((approval) => (approval.runId ? [approval.runId] : []))}
             selectedArtifact={selectedArtifact}
             onSelectArtifact={focusArtifact}
             onOpenMemory={() => setScreen('memory')}
@@ -1417,6 +1439,7 @@ export default function App() {
             .filter((entry) => entry.kind === 'user')
             .map((entry) => entry.text)}
           runningSessionIds={running.map(({ id }) => id)}
+          slashCommands={slashCommands}
           runners={usableRunners}
           showRunnerPicker={pendingPick !== undefined && !runnerLocked}
           activeRunner={activeRunner}
