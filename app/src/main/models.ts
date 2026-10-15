@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { DetectedRunner, ModelChoices, ModelOption } from '@shared/session'
+import * as ollama from './ollama'
 
 /**
  * 세션에 지정할 수 있는 모델 후보.
@@ -157,6 +158,25 @@ export function list(runner: DetectedRunner): ModelChoices {
     return {
       options: [],
       note: `Codex 모델 캐시를 읽지 못했습니다(${(e as Error).message}). 슬러그를 직접 입력해 주세요.`,
+    }
+  }
+}
+
+/**
+ * 화면에 줄 모델 후보. Ollama 판 러너는 CLI 캐시가 아니라 Ollama 에 **받아 둔** 모델을 보여준다.
+ * 거기 없는 이름을 고르면 요청이 실패하므로 별칭·직접 입력보다 이 목록이 정본이다.
+ */
+export async function listForRunner(runner: DetectedRunner): Promise<ModelChoices> {
+  if (!ollama.isOllama(runner)) return list(runner)
+  try {
+    const options = await ollama.listModels()
+    return options.length
+      ? { options, source: ollama.OLLAMA_URL }
+      : { options, note: 'Ollama 에 받은 모델이 없습니다. `ollama pull <모델>` 로 먼저 받아 주세요.' }
+  } catch (e) {
+    return {
+      options: [],
+      note: `Ollama 모델 목록을 읽지 못했습니다(${(e as Error).message}). Ollama 가 켜져 있는지 확인해 주세요.`,
     }
   }
 }

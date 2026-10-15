@@ -581,7 +581,7 @@ export function ComposerSettings({
             }`}
           >
             <Cpu className="h-3.5 w-3.5 shrink-0 text-teal" />
-            <span className="truncate">{model || appliedModel || 'CLI 기본'}</span>
+            <span className="truncate">{model || appliedModel || (activeRunner?.backend === 'ollama' ? '자동 (로컬)' : 'CLI 기본')}</span>
           </button>
 
         <button
@@ -858,9 +858,14 @@ export function ComposerSettings({
                   onClick={() => { void Promise.resolve(onChangeModel(null)); setPanel(undefined) }}
                   className={`mb-1 w-full rounded-lg px-3 py-2 text-left ${!model ? 'bg-surface1' : 'hover:bg-surface0'}`}
                 >
-                  <span className="block text-[13px] font-medium text-text">CLI 기본</span>
+                  <span className="block text-[13px] font-medium text-text">
+                    {activeRunner?.backend === 'ollama' ? '자동 (로컬 모델)' : 'CLI 기본'}
+                  </span>
                   <span className="mt-0.5 block text-[12px] text-overlay1">
-                    Agent에 지정된 모델이 있으면 그것을, 없으면 CLI 기본값을 씁니다.
+                    {/* Ollama 에는 별칭이 없다. 고른 모델이 없으면 받아 둔 로컬 모델 중 첫 번째로 돈다(ollama.ts). */}
+                    {activeRunner?.backend === 'ollama'
+                      ? 'Ollama에 받아 둔 로컬 모델 중 첫 번째를 씁니다. 클라우드 모델로는 넘어가지 않습니다.'
+                      : 'Agent에 지정된 모델이 있으면 그것을, 없으면 CLI 기본값을 씁니다.'}
                   </span>
                 </button>
                 {/* 못 쓰는 모델의 value 는 자리표시자라 key 에 순번을 섞는다(서로 겹칠 수 있다). */}

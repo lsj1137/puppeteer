@@ -208,6 +208,12 @@ export interface DetectedRunner {
   installMethod: InstallMethod
   available: boolean
   note?: string
+  /**
+   * 모델을 어디서 받는가. 비어 있으면 CLI 기본(Anthropic·OpenAI).
+   * `ollama` 면 같은 CLI 가 이 PC 의 Ollama 모델로 요청한다 — CLI(도구·승인·이어가기)는
+   * 그대로고 모델만 바뀐다. 탐지 때 Ollama 가 응답하면 원래 러너 옆에 하나씩 덧붙는다.
+   */
+  backend?: 'ollama'
 }
 
 // ---------------------------------------------------------------------------

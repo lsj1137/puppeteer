@@ -2,6 +2,7 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
 import type { SessionEvent, SessionStatus } from '@shared/session'
 import { buildRunnerCommand, type StartOptions } from './claude-cli'
+import { isOllama, ollamaArgs, resolveModel as resolveOllamaModel } from '../ollama'
 
 /**
  * Codex CLI 어댑터. `codex exec --json` 의 JSONL 을 앱 이벤트로 정규화한다.
@@ -32,6 +33,19 @@ export class CodexCliAdapter {
   constructor(private readonly emit: (e: SessionEvent) => void) {}
 
   start(opts: StartOptions): void {
+    if (!isOllama(opts.runner)) return this.launch(opts)
+    // 모델 없이 `--oss` 로 띄우면 Codex 가 기본 공개 모델(수 GB)을 스스로 받으러 간다.
+    // 받아 둔 모델로 반드시 정해서 넘긴다.
+    this.emit({ t: 'status', status: 'starting' })
+    void resolveOllamaModel(opts.model).then(
+      (model) => {
+        if (!this.settled) this.launch({ ...opts, model })
+      },
+      (err: Error) => this.settle('failed', err.message),
+    )
+  }
+
+  private launch(opts: StartOptions): void {
     this.cwd = opts.cwd
     this.model = opts.model
     const cliArgs = buildCodexArgs(opts)
@@ -245,9 +259,11 @@ export class CodexCliAdapter {
 }
 
 export function buildCodexArgs(
-  opts: Pick<StartOptions, 'agentPrompt' | 'systemPrompt' | 'hookCommand' | 'model' | 'prompt' | 'resumeSessionId'>,
+  opts: Pick<StartOptions, 'agentPrompt' | 'systemPrompt' | 'hookCommand' | 'model' | 'prompt' | 'resumeSessionId'> &
+    Partial<Pick<StartOptions, 'runner'>>,
 ): string[] {
   const cliArgs = ['exec', '--json', '--skip-git-repo-check']
+  if (opts.runner) cliArgs.push(...ollamaArgs(opts.runner))
 
   if (opts.model) cliArgs.push('--model', opts.model)
   // 파일을 고쳐야 하므로 workspace-write. 실제 통제는 승인 훅이 한다.

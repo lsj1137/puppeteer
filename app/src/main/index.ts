@@ -373,7 +373,7 @@ app.whenReady().then(() => {
     sessions.setModel(sessionId, model),
   )
   // 후보 목록은 Codex CLI 캐시에서 읽는다. 앱이 슬러그를 박아두면 모델이 바뀔 때 조용히 틀린다.
-  ipcMain.handle('model:list', (_e, runner: DetectedRunner) => models.list(runner))
+  ipcMain.handle('model:list', (_e, runner: DetectedRunner) => models.listForRunner(runner))
   // 설치에 쓴 도구(bun·npm·claude update)로 올린다. 무엇을 실행할지 먼저 보여주고 사용자가 누르면 돈다.
   ipcMain.handle('cli:updatePlan', (_e, runner: DetectedRunner) => cliUpdate.plan(runner))
   ipcMain.handle('cli:update', (_e, runner: DetectedRunner) => cliUpdate.run(runner))

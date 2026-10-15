@@ -2,6 +2,7 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
 import type { DetectedRunner, SessionEvent } from '@shared/session'
 import { isSlashCommand } from '@shared/slash-command'
+import { isOllama, resolveModel as resolveOllamaModel, runnerEnv } from '../ollama'
 
 export interface StartOptions {
   runner: DetectedRunner
@@ -61,6 +62,19 @@ export class ClaudeCliAdapter {
   constructor(private readonly emit: (e: SessionEvent) => void) {}
 
   start(opts: StartOptions): void {
+    if (!isOllama(opts.runner)) return this.launch(opts)
+    // Ollama 는 받아 둔 모델 이름으로만 답한다. «CLI 기본»·`opus` 같은 값은 실제 모델로 바꿔 띄운다.
+    this.emit({ t: 'status', status: 'starting' })
+    void resolveOllamaModel(opts.model).then(
+      (model) => {
+        // 모델을 고르는 사이 멈춤을 눌렀으면 띄우지 않는다.
+        if (!this.settled) this.launch({ ...opts, model })
+      },
+      (err: Error) => this.settle('failed', err.message),
+    )
+  }
+
+  private launch(opts: StartOptions): void {
     const cliArgs = buildClaudeArgs(opts)
     const prompt = buildClaudePrompt(opts)
     const { command, args, windowsVerbatimArguments } = this.buildCommand(opts, cliArgs)
@@ -77,6 +91,7 @@ export class ClaudeCliAdapter {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         windowsVerbatimArguments,
+        env: runnerEnv(opts.runner, opts.model),
       })
     } catch (err) {
       this.settle('failed', `실행 실패: ${(err as Error).message} (${command})`)

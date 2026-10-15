@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import type { DetectedRunner } from '@shared/session'
 // 러너 실행 명령은 provider 공용이다(WSL·Windows 인용 규칙이 같다).
 import { buildRunnerCommand } from './adapters/claude-cli'
+import { isOllama, ollamaArgs, resolveModel as resolveOllamaModel, runnerEnv } from './ollama'
 
 /**
  * CLI 를 **한 번만** 돌려 최종 텍스트를 받는다.
@@ -52,16 +53,27 @@ export interface RunOnceOptions {
   timeoutMs?: number
 }
 
-export function runOnce(
+export async function runOnce(
   prompt: string,
   runner: DetectedRunner,
   cwd: string,
   options: RunOnceOptions = {},
 ): Promise<string> {
-  const { model, timeoutMs = 45_000 } = options
+  const { timeoutMs = 45_000 } = options
+  // 라우팅은 `haiku` 같은 별칭을 넘긴다. Ollama 에는 그런 모델이 없어 받아 둔 모델로 바꾼다.
+  const model = isOllama(runner) ? await resolveOllamaModel(options.model) : options.model
   const codex = runner.provider === 'codex-cli'
   const args = codex
-    ? ['exec', '--json', '--skip-git-repo-check', '--sandbox', 'read-only', '-']
+    ? [
+        'exec',
+        '--json',
+        '--skip-git-repo-check',
+        ...ollamaArgs(runner),
+        ...(isOllama(runner) && model ? ['--model', model] : []),
+        '--sandbox',
+        'read-only',
+        '-',
+      ]
     : [
         '-p',
         ...(model ? ['--model', model] : []),
@@ -83,6 +95,7 @@ export function runOnce(
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
       windowsVerbatimArguments,
+      env: runnerEnv(runner, model),
     })
     child.stdin?.on('error', () => {
       // 자식이 먼저 죽으면 EPIPE 가 난다. 종료 처리에서 이유를 낸다.

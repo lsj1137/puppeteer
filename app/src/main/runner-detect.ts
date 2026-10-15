@@ -4,6 +4,7 @@ import { homedir } from 'node:os'
 import { join, posix } from 'node:path'
 import { promisify } from 'node:util'
 import type { DetectedRunner, InstallMethod, ProviderId } from '@shared/session'
+import { OLLAMA_PORT, probeHost, withOllamaRunners } from './ollama'
 
 const exec = promisify(execFile)
 
@@ -283,7 +284,26 @@ const TARGETS: Array<{ provider: ProviderId; bin: string }> = [
   { provider: 'codex-cli', bin: 'codex' },
 ]
 
+/**
+ * WSL 배포판 안에서 Ollama 포트에 붙어지는지. 호스트에서 보이는 것과 다르다 —
+ * 기본 NAT 모드에서는 Windows 에 띄운 Ollama 가 WSL 의 127.0.0.1 로 안 보인다.
+ * curl 이 없는 배포판도 있어 bash 의 `/dev/tcp` 로 연결만 본다(고정 문자열, 셸 평가할 입력 없음).
+ */
+async function wslReachesOllama(distro: string): Promise<boolean> {
+  try {
+    await exec('wsl.exe', ['-d', distro, '-e', 'bash', '-c', `exec 3<>/dev/tcp/127.0.0.1/${OLLAMA_PORT}`], {
+      timeout: 5_000,
+      windowsHide: true,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 export async function detectRunners(): Promise<DetectedRunner[]> {
+  // Ollama 확인은 CLI 탐지와 겹쳐 돌린다. smoke 는 탐지가 끝나야 마커를 찍으므로 탐지를 늘리면 안 된다.
+  const hostOllama = probeHost()
   const results = await Promise.all(
     TARGETS.flatMap(({ provider, bin }) => [
       detectWindows(provider, bin),
@@ -291,5 +311,13 @@ export async function detectRunners(): Promise<DetectedRunner[]> {
       detectPosix(provider, bin),
     ]),
   )
-  return results.flat()
+  const runners = results.flat()
+
+  const distros = [...new Set(runners.flatMap((runner) => (runner.kind === 'wsl' && runner.distro ? [runner.distro] : [])))]
+  const [host, ...wsl] = await Promise.all([hostOllama, ...distros.map(wslReachesOllama)])
+  const wslReach = new Map(distros.map((distro, i) => [distro, wsl[i]]))
+
+  return withOllamaRunners(runners, (runner) =>
+    runner.kind === 'wsl' ? wslReach.get(runner.distro ?? '') === true : host,
+  )
 }
