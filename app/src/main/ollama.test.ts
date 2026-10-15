@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DetectedRunner } from '@shared/session'
 import { runnerEnvironmentLabel } from '@shared/runner'
+import { costUsd } from './adapters/claude-cli'
 import { buildCodexArgs } from './adapters/codex-cli'
 import {
   OLLAMA_URL,
@@ -133,5 +134,16 @@ describe('withOllamaRunners', () => {
     expect(runnerEnvironmentLabel(runner({ kind: 'wsl', distro: 'Ubuntu', backend: 'ollama' }))).toBe(
       'WSL Ubuntu · Ollama',
     )
+  })
+})
+
+describe('costUsd', () => {
+  it('Ollama 로 돈 턴은 CLI 가 지어낸 비용을 버리고 0 으로 센다', () => {
+    expect(costUsd(0.0108, runner({ backend: 'ollama' }))).toBe(0)
+  })
+
+  it('일반 러너는 CLI 가 준 값을 그대로 쓴다', () => {
+    expect(costUsd(0.42, runner())).toBe(0.42)
+    expect(costUsd(undefined, runner())).toBe(0)
   })
 })

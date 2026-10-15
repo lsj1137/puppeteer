@@ -58,6 +58,7 @@ export class ClaudeCliAdapter {
   private emittedText = new Set<string>()
   /** 종료 상태를 이미 냈는지. result 와 exit 가 겹쳐 덮어쓰는 것을 막는다 */
   private settled = false
+  private runner?: DetectedRunner
 
   constructor(private readonly emit: (e: SessionEvent) => void) {}
 
@@ -75,6 +76,7 @@ export class ClaudeCliAdapter {
   }
 
   private launch(opts: StartOptions): void {
+    this.runner = opts.runner
     const cliArgs = buildClaudeArgs(opts)
     const prompt = buildClaudePrompt(opts)
     const { command, args, windowsVerbatimArguments } = this.buildCommand(opts, cliArgs)
@@ -257,7 +259,7 @@ export class ClaudeCliAdapter {
             outputTokens: u.output_tokens ?? 0,
             cacheReadTokens: u.cache_read_input_tokens ?? 0,
             cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
-            totalCostUsd: ev.total_cost_usd ?? 0,
+            totalCostUsd: costUsd(ev.total_cost_usd, this.runner),
           },
         })
         // 인증 실패는 stderr 가 아니라 stdout(result.result)로 온다
@@ -378,6 +380,15 @@ function guessLang(path: string): string | undefined {
  * Runner 종류에 따라 실제 실행 명령을 구성한다.
  * 세션 어댑터와 라우터가 함께 쓴다 — 러너별 함정이 한 곳에만 있어야 한다.
  */
+/**
+ * CLI 가 알려준 비용. Ollama 로 돌면 0 이다.
+ * CLI 는 모르는 모델에도 자기 단가표로 값을 지어 낸다(실측 `costBasis: unknown`, 한 턴 $0.0108).
+ * 그대로 두면 로컬 모델 사용량에 없는 비용이 쌓인다.
+ */
+export function costUsd(reported: number | undefined, runner: DetectedRunner | undefined): number {
+  return runner && isOllama(runner) ? 0 : (reported ?? 0)
+}
+
 export function buildRunnerCommand(
   runner: DetectedRunner,
   cwd: string,
