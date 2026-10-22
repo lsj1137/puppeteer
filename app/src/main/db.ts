@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
+import { perTurnCosts, sumSince, type UsagePoint } from './cost-ledger'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type {
@@ -69,6 +70,8 @@ function migrate(): void {
       created_at INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_event_session ON event(session_id, id);
+    -- 비용 합계는 사용량 이벤트만 훑는다.
+    CREATE INDEX IF NOT EXISTS idx_event_t ON event(t, id);
 
     CREATE TABLE IF NOT EXISTS approval (
       id         TEXT PRIMARY KEY,
@@ -571,19 +574,48 @@ export function recentSessions(limit = 20): StoredSession[] {
 }
 
 /** 오늘 / 이번 달 비용 */
+/**
+ * 오늘·이번 달·전체 비용. 세션 시작일이 아니라 **턴이 끝난 시각** 기준이다.
+ * 사용량 이벤트에서 턴별 증가분을 복원해 더한다(`cost-ledger.ts`). 보조 Agent 비용도 들어간다.
+ */
 export function costTotals(): { today: number; month: number; all: number } {
   const d = new Date()
   const startOfDay = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
   const startOfMonth = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
-  const one = (from?: number): number => {
-    const row = (
-      from === undefined
-        ? db.prepare('SELECT COALESCE(SUM(cost_usd),0) AS v FROM session')
-        : db.prepare('SELECT COALESCE(SUM(cost_usd),0) AS v FROM session WHERE started_at >= ?')
-    ).get(...(from === undefined ? [] : [from])) as unknown as { v: number }
-    return row?.v ?? 0
+  // session-meta 도 같이 읽는다. 비용의 뜻(턴별/누적)이 그 턴을 돌린 CLI 버전에 달려 있다.
+  const rows = db
+    .prepare(
+      `SELECT session_id, run_id, t, created_at, payload FROM event
+       WHERE t IN ('usage', 'session-meta') ORDER BY id`,
+    )
+    .all() as unknown as Array<{ session_id: string; run_id: string | null; t: string; created_at: number; payload: string }>
+  const versions = new Map<string, string | undefined>()
+  const points: UsagePoint[] = []
+  for (const row of rows) {
+    const key = `${row.session_id}\u0000${row.run_id ?? ''}`
+    try {
+      const parsed = JSON.parse(row.payload) as {
+        meta?: { cliVersion?: string }
+        usage?: { totalCostUsd?: number; costCumulative?: boolean }
+      }
+      if (row.t === 'session-meta') {
+        versions.set(key, parsed.meta?.cliVersion)
+        continue
+      }
+      if (typeof parsed.usage?.totalCostUsd !== 'number') continue
+      points.push({
+        key,
+        at: row.created_at,
+        total: parsed.usage.totalCostUsd,
+        cumulative: parsed.usage.costCumulative,
+        cliVersion: versions.get(key),
+      })
+    } catch {
+      // 깨진 기록은 건너뛴다
+    }
   }
-  return { today: one(startOfDay), month: one(startOfMonth), all: one() }
+  const costs = perTurnCosts(points)
+  return { today: sumSince(costs, startOfDay), month: sumSince(costs, startOfMonth), all: sumSince(costs) }
 }
 
 /** 세션과 딸린 기록을 모두 지운다 */

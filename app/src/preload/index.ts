@@ -7,6 +7,7 @@ import type {
   ChangedFile,
   GitHistoryEntry,
   CostTotals,
+  RateLimitInfo,
   ProjectStat,
   ProjectRelinkResult,
   ProjectWorktreeModeResult,
@@ -127,6 +128,12 @@ const api = {
   listOpenApprovals: (): Promise<ApprovalRequest[]> => ipcRenderer.invoke('approval:open'),
   listRunningSessions: (): Promise<RunningSession[]> => ipcRenderer.invoke('session:running'),
   costTotals: (): Promise<CostTotals> => ipcRenderer.invoke('cost:totals'),
+  rateLimit: (): Promise<RateLimitInfo | undefined> => ipcRenderer.invoke('usage:rateLimit'),
+  onRateLimit: (cb: (info: RateLimitInfo) => void): (() => void) => {
+    const h = (_e: IpcRendererEvent, info: RateLimitInfo): void => cb(info)
+    ipcRenderer.on('usage:rateLimit', h)
+    return () => ipcRenderer.removeListener('usage:rateLimit', h)
+  },
   setNotifyEnabled: (v: boolean): Promise<void> => ipcRenderer.invoke('notify:setEnabled', v),
   worktreeIntegrationMode: (): Promise<WorktreeIntegrationMode> =>
     ipcRenderer.invoke('worktree:integrationMode'),

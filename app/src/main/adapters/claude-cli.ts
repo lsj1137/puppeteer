@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
-import type { ApprovalMode, DetectedRunner, SessionEvent } from '@shared/session'
+import type { ApprovalMode, DetectedRunner, RateLimitWindow, SessionEvent } from '@shared/session'
 import { isSlashCommand } from '@shared/slash-command'
 import { isOllama, resolveModel as resolveOllamaModel, runnerEnv } from '../ollama'
 
@@ -215,6 +215,9 @@ export class ClaudeCliAdapter {
             status: info.status,
             rateLimitType: info.rateLimitType,
             resetsAt: info.resetsAt,
+            fiveHour: rateWindow(info.unifiedWindows?.five_hour),
+            sevenDay: rateWindow(info.unifiedWindows?.seven_day),
+            receivedAt: Date.now(),
           },
         })
         return
@@ -268,6 +271,7 @@ export class ClaudeCliAdapter {
             cacheReadTokens: u.cache_read_input_tokens ?? 0,
             cacheCreationTokens: u.cache_creation_input_tokens ?? 0,
             totalCostUsd: costUsd(ev.total_cost_usd, this.runner),
+            costCumulative: isCumulativeCost(u, ev.modelUsage),
           },
         })
         // 인증 실패는 stderr 가 아니라 stdout(result.result)로 온다
@@ -393,6 +397,23 @@ function guessLang(path: string): string | undefined {
  * CLI 는 모르는 모델에도 자기 단가표로 값을 지어 낸다(실측 `costBasis: unknown`, 한 턴 $0.0108).
  * 그대로 두면 로컬 모델 사용량에 없는 비용이 쌓인다.
  */
+export function rateWindow(raw: any): RateLimitWindow | undefined {
+  if (typeof raw?.utilization !== 'number' || typeof raw?.resetsAt !== 'number') return undefined
+  return { utilization: raw.utilization, resetsAt: raw.resetsAt }
+}
+
+/** 결과의 `modelUsage`(대화 누적) 토큰 합이 `usage`(이번 턴) 보다 크면 비용도 누적값이다. */
+export function isCumulativeCost(usage: any, modelUsage: any): boolean | undefined {
+  if (!modelUsage || typeof modelUsage !== 'object') return undefined
+  const turn = (usage?.input_tokens ?? 0) + (usage?.output_tokens ?? 0)
+  const total = Object.values(modelUsage as Record<string, any>).reduce(
+    (sum: number, m: any) => sum + (m?.inputTokens ?? 0) + (m?.outputTokens ?? 0),
+    0,
+  )
+  // 첫 턴은 둘이 같아 구분이 안 된다. 누적이든 턴별이든 그 턴 값이 곧 증가분이라 상관없다.
+  return total > turn ? true : undefined
+}
+
 export function costUsd(reported: number | undefined, runner: DetectedRunner | undefined): number {
   return runner && isOllama(runner) ? 0 : (reported ?? 0)
 }

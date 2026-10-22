@@ -25,6 +25,7 @@ import type { PromptInputHandle } from './components/PromptInput'
 import SessionComposer from './components/SessionComposer'
 import WorkspaceLists from './components/WorkspaceLists'
 import UsageSummary from './components/UsageSummary'
+import { limitRows, staleText } from './lib/usage-limit'
 import ConversationEntries from './components/ConversationEntries'
 import ApprovalCard from './components/ApprovalCard'
 import ArtifactSidebar from './components/ArtifactSidebar'
@@ -45,6 +46,7 @@ import type {
   AgentDef,
   ChangedFile,
   CostTotals,
+  RateLimitInfo,
   CheckpointDraft,
   RouteCandidate,
   RouteResult,
@@ -183,6 +185,7 @@ export default function App() {
   /** 프로젝트 화면이 아님 — 탭바·대화·Artifact 를 전부 감춘다 */
   const showHome = screen !== 'project'
   const [cost, setCost] = useState<CostTotals>({ today: 0, month: 0, all: 0 })
+  const [rateLimit, setRateLimit] = useState<RateLimitInfo>()
   const [now, setNow] = useState(Date.now())
   /** 대화가 위로 스크롤됐는지 — 페이드·그림자를 그때만 보인다 */
   const [scrolled, setScrolled] = useState(false)
@@ -456,21 +459,10 @@ export default function App() {
 
   const myApprovals = approvals.filter((a) => a.sessionId === activeSession)
   const otherApprovals = approvals.filter((a) => a.sessionId !== activeSession)
-  /** rate limit 창의 경과 비율. resetsAt 만 오므로 종류별 창 길이로 역산한다. */
-  const limit = ((): { ratio: number; label: string; remain: string } | undefined => {
-    const rl = view.rateLimit
-    if (!rl?.resetsAt) return undefined
-    const windowSec = rl.rateLimitType === 'weekly' ? 604800 : 18000
-    const left = Math.max(0, rl.resetsAt * 1000 - now)
-    const ratio = Math.min(1, Math.max(0, 1 - left / (windowSec * 1000)))
-    const h = Math.floor(left / 3600000)
-    const m = Math.floor((left % 3600000) / 60000)
-    return {
-      ratio,
-      label: rl.rateLimitType === 'weekly' ? '주간' : '5시간',
-      remain: h > 0 ? `${h}시간 ${m}분` : `${m}분`,
-    }
-  })()
+  // 한도는 계정 단위다. 지금 보는 세션이 아니라 어느 세션에서든 마지막으로 받은 값을 쓴다.
+  // 예전에는 창이 «얼마나 지났나» 를 사용량처럼 보여줬다 — 실제 사용률은 CLI 가 따로 준다.
+  const limits = limitRows(rateLimit, now)
+  const limitStale = staleText(rateLimit?.receivedAt, now)
 
   const isEmpty = !active || (view.entries.length === 0 && myApprovals.length === 0 && !view.status)
   const latestCommitNotice = [...view.entries]
@@ -516,6 +508,11 @@ export default function App() {
     localStorage.setItem('ws.defaultRunner', runnerId)
     setDefaultRunnerId(runnerId)
   }
+
+  useEffect(() => {
+    void window.api.rateLimit().then(setRateLimit)
+    return window.api.onRateLimit(setRateLimit)
+  }, [])
 
   useEffect(() => {
     void window.api.appUpdateState().then(setAppUpdate)
@@ -1212,7 +1209,8 @@ export default function App() {
         <UsageSummary
           collapsed={!railOpen}
           cost={cost}
-          limit={limit}
+          limits={limits}
+          stale={limitStale}
           sessionCost={view.cost}
           sessionTokens={view.tokens}
           onExpandRail={() => setRail(true)}

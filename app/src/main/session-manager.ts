@@ -28,6 +28,7 @@ import type {
   ProjectWorktreeModeResult,
   WorktreeIntegrationReport,
   AgentDef,
+  RateLimitInfo,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
@@ -864,6 +865,7 @@ export class SessionManager {
     if (event.t === 'session-meta') {
       db.updateSession(sessionId, { cliSessionId: event.meta.cliSessionId })
     }
+    if (event.t === 'rate-limit') this.recordRateLimit(event.info)
     if (event.t === 'usage') {
       db.updateSession(sessionId, { costUsd: event.usage.totalCostUsd })
       if (runId) db.updateRun(runId, { costUsd: event.usage.totalCostUsd })
@@ -1058,6 +1060,7 @@ export class SessionManager {
         if (event.t === 'message' && event.role === 'assistant' && !event.isError && event.text) {
           answer = event.text
         }
+        if (event.t === 'rate-limit') this.recordRateLimit(event.info)
         if (event.t === 'usage') {
           costUsd = event.usage.totalCostUsd
           db.updateRun(runId, { costUsd })
@@ -1414,6 +1417,16 @@ export class SessionManager {
    * runId를 주면 그 run이 낸 이벤트로 기록한다. 생략하면 Lead run이다 —
    * 멀티 Agent 이전 기록도 같은 규칙으로 읽힌다.
    */
+  /**
+   * 한도는 계정 단위라 어느 세션에서 받았든 최신값이 정본이다. 예전에는 지금 보는 세션의
+   * 이벤트에서만 읽어, 세션을 바꾸거나 앱을 다시 켜면 `--` 로 돌아갔다.
+   */
+  private recordRateLimit(info: RateLimitInfo): void {
+    if (!info.fiveHour && !info.sevenDay) return
+    db.setSetting(RATE_LIMIT_SETTING, JSON.stringify(info))
+    this.getWindow()?.webContents.send('usage:rateLimit', info)
+  }
+
   private persistAndSend(sessionId: string, event: SessionEvent, runId?: string): void {
     db.appendEvent(sessionId, event, runId)
     this.getWindow()?.webContents.send('session:event', { sessionId, runId, event })
@@ -1445,4 +1458,16 @@ function sessionAccessDirs(workCwd: string, projectPath: string, agent?: AgentDe
     ...(agent?.workspace.readPaths ?? []),
     ...(agent?.workspace.writePaths ?? []),
   ])
+}
+
+export const RATE_LIMIT_SETTING = 'usage.rateLimit'
+
+/** 마지막으로 받은 계정 한도. 앱을 다시 켜도 바로 보이게 저장해 둔다. */
+export function lastRateLimit(): RateLimitInfo | undefined {
+  try {
+    const raw = db.getSetting(RATE_LIMIT_SETTING)
+    return raw ? (JSON.parse(raw) as RateLimitInfo) : undefined
+  } catch {
+    return undefined
+  }
 }

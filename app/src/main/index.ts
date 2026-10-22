@@ -3,7 +3,7 @@ import { dirname, join, extname, resolve, sep } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { detectRunners } from './runner-detect'
-import { SessionManager } from './session-manager'
+import { lastRateLimit, SessionManager } from './session-manager'
 import * as db from './db'
 import * as library from './agent-library'
 import { route } from './router'
@@ -439,6 +439,7 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('session:running', () => sessions.listRunning())
   ipcMain.handle('cost:totals', () => db.costTotals())
+  ipcMain.handle('usage:rateLimit', () => lastRateLimit())
   ipcMain.handle('notify:setEnabled', (_e, v: boolean) => setNotifyEnabled(v))
   ipcMain.handle('worktree:integrationMode', () => worktreeIntegrationMode())
   ipcMain.handle('worktree:setIntegrationMode', (_e, mode: WorktreeIntegrationMode) => {

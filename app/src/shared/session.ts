@@ -103,8 +103,22 @@ export interface UsageSnapshot {
   cacheCreationTokens: number
   /** CLI 제공값 — 자체 계산하지 않는다 */
   totalCostUsd: number
+  /**
+   * `totalCostUsd` 가 이어간 대화 전체의 누적값인지. CLI 가 어느 버전부터 턴별 → 누적으로
+   * 의미를 바꿨다(2026-08 기록은 턴별로 오르내리고, 2026-09 이후는 단조 증가). 결과의
+   * `modelUsage`(누적) 토큰이 `usage`(이번 턴) 보다 크면 누적이다. 모르면 비워 둔다.
+   */
+  costCumulative?: boolean
   /** 모델별 분해 */
   byModel?: Record<string, { inputTokens: number; outputTokens: number; costUSD: number }>
+}
+
+/** 한도 창 하나의 실제 사용률 */
+export interface RateLimitWindow {
+  /** 0~1 */
+  utilization: number
+  /** epoch seconds */
+  resetsAt: number
 }
 
 export interface RateLimitInfo {
@@ -112,6 +126,14 @@ export interface RateLimitInfo {
   rateLimitType: string
   /** epoch seconds */
   resetsAt: number
+  /**
+   * 창별 실제 사용률(CLI `unifiedWindows`). 예전 화면은 이게 없어 «창이 얼마나 지났나» 를
+   * 사용량처럼 보여줬다 — 리셋 1시간 전이면 하나도 안 써도 80% 로 나왔다.
+   */
+  fiveHour?: RateLimitWindow
+  sevenDay?: RateLimitWindow
+  /** 앱이 받은 시각(epoch ms). 세션이 돌 때만 갱신되므로 얼마나 묵었는지 보여준다. */
+  receivedAt?: number
 }
 
 // ---------------------------------------------------------------------------
