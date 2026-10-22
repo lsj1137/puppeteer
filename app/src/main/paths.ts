@@ -15,12 +15,18 @@ export function toRunnerPath(hostPath: string, runner: DetectedRunner): string {
 /**
  * 승인 요청 폴더. run 단위로 나눠 보조 Agent 의 요청과 섞이지 않게 한다.
  *
+ * **프로젝트 폴더가 아니라 앱 데이터 폴더에 둔다.** 예전에는 `<project>/.agent-workspace/approvals`
+ * 였다. «프로젝트는 Windows·WSL 양쪽에서 같은 곳을 본다» 는 가정이었는데, 보안(DRM) 가상
+ * 드라이브(X: 등)에서는 WSL 이 쓴 파일이 «성공» 하고도 사라졌다 — 훅이 남긴 요청을 앱이 못 봐
+ * 자동 승인 세션인데도 Bash 가 280초 뒤 «응답 대기 시간 초과» 로 막혔다. 앱 데이터 폴더는 C: 라
+ * WSL 에서도 항상 `/mnt/c` 로 보이고, 사용자 프로젝트에 흔적도 남기지 않는다.
+ *
  * runId 는 `<session>:lead` 처럼 `:` 를 담는데 Windows 경로에는 쓸 수 없다
  * (`이름:lead` 는 대체 데이터 스트림 문법이라 mkdir 이 ENOENT 로 실패한다).
  * id 자체는 DB 키이자 이벤트 라우팅 값이라 그대로 두고, 폴더 이름일 때만 바꾼다.
  */
-export function approvalDirOf(cwd: string, sessionId: string, runId: string): string {
-  return join(cwd, '.agent-workspace', 'approvals', pathSegment(sessionId), pathSegment(runId))
+export function approvalDirOf(sessionId: string, runId: string, root = app.getPath('userData')): string {
+  return join(root, 'approvals', pathSegment(sessionId), pathSegment(runId))
 }
 
 /** 어느 플랫폼에서도 폴더 이름으로 쓸 수 있게 예약 문자를 바꾼다. */

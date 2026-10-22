@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app' } }))
+vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => '/app', getPath: () => '/user-data' } }))
 
 const { approvalDirOf, pathSegment } = await import('./paths')
 
@@ -19,8 +19,14 @@ describe('pathSegment', () => {
 
 describe('approvalDirOf', () => {
   it('경로 어느 구간에도 예약 문자가 남지 않는다', () => {
-    const dir = approvalDirOf('/w/tree', 'sess-1', 'sess-1:lead')
+    const dir = approvalDirOf('sess-1', 'sess-1:lead')
     expect(dir.replace(/^\/|^[A-Za-z]:/, '')).not.toContain(':')
     expect(dir.endsWith('sess-1-lead')).toBe(true)
+  })
+
+  // 보안 가상 드라이브에서 WSL 이 쓴 요청 파일이 사라져 승인이 끊겼다(2026-10-22, X:).
+  it('프로젝트 폴더가 아니라 앱 데이터 폴더에 둔다', () => {
+    const dir = approvalDirOf('sess-1', 'sess-1:lead')
+    expect(dir.replace(/\\/g, '/')).toBe('/user-data/approvals/sess-1/sess-1-lead')
   })
 })

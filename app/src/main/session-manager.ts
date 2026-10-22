@@ -295,7 +295,7 @@ export class SessionManager {
       costUsd: 0,
       startedAt: Date.now(),
     })
-    const approvalDir = approvalDirOf(workCwd, id, leadRunId)
+    const approvalDir = approvalDirOf(id, leadRunId)
     this.broker.attach(leadRunId, id, approvalDir, prev?.approvalMode === 'auto')
 
     // provider 에 맞는 어댑터를 고른다. 이벤트 계약은 같다.
@@ -371,7 +371,10 @@ export class SessionManager {
       model: (prev?.model ?? input.model)?.trim() || agent?.model,
       // 승인 브로커와 같은 기준이다. 턴마다 다시 띄우므로 모드를 바꾸면 다음 턴부터 반영된다.
       approvalMode: prev?.approvalMode === 'auto' ? 'auto' : 'ask',
-      addDirs: sessionAccessDirs(workCwd, input.cwd, agent).map((dir) => toRunnerPath(dir, input.runner)),
+      addDirs: [
+        ...sessionAccessDirs(workCwd, input.cwd, agent),
+        ...hookDirs(input.runner, approvalDir),
+      ].map((dir) => toRunnerPath(dir, input.runner)),
       approvalDirHost: approvalDir,
       hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
@@ -1019,7 +1022,7 @@ export class SessionManager {
     db.createRun(run)
     this.persistAndSend(sessionId, { t: 'run-start', run }, runId)
 
-    const approvalDir = approvalDirOf(cwd, sessionId, runId)
+    const approvalDir = approvalDirOf(sessionId, runId)
     this.broker.attach(runId, sessionId, approvalDir, db.getSession(sessionId)?.approvalMode === 'auto')
 
     return await new Promise<DelegateOutcome>((resolve) => {
@@ -1090,9 +1093,10 @@ export class SessionManager {
         agentPrompt: agent ? library.toPromptPrefix(agent) : undefined,
         model: model || agent?.model,
         // 보조는 읽기 전용이라 승인 모드를 넘기지 않는다(권한 검사를 풀지 않는다). 읽을 폴더만 연다.
-        addDirs: sessionAccessDirs(cwd, db.getSession(sessionId)?.projectPath ?? cwd, agent).map((dir) =>
-          toRunnerPath(dir, runner),
-        ),
+        addDirs: [
+          ...sessionAccessDirs(cwd, db.getSession(sessionId)?.projectPath ?? cwd, agent),
+          ...hookDirs(runner, approvalDir),
+        ].map((dir) => toRunnerPath(dir, runner)),
         approvalDirHost: approvalDir,
         hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), runner),
         allowedTools: agent?.workspace.allowedTools,
@@ -1470,4 +1474,12 @@ export function lastRateLimit(): RateLimitInfo | undefined {
   } catch {
     return undefined
   }
+}
+
+/**
+ * 승인 교환 폴더는 이제 작업 폴더 밖(앱 데이터)이다. Codex 의 `workspace-write` 샌드박스가
+ * 훅의 쓰기까지 막지 않도록 그 폴더를 쓰기 허용으로 연다. Claude 는 훅이 샌드박스 밖이라 필요 없다.
+ */
+function hookDirs(runner: DetectedRunner, approvalDir: string): string[] {
+  return runner.provider === 'codex-cli' ? [approvalDir] : []
 }
