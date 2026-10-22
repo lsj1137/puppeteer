@@ -16,6 +16,11 @@ function normalizeSkillMarkdown(raw: string): string {
   return normalized.trimStart()
 }
 
+/** 전역·Agent 스킬이 사는 폴더. 세션 작업 폴더 밖이라 CLI 에 접근 허용으로 넘긴다. */
+export function skillsHome(): string {
+  return join(app.getPath('userData'), 'skills')
+}
+
 function root(scope: SkillScope, projectPath?: string, agentName?: string): string {
   if (scope === 'project') {
     if (!projectPath) throw new Error('Project Skill에는 프로젝트가 필요합니다.')

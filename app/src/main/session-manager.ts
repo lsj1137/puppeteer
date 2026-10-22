@@ -27,11 +27,12 @@ import type {
   WorktreeIntegrationMode,
   ProjectWorktreeModeResult,
   WorktreeIntegrationReport,
+  AgentDef,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
 import { CodexCliAdapter } from './adapters/codex-cli'
 import { ApprovalBroker } from './approval-broker'
-import { approvalDirOf, hookCommand, toRunnerPath } from './paths'
+import { accessDirs, approvalDirOf, hookCommand, toRunnerPath } from './paths'
 import * as library from './agent-library'
 import * as db from './db'
 import {
@@ -68,7 +69,7 @@ import {
   type DelegateOutcome,
   type ParsedDelegate,
 } from './delegate'
-import { prompt as skillPrompt } from './skill-library'
+import { prompt as skillPrompt, skillsHome } from './skill-library'
 import {
   needsWorktreeSafetyCheck,
   orphanWorktreePaths,
@@ -325,8 +326,8 @@ export class SessionManager {
         level: 'warning',
         title: '적용되지 않는 Agent 설정',
         text:
-          `«${agent?.name}» 의 ${unenforced.join('·')} 는 현재 실행에 반영되지 않습니다.\n` +
-          '경로 제한은 아직 강제되지 않으니 이 Agent 가 그 범위를 벗어나 파일을 읽거나 고칠 수 있습니다.\n' +
+          `«${agent?.name}» 의 ${unenforced.join('·')} 는 추가로 접근을 허용할 폴더로만 쓰입니다.\n` +
+          '그 밖을 막는 경로 제한은 강제되지 않으니 이 Agent 가 범위를 벗어나 파일을 읽거나 고칠 수 있습니다.\n' +
           '도구 자체를 막으려면 allowedTools·disallowedTools 를 쓰세요.',
       })
     }
@@ -367,6 +368,9 @@ export class SessionManager {
       agentPrompt: agent ? library.toPromptPrefix(agent) : undefined,
       // 세션 지정 > Agent 지정 > CLI 기본. 세션 값은 실행 중에도 바꿀 수 있고 다음 턴부터 적용된다.
       model: (prev?.model ?? input.model)?.trim() || agent?.model,
+      // 승인 브로커와 같은 기준이다. 턴마다 다시 띄우므로 모드를 바꾸면 다음 턴부터 반영된다.
+      approvalMode: prev?.approvalMode === 'auto' ? 'auto' : 'ask',
+      addDirs: sessionAccessDirs(workCwd, input.cwd, agent).map((dir) => toRunnerPath(dir, input.runner)),
       approvalDirHost: approvalDir,
       hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
@@ -1082,6 +1086,10 @@ export class SessionManager {
         agentsJson: agent ? library.toCliAgents(agent) : undefined,
         agentPrompt: agent ? library.toPromptPrefix(agent) : undefined,
         model: model || agent?.model,
+        // 보조는 읽기 전용이라 승인 모드를 넘기지 않는다(권한 검사를 풀지 않는다). 읽을 폴더만 연다.
+        addDirs: sessionAccessDirs(cwd, db.getSession(sessionId)?.projectPath ?? cwd, agent).map((dir) =>
+          toRunnerPath(dir, runner),
+        ),
         approvalDirHost: approvalDir,
         hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), runner),
         allowedTools: agent?.workspace.allowedTools,
@@ -1422,4 +1430,19 @@ function integrationStatus(status: WorktreeStatus): NonNullable<WorktreeIntegrat
     merged: status.merged,
     canMerge: status.canMerge,
   }
+}
+
+/**
+ * 세션이 작업 폴더(worktree) 밖에서 다뤄야 하는 폴더.
+ * - 원본 프로젝트: worktree 로 분리돼도 원본을 읽어야 하는 일이 많다(프로젝트 스킬도 그 안에 있다)
+ * - 전역·Agent 스킬 폴더: 시스템 지침이 «필요하면 읽으라» 고 안내하는 경로다
+ * - Agent 의 `readPaths`·`writePaths`: 범위 제한은 아니고, 추가로 열어 줄 폴더로 쓴다
+ */
+function sessionAccessDirs(workCwd: string, projectPath: string, agent?: AgentDef): string[] {
+  return accessDirs(workCwd, projectPath, [
+    projectPath,
+    skillsHome(),
+    ...(agent?.workspace.readPaths ?? []),
+    ...(agent?.workspace.writePaths ?? []),
+  ])
 }

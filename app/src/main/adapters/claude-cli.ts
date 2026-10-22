@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessByStdio } from 'node:child_process'
 import type { Readable, Writable } from 'node:stream'
-import type { DetectedRunner, SessionEvent } from '@shared/session'
+import type { ApprovalMode, DetectedRunner, SessionEvent } from '@shared/session'
 import { isSlashCommand } from '@shared/slash-command'
 import { isOllama, resolveModel as resolveOllamaModel, runnerEnv } from '../ollama'
 
@@ -22,6 +22,14 @@ export interface StartOptions {
   /** 도구 제한 */
   allowedTools?: string[]
   disallowedTools?: string[]
+  /**
+   * 이 세션의 승인 모드. `auto` 면 CLI 자체 권한 검사도 푼다 — 승인 훅은 일부 도구에만 걸려서,
+   * 훅 밖(작업 폴더 밖 Read 등)은 «자동 승인» 인데도 CLI 가 묻지 못하고 거부했다.
+   * 세션마다 실행 인자로만 붙고 사용자 설정 파일은 건드리지 않는다. 보조 run 은 넘기지 않는다.
+   */
+  approvalMode?: ApprovalMode
+  /** 작업 폴더 밖이지만 접근을 허용할 폴더(러너 경로). `--add-dir` 로 넘긴다. */
+  addDirs?: string[]
 
   // ── 아래는 Codex 어댑터가 쓴다 (Claude 는 무시) ──
   /** 에이전트 지침 본문. --agents 가 없는 CLI 는 프롬프트 앞에 붙인다. */
@@ -476,6 +484,8 @@ export function buildClaudeArgs(
     | 'agentsJson'
     | 'allowedTools'
     | 'disallowedTools'
+    | 'approvalMode'
+    | 'addDirs'
     | 'hookCommand'
     | 'model'
     | 'prompt'
@@ -498,6 +508,9 @@ export function buildClaudeArgs(
   if (opts.allowedTools?.length) cliArgs.push('--allowedTools', opts.allowedTools.join(' '))
   if (opts.disallowedTools?.length)
     cliArgs.push('--disallowedTools', opts.disallowedTools.join(' '))
+  if (opts.approvalMode === 'auto') cliArgs.push('--permission-mode', 'bypassPermissions')
+  // `--add-dir` 는 여러 값을 받는 옵션이다. 뒤 인자를 삼키지 않게 폴더마다 따로 붙인다.
+  for (const dir of opts.addDirs ?? []) cliArgs.push('--add-dir', dir)
 
   // 사용자의 settings.json 은 절대 건드리지 않는다. 세션 단위로만 주입한다.
   // (실제 환경에 다른 도구가 hook 을 등록해 둔 사례를 확인했다 — spike/REPORT.md)

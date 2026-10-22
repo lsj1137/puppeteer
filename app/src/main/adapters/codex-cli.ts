@@ -260,14 +260,21 @@ export class CodexCliAdapter {
 
 export function buildCodexArgs(
   opts: Pick<StartOptions, 'agentPrompt' | 'systemPrompt' | 'hookCommand' | 'model' | 'prompt' | 'resumeSessionId'> &
-    Partial<Pick<StartOptions, 'runner'>>,
+    Partial<Pick<StartOptions, 'runner' | 'approvalMode' | 'addDirs'>>,
 ): string[] {
   const cliArgs = ['exec', '--json', '--skip-git-repo-check']
   if (opts.runner) cliArgs.push(...ollamaArgs(opts.runner))
 
   if (opts.model) cliArgs.push('--model', opts.model)
   // 파일을 고쳐야 하므로 workspace-write. 실제 통제는 승인 훅이 한다.
-  cliArgs.push('--sandbox', 'workspace-write')
+  // 다만 이 샌드박스는 OS 수준이라 승인과 무관하게 작업 폴더 밖 쓰기를 막는다.
+  // 자동 승인 세션은 샌드박스도 풀고, 아니면 허용 폴더만 쓰기 가능으로 연다.
+  if (opts.approvalMode === 'auto') {
+    cliArgs.push('--sandbox', 'danger-full-access')
+  } else {
+    cliArgs.push('--sandbox', 'workspace-write')
+    for (const dir of opts.addDirs ?? []) cliArgs.push('--add-dir', dir)
+  }
 
   if (opts.hookCommand) {
     // 훅은 `-c` 인라인 TOML 로 주입한다 — 세션 단위라 사용자 설정 파일을 건드리지 않는다.

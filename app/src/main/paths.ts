@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import type { DetectedRunner } from '@shared/session'
 import { runnerShell } from '@shared/runner'
 
@@ -49,4 +49,28 @@ export function hookCommand(runner: DetectedRunner, approvalDirHost: string): st
   return runnerShell(runner, process.platform) === 'posix'
     ? `bash '${script}' '${dir}'`
     : `powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" "${dir}"`
+}
+
+/**
+ * 작업 폴더(worktree) 밖이지만 세션이 다뤄야 하는 폴더. CLI 의 `--add-dir` 로 넘긴다.
+ *
+ * Claude 는 작업 폴더 밖 Read·Glob·Grep 을 자체 권한 검사로 막는다. 앱은 `-p` 로 띄워 사람에게
+ * 물을 수 없으므로 «묻지 않고 거부» 가 된다(앱이 안내한 스킬 경로를 앱 스스로 막던 실제 사례).
+ * Codex 는 `workspace-write` 샌드박스가 밖 쓰기를 OS 수준에서 막는다.
+ *
+ * 상대 경로는 프로젝트 기준으로 푼다. 작업 폴더 자신·중복·빈 값은 뺀다.
+ */
+export function accessDirs(workCwd: string, projectPath: string, candidates: Array<string | undefined>): string[] {
+  const key = (path: string): string => path.replace(/[\\/]+$/, '').replace(/\\/g, '/').toLowerCase()
+  const seen = new Set([key(workCwd)])
+  const out: string[] = []
+  for (const raw of candidates) {
+    const trimmed = raw?.trim()
+    if (!trimmed) continue
+    const path = isAbsolute(trimmed) || /^[A-Za-z]:[\\/]/.test(trimmed) ? trimmed : join(projectPath, trimmed)
+    if (seen.has(key(path))) continue
+    seen.add(key(path))
+    out.push(path)
+  }
+  return out
 }

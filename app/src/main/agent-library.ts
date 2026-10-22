@@ -173,7 +173,7 @@ export function appliesTo(agent: AgentDef, projectPath: string): boolean {
 /**
  * 선언은 됐지만 실행에서 강제되지 않는 경로 범위.
  *
- * `readPaths`·`writePaths` 는 파싱·재연결 치환만 하고 도구 실행 경로에서는 아무도 보지 않는다.
+ * `readPaths`·`writePaths` 는 CLI 에 `--add-dir`(추가 허용 폴더)로만 넘긴다. **범위 제한은 아니다** —
  * 특히 읽기는 승인 훅 대상이 아니라(`Read`·`Glob`·`Grep` 은 일부러 가로채지 않는다)
  * 구조적으로 검사할 지점 자체가 없다. 경계를 걸었다고 믿게 두는 편이 기능이 없는 것보다 나쁘므로
  * 세션 시작 때 무엇이 안 걸리는지 알린다.
