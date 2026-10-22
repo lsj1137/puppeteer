@@ -30,14 +30,19 @@ const labelFor = (path: string): string => {
 
 const changeSize = (file: DiffFile): number => file.additions + file.deletions
 
+/**
+ * 앱이 diff 사이에 끼워 넣는 구획 표지(`worktreeDiff`). **줄 전체가 같을 때만** 표지로 본다.
+ * diff 본문 줄은 늘 `+`·`-`·공백으로 시작하므로 `#` 로 시작하는 줄은 앱이 넣은 것뿐이다.
+ * 예전엔 글자만 찾았는데, 이 파일 자신이 표지 문자열을 담고 있어서 이 파일의 변경이 비교 범위에
+ * 들어가면 소스 안의 글자를 표지로 잡아 이미 커밋된 다른 파일까지 메시지에 섞였다.
+ */
+const PENDING_MARKER = /^# (커밋되지 않은 tracked 변경|새 파일 - 아직 git 에 추가되지 않음)$/m
+
 /** git diff에서 제목과 파일별 변경 요약을 만든다. */
 export function generateCommitMessage(diff: string): GeneratedCommitMessage {
-  const workingMarker = diff.indexOf('# 커밋되지 않은 tracked 변경')
-  const untrackedMarker = diff.indexOf('# 새 파일 - 아직 git 에 추가되지 않음')
-  const pendingStart = [workingMarker, untrackedMarker]
-    .filter((index) => index >= 0)
-    .sort((a, b) => a - b)[0]
-  const source = pendingStart === undefined ? diff : diff.slice(pendingStart)
+  // 표지 앞(`기준..HEAD`)은 이전 턴에 이미 커밋된 변경이다. 이번 커밋에 들어갈 것만 요약한다.
+  const pendingStart = diff.search(PENDING_MARKER)
+  const source = pendingStart < 0 ? diff : diff.slice(pendingStart)
   const files: DiffFile[] = []
   let current: DiffFile | undefined
   let untracked = false
@@ -56,8 +61,11 @@ export function generateCommitMessage(diff: string): GeneratedCommitMessage {
       continue
     }
     if (untracked) {
-      const path = line.match(/^\+\+\+ (.+)$/)?.[1]
-      if (path) files.push({ path, added: true, deleted: false, additions: 0, deletions: 0 })
+      // `+++ 경로` 뒤에 탭으로 줄 수(`\t+12`)가 붙어 온다. 없으면(읽지 못한 파일) 0 이다.
+      const match = line.match(/^\+\+\+ (.+?)(?:\t\+(\d+))?$/)
+      if (match) {
+        files.push({ path: match[1], added: true, deleted: false, additions: Number(match[2] ?? 0), deletions: 0 })
+      }
       continue
     }
     if (!current) continue

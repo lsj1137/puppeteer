@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { lstat, mkdir, unlink, writeFile } from 'node:fs/promises'
-import { dirname, resolve, sep } from 'node:path'
+import { lstat, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
+import { dirname, join, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import type {
   GitSnapshot,
@@ -522,6 +522,20 @@ export async function worktreeStatus(wt: SessionWorktree): Promise<WorktreeStatu
 }
 
 /** worktree 생성 기준부터 현재 worktree HEAD/작업 트리까지의 전체 diff */
+/** 새 파일의 줄 수. 큰 파일·바이너리·읽기 실패는 세지 않는다. */
+async function lineCount(path: string): Promise<number | undefined> {
+  try {
+    if ((await stat(path)).size > 2 * 1024 * 1024) return undefined
+    const text = await readFile(path)
+    if (text.includes(0)) return undefined
+    if (text.length === 0) return 0
+    const newlines = text.reduce((n, byte) => (byte === 0x0a ? n + 1 : n), 0)
+    return text[text.length - 1] === 0x0a ? newlines : newlines + 1
+  } catch {
+    return undefined
+  }
+}
+
 export async function worktreeDiff(wt: SessionWorktree): Promise<string> {
   if (!wt.baseHead) return '(기준 커밋을 알 수 없어 diff 를 만들 수 없습니다.)'
 
@@ -540,7 +554,10 @@ export async function worktreeDiff(wt: SessionWorktree): Promise<string> {
     if (committed.trim()) parts.push(committed.trimEnd())
     if (working.trim()) parts.push(`# 커밋되지 않은 tracked 변경\n${working.trimEnd()}`)
     if (untracked.length > 0) {
-      parts.push(`# 새 파일 - 아직 git 에 추가되지 않음\n${untracked.map((p) => `+++ ${p}`).join('\n')}`)
+      // 새 파일은 diff 본문이 없어 줄 수를 따로 센다. 커밋 메시지가 `+0/-0` 으로 적지 않게.
+      const counts = await Promise.all(untracked.map((p) => lineCount(join(wt.path, p))))
+      const lines = untracked.map((p, i) => (counts[i] === undefined ? `+++ ${p}` : `+++ ${p}\t+${counts[i]}`))
+      parts.push(`# 새 파일 - 아직 git 에 추가되지 않음\n${lines.join('\n')}`)
     }
 
     return parts.join('\n\n') || '(변경 없음)'

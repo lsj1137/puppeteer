@@ -67,6 +67,36 @@ diff --git a/app/src/renderer/src/components/SessionHeader.tsx b/app/src/rendere
     expect(result.body).toContain('- 관련 회귀 테스트 보강')
   })
 
+  // 실제 사고: 이미 커밋된 구획에 commit-message.ts 자신의 변경이 들어 있었다. 그 소스가 표지
+  // 문자열을 담고 있어 글자만 찾던 예전 방식은 거기서 잘랐고, 이전 턴 파일들이 메시지에 섞였다.
+  it('ignores marker text inside diff content and summarizes only the pending section', () => {
+    const result = generateCommitMessage(`diff --git a/app/src/shared/commit-message.ts b/app/src/shared/commit-message.ts
+--- a/app/src/shared/commit-message.ts
++++ b/app/src/shared/commit-message.ts
++  const workingMarker = diff.indexOf('# 커밋되지 않은 tracked 변경')
+diff --git a/app/src/shared/slash-command.ts b/app/src/shared/slash-command.ts
+new file mode 100644
+--- /dev/null
++++ b/app/src/shared/slash-command.ts
++export const a = 1
+
+# 커밋되지 않은 tracked 변경
+diff --git a/app/src/main/paths.ts b/app/src/main/paths.ts
+--- a/app/src/main/paths.ts
++++ b/app/src/main/paths.ts
++export function accessDirs() {}
+
+# 새 파일 - 아직 git 에 추가되지 않음
++++ app/src/main/permissions.test.ts\t+56`)
+
+    expect(result.subject).toBe('refactor: paths 개선')
+    expect(result.body).toEqual([
+      '- app/src/main/paths.ts 수정 (+1/-0)',
+      '- app/src/main/permissions.test.ts 추가 (+56/-0)',
+      '- 관련 회귀 테스트 보강',
+    ])
+  })
+
   it('picks the most changed source file and names index files by their folder', () => {
     const result = generateCommitMessage(`diff --git a/app/src/a.ts b/app/src/a.ts
 --- a/app/src/a.ts
