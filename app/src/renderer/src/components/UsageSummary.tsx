@@ -19,11 +19,15 @@ interface Props {
 
 /**
  * 레일 바닥에 붙는다. 레일 전체가 스크롤 영역이라 그냥 두면 프로젝트 목록 끝으로 밀려
- * 같이 스크롤된다. `sticky bottom-0` 로 바닥에 고정하고 목록이 그 **아래로** 지나가게
- * 배경을 채우고 z-index 를 올린다. 음수 하단 여백은 레일 아래쪽 padding 까지 덮어 그 틈으로
- * 목록이 비치지 않게 한다.
+ * 같이 스크롤된다. sticky 로 바닥에 고정하고 목록이 그 **아래로** 지나가게 배경을 채우고
+ * z-index 를 올린다.
+ *
+ * sticky 는 스크롤 영역의 **padding 안쪽** 경계에 붙는다. `bottom-0` 이면 레일 아래 padding
+ * (10px) 만큼 틈이 생겨 그 사이로 목록이 비쳤다(실측: 패널 바닥 851px, 레일 바닥 861px).
+ * 그래서 padding 만큼 음수(`-bottom-2.5`)로 내리고, 같은 만큼 `pb-2.5` 로 배경을 채운다.
+ * `-mb-2.5` 는 목록이 짧아 스크롤이 없을 때도 같은 자리에 오게 한다.
  */
-const STICKY = 'sticky bottom-0 z-10 mt-auto bg-mantle'
+const STICKY = 'sticky -bottom-2.5 z-10 mt-auto bg-mantle'
 
 const barColor = (ratio: number): string => (ratio > 0.85 ? 'bg-peach' : 'bg-green')
 
