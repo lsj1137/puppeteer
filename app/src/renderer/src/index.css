@@ -161,3 +161,12 @@ textarea { resize: none; }
     transform: translateY(0) scale(1);
   }
 }
+
+/* 대화에서 찾기(Ctrl+F). CSS Custom Highlight API — DOM 을 쪼개지 않고 범위만 칠한다. */
+::highlight(conversation-search) {
+  background-color: color-mix(in srgb, var(--color-yellow) 35%, transparent);
+}
+::highlight(conversation-search-current) {
+  background-color: color-mix(in srgb, var(--color-peach) 75%, transparent);
+  color: var(--color-base);
+}

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, PanelTopClose, PanelTopOpen, RefreshCw, Settings2 } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronRight, File, FileDiff, Folder, GitBranch, GitCommitHorizontal, ListTree, Loader2, PackageOpen, PanelRightClose, PanelRightOpen, PanelTopClose, PanelTopOpen, RefreshCw, Search, Settings2, X } from 'lucide-react'
 import type { ChangedFile, GitHistoryEntry, ProjectFileEntry, ProjectFilePreview, SessionWorktree, WorktreeStatus } from '@shared/session'
 import type { LayoutMode } from '../lib/layout-mode'
 import type { SessionView } from '../lib/session-view'
 import { clampArtifactHeight, clampArtifactWidth } from '../lib/session-view'
+import { filterNumbered, highlightParts } from '../lib/text-search'
 import ArtifactPanel from './ArtifactPanel'
 import Code from './Code'
 
@@ -65,6 +66,9 @@ export default function ArtifactSidebar({
     (localStorage.getItem('ws.sidebarTab') as 'instructions' | 'git' | 'artifacts' | 'files') || 'artifacts',
   )
   const [files, setFiles] = useState<ProjectFileEntry[]>([])
+  // 지시 기록 검색. 세션을 바꾸면 비운다 — 다른 세션의 검색어로 걸러진 목록은 헷갈린다.
+  const [instructionQuery, setInstructionQuery] = useState('')
+  useEffect(() => setInstructionQuery(''), [sessionId])
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [gitRepository, setGitRepository] = useState(false)
   const [preview, setPreview] = useState<ProjectFilePreview>()
@@ -299,32 +303,76 @@ export default function ArtifactSidebar({
         </button>
       </div>
 
-      {tab === 'instructions' && (
+      {tab === 'instructions' && (() => {
+        const instructions = view.entries.filter((entry) => entry.kind === 'user')
+        const shown = filterNumbered(instructions, instructionQuery)
+        const searching = instructionQuery.trim().length > 0
+        return (
         <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-3">
-          <div className="sticky top-0 z-[1] mb-1 bg-mantle/95 px-1 py-2 text-[12px] font-semibold text-subtext0 backdrop-blur">
-            지시 기록
+          <div className="sticky top-0 z-[1] mb-1 space-y-1.5 bg-mantle/95 px-1 py-2 backdrop-blur">
+            <div className="flex items-center gap-2 text-[12px] font-semibold text-subtext0">
+              <span className="flex-1">지시 기록</span>
+              {searching && (
+                <span className="font-mono text-[11px] font-normal tabular-nums text-overlay1">
+                  {shown.length}/{instructions.length}건
+                </span>
+              )}
+            </div>
+            {instructions.length > 0 && (
+              <label className="flex items-center gap-1.5 rounded-md bg-surface0/60 px-2 py-1 focus-within:bg-surface0">
+                <Search className="h-3.5 w-3.5 shrink-0 text-overlay1" />
+                <input
+                  value={instructionQuery}
+                  onChange={(e) => setInstructionQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setInstructionQuery('')
+                  }}
+                  placeholder="지시에서 찾기"
+                  spellCheck={false}
+                  aria-label="지시에서 찾기"
+                  className="min-w-0 flex-1 bg-transparent text-[12px] font-normal text-text outline-none placeholder:text-overlay0"
+                />
+                {searching && (
+                  <button type="button" onClick={() => setInstructionQuery('')} title="지우기 (Esc)" className="rounded p-0.5 text-overlay1 hover:text-text">
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </label>
+            )}
           </div>
-          {view.entries.some((entry) => entry.kind === 'user') ? (
+          {instructions.length === 0 ? (
+            <div className="px-1 py-2 text-[12px] text-overlay1">아직 지시 기록이 없습니다.</div>
+          ) : shown.length === 0 ? (
+            <div className="px-1 py-2 text-[12px] text-overlay1">«{instructionQuery.trim()}» 가 들어간 지시가 없습니다.</div>
+          ) : (
             <div className="space-y-1">
-              {view.entries.filter((entry) => entry.kind === 'user').map((entry, index) => (
+              {shown.map(({ item: entry, number }) => (
                 <button
                   key={entry.id}
                   type="button"
                   onClick={() => document.getElementById(`conversation-entry-${entry.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })}
                   className="group flex w-full items-start gap-2 rounded-lg px-2 py-2 text-left hover:bg-surface0/65"
                 >
-                  <span className="mt-0.5 shrink-0 font-mono text-[10px] text-overlay1">{index + 1}</span>
+                  {/* 걸러도 원래 순번을 보인다 — «몇 번째 지시였나» 가 기준이다 */}
+                  <span className="mt-0.5 shrink-0 font-mono text-[10px] text-overlay1">{number}</span>
                   <span className="line-clamp-3 min-w-0 text-[13px] leading-relaxed text-subtext1 group-hover:text-text">
-                    {entry.text}
+                    {searching
+                      ? highlightParts(entry.text, instructionQuery).map((part, i) =>
+                          part.match ? (
+                            <mark key={i} className="rounded-sm bg-yellow/30 text-text">{part.text}</mark>
+                          ) : (
+                            <span key={i}>{part.text}</span>
+                          ),
+                        )
+                      : entry.text}
                   </span>
                 </button>
               ))}
             </div>
-          ) : (
-            <div className="px-1 py-2 text-[12px] text-overlay1">아직 지시 기록이 없습니다.</div>
           )}
         </div>
-      )}
+        )
+      })()}
 
       {tab === 'git' && (
         <div className="min-h-0 flex-1 overflow-auto px-2.5 pb-3">

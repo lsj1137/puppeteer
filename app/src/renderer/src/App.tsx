@@ -27,6 +27,8 @@ import WorkspaceLists from './components/WorkspaceLists'
 import UsageSummary from './components/UsageSummary'
 import { limitRows, staleText } from './lib/usage-limit'
 import ConversationEntries from './components/ConversationEntries'
+import ConversationSearch from './components/ConversationSearch'
+import { useConversationSearch } from './hooks/use-conversation-search'
 import ApprovalCard from './components/ApprovalCard'
 import ArtifactSidebar from './components/ArtifactSidebar'
 import WorkspaceDialogs from './components/WorkspaceDialogs'
@@ -327,6 +329,9 @@ export default function App() {
   const theme = useTheme()
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  // 대화에서 찾기(Ctrl+F) — 열린 세션만 대상이다. 세션을 바꾸면 닫힌다.
+  const conversationSearch = useConversationSearch(scrollRef, activeSession)
+  const [searchFocus, setSearchFocus] = useState(0)
   /** 새 항목이 렌더되기 직전 사용자가 하단을 보고 있었는지. state는 렌더가 늦어 ref로 즉시 보존한다. */
   const followingBottomRef = useRef(true)
   const previousScrollSessionRef = useRef<string | undefined>(undefined)
@@ -689,13 +694,20 @@ export default function App() {
       if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'KeyB') {
         e.preventDefault()
         toggleRail()
+        return
+      }
+      // 대화 화면에서만 연다. 다시 누르면 입력칸으로 돌아가 검색어를 선택한다.
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && e.code === 'KeyF' && !showHome && activeSession) {
+        e.preventDefault()
+        conversationSearch.show()
+        setSearchFocus((n) => n + 1)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
     // toggleRail 은 현재 배치와 레일 상태를 읽는다 — 둘이 바뀌면 다시 건다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layout, railOpen])
+  }, [layout, railOpen, showHome, activeSession])
   // Alt+↑/↓ 프로젝트 이동 · Alt+←/→ 현재 프로젝트의 세션 이동
   useEffect(() => {
     const onNavigate = (event: KeyboardEvent): void => {
@@ -1307,6 +1319,19 @@ export default function App() {
             scrolled ? 'opacity-100' : 'opacity-0'
           }`}
         />
+
+        {conversationSearch.open && (
+          <ConversationSearch
+            query={conversationSearch.query}
+            count={conversationSearch.count}
+            index={conversationSearch.index}
+            focusSignal={searchFocus}
+            onQuery={conversationSearch.setQuery}
+            onNext={conversationSearch.next}
+            onPrevious={conversationSearch.previous}
+            onClose={conversationSearch.close}
+          />
+        )}
 
         {isEmpty && (
           <div className="flex flex-1 items-center justify-center">
