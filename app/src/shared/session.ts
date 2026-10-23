@@ -4,6 +4,11 @@
 export type SessionStatus =
   | 'starting'
   | 'running'
+  /**
+   * 턴은 끝났지만 CLI 프로세스가 아직 살아 있다 — 백그라운드로 돌린 작업을 기다리는 중이다.
+   * 그 작업이 끝나면 같은 프로세스가 스스로 다음 턴을 시작한다. 완료가 아니다.
+   */
+  | 'background'
   | 'waiting-input'
   | 'approval-required'
   | 'completed'

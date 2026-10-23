@@ -89,6 +89,7 @@ import puppeteerLightIcon from './assets/icons/puppeteer-icon-light-128.png'
 const STATUS: Record<SessionStatus, { label: string; color: string }> = {
   starting: { label: '시작 중', color: 'text-sky' },
   running: { label: '실행 중', color: 'text-green' },
+  background: { label: '백그라운드 작업 중', color: 'text-sky' },
   'waiting-input': { label: '입력 대기', color: 'text-yellow' },
   'approval-required': { label: '승인 대기', color: 'text-peach' },
   completed: { label: '완료', color: 'text-subtext0' },

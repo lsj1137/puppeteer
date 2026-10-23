@@ -54,6 +54,9 @@ export interface StartOptions {
  */
 const GATED_TOOLS = 'Bash|PowerShell|Write|Edit|NotebookEdit|WebFetch|WebSearch'
 
+/** `result` 뒤 이 시간 안에 프로세스가 안 끝나면 백그라운드 작업을 기다리는 것으로 본다. */
+const BACKGROUND_GRACE_MS = 3_000
+
 /**
  * Claude Code CLI 를 stream-json 으로 구동하는 어댑터.
  * 이벤트 형태는 CLI 2.1.220 실측 기준 (spike/REPORT.md).
@@ -67,6 +70,16 @@ export class ClaudeCliAdapter {
   /** 종료 상태를 이미 냈는지. result 와 exit 가 겹쳐 덮어쓰는 것을 막는다 */
   private settled = false
   private runner?: DetectedRunner
+  /**
+   * 마지막 턴의 결과. **`result` 는 «턴 끝» 이지 «프로세스 끝» 이 아니다.** 요즘 CLI 는 한 프로세스
+   * 안에서 턴을 여러 번 돈다 — 백그라운드로 돌린 작업이 끝나면 그 알림으로 스스로 다음 턴을
+   * 시작한다(2026-10 실측). 예전처럼 첫 `result` 에서 완료로 처리하면 앱이 실행 중 목록에서
+   * 빼 버려, 다음 지시가 예약되지 않고 새 프로세스로 겹쳐 돌고(중복 작업), 승인 감시가 풀려
+   * 이어지는 Bash 가 시간 초과로 막히고, worktree 자동 커밋이 작업 도중에 돌았다.
+   * 그래서 결과는 기억만 해 두고, 완료는 프로세스가 끝날 때 마지막 결과로 판정한다.
+   */
+  private lastResult?: { isError: boolean; text?: string }
+  private backgroundTimer?: ReturnType<typeof setTimeout>
 
   constructor(private readonly emit: (e: SessionEvent) => void) {}
 
@@ -126,12 +139,17 @@ export class ClaudeCliAdapter {
     })
 
     this.child.on('exit', (code) => {
+      clearTimeout(this.backgroundTimer)
       const reason = this.cleanStderr(this.stderrBuf) || `exit code ${code}`
       // 인증 실패는 stdout 이 없는 채로 정상 종료코드로 끝나기도 하므로 code 와 무관하게 검사한다
       if (this.looksLikeAuthError(reason)) {
         this.settle('auth-required', reason)
       } else if (code !== 0) {
         this.settle('failed', reason)
+      } else {
+        // 프로세스가 끝난 지금이 진짜 완료다. 마지막 턴의 결과로 판정한다.
+        const last = this.lastResult
+        this.settle(last?.isError ? 'failed' : 'completed', last?.text)
       }
     })
   }
@@ -143,6 +161,7 @@ export class ClaudeCliAdapter {
   }
 
   stop(): void {
+    clearTimeout(this.backgroundTimer)
     this.child?.kill()
     this.settle('stopped')
   }
@@ -202,6 +221,8 @@ export class ClaudeCliAdapter {
               slashCommands: Array.isArray(ev.slash_commands) ? ev.slash_commands : undefined,
             },
           })
+          // 같은 프로세스가 다음 턴을 시작했다(백그라운드 작업 알림 등). 다시 실행 중이다.
+          clearTimeout(this.backgroundTimer)
           this.emit({ t: 'status', status: 'running' })
         }
         return
@@ -278,12 +299,14 @@ export class ClaudeCliAdapter {
         const resultText = typeof ev.result === 'string' ? ev.result : ''
         if (ev.is_error && this.looksLikeAuthError(resultText)) {
           this.settle('auth-required', resultText)
-        } else {
-          this.settle(
-            ev.is_error ? 'failed' : 'completed',
-            resultText || ev.terminal_reason,
-          )
+          return
         }
+        this.lastResult = { isError: !!ev.is_error, text: resultText || ev.terminal_reason }
+        // 보통은 곧바로 프로세스가 끝난다. 잠시 뒤에도 살아 있으면 백그라운드 작업을 기다리는 것이다.
+        clearTimeout(this.backgroundTimer)
+        this.backgroundTimer = setTimeout(() => {
+          if (!this.settled) this.emit({ t: 'status', status: 'background' })
+        }, BACKGROUND_GRACE_MS)
         return
       }
     }
