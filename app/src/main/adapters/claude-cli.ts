@@ -276,9 +276,9 @@ export class ClaudeCliAdapter {
       }
 
       case 'user': {
-        const toolUseId: string =
-          (ev.message?.content ?? []).find((b: any) => b.type === 'tool_result')?.tool_use_id ?? ''
-        this.handleToolResult(toolUseId, ev.tool_use_result)
+        const block = (ev.message?.content ?? []).find((b: any) => b.type === 'tool_result')
+        const toolUseId: string = block?.tool_use_id ?? ''
+        this.handleToolResult(toolUseId, ev.tool_use_result, block?.is_error === true, toolResultText(block))
         return
       }
 
@@ -325,11 +325,24 @@ export class ClaudeCliAdapter {
    * | Bash   | 길거나(>8줄) stderr 있을 때만 log |
    * | Read / Glob / Grep | 없음 (입력·탐색이지 산출물이 아님) |
    */
-  private handleToolResult(toolUseId: string, r: any): void {
-    if (!r || typeof r !== 'object') return
-
+  /**
+   * 성공/실패는 **`tool_result.is_error`** 로만 판정한다.
+   *
+   * 예전에는 stderr 가 있으면 실패로 칠했다. 그런데 CLI 는 작업 폴더 밖으로 `cd` 하면
+   * «Shell cwd was reset to …» 를 stderr 로 붙이고, git·npm 도 정상 종료하며 stderr 에 쓴다.
+   * 실제 기록 열흘치 Bash 1,772건 중 927건이 멀쩡한 결과인데 «실패» 로 찍혔다.
+   * 반대로 진짜 실패(종료 코드 ≠ 0)는 `tool_use_result` 가 객체가 아니라 «Error: Exit code N …»
+   * **문자열** 로 와서 아무것도 표시하지 않았다(실측 2026-10-30, CLI 2.1.284).
+   */
+  private handleToolResult(toolUseId: string, r: any, isError = false, blockText = ''): void {
     const emitPreview = (ok: boolean, text: string): void => {
       this.emit({ t: 'tool-result', toolUseId, ok, preview: this.clip(text) })
+    }
+
+    if (!r || typeof r !== 'object') {
+      if (!toolUseId) return
+      emitPreview(!isError, typeof r === 'string' && r ? r : blockText)
+      return
     }
 
     // 파일 생성/수정
@@ -367,12 +380,12 @@ export class ClaudeCliAdapter {
       if (long || err) {
         this.emit({ t: 'artifact', kind: 'log', content: combined })
       }
-      emitPreview(!err, combined || '(출력 없음)')
+      emitPreview(!isError, combined || '(출력 없음)')
       return
     }
 
     // Read 등 나머지는 Artifact 로 만들지 않는다
-    emitPreview(true, '')
+    emitPreview(!isError, isError ? blockText : '')
   }
 
   /** 대화에 인라인으로 붙일 짧은 미리보기 */
@@ -389,6 +402,19 @@ export class ClaudeCliAdapter {
     const p = block.input?.file_path ?? block.input?.notebook_path
     return typeof p === 'string' ? p : undefined
   }
+}
+
+/** tool_result 블록 본문. 문자열이거나 `{type:'text', text}` 배열이다. */
+export function toolResultText(block: any): string {
+  const content = block?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map((part: any) => (typeof part === 'string' ? part : typeof part?.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('\n')
+  }
+  return ''
 }
 
 /** structuredPatch → 통합 diff 텍스트 */
