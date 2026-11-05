@@ -28,6 +28,7 @@ import type {
   ProjectWorktreeModeResult,
   WorktreeIntegrationReport,
   AgentDef,
+  ProviderId,
   RateLimitInfo,
 } from '@shared/session'
 import { ClaudeCliAdapter } from './adapters/claude-cli'
@@ -62,7 +63,7 @@ import { extractMemoryProposals, MEMORY_PROPOSAL_INSTRUCTION } from './memory-pr
 import {
   buildDelegateResultPrompt,
   extractDelegates,
-  DELEGATE_INSTRUCTION,
+  delegateInstruction,
   MAX_SUB_RUNS,
   shouldDropPendingDelegations,
   shouldHoldForDelegation,
@@ -379,7 +380,11 @@ export class SessionManager {
       hooksFileRunnerPath: toRunnerPath(join(approvalDir, 'hooks.json'), input.runner),
       allowedTools: agent?.workspace.allowedTools,
       disallowedTools: agent?.workspace.disallowedTools,
-      systemPrompt: [MEMORY_PROPOSAL_INSTRUCTION, DELEGATE_INSTRUCTION, skills]
+      systemPrompt: [
+        MEMORY_PROPOSAL_INSTRUCTION,
+        delegateInstruction(delegatableAgents(input.cwd, input.runner.provider)),
+        skills,
+      ]
         .filter(Boolean)
         .join('\n\n---\n\n'),
     })
@@ -996,8 +1001,17 @@ export class SessionManager {
     const runId = `${sessionId}:sub:${randomUUID().slice(0, 8)}`
     const agent = request.agent ? library.read(request.agent) : undefined
 
-    if (request.agent && !agent) {
-      return { ...request, ok: false, summary: `«${request.agent}» 를 찾지 못했습니다.` }
+    // 모르는 이름(CLI 내장 «Explore» 등)이면 실패시키지 않고 에이전트 없이 돌린다.
+    // 보조는 에이전트가 없어도 오케스트레이터가 읽기 전용을 강제하므로 안전하다. 결과에 그 사실을 남긴다.
+    const unknownAgent = request.agent && !agent ? request.agent : undefined
+    if (unknownAgent) {
+      request = { ...request, agent: undefined }
+      this.persistAndSend(sessionId, {
+        t: 'notice',
+        level: 'warning',
+        title: '보조 에이전트 이름을 찾지 못함',
+        text: `«${unknownAgent}» 는 Puppeteer 에이전트가 아닙니다. 에이전트 없이 읽기 전용 보조로 실행합니다.`,
+      })
     }
     // Lead 와 같은 마지막 방어선. 지침 전문이 그대로 모델에 실려 나간다.
     if (agent && !library.allowsProvider(agent, runner.provider)) {
@@ -1482,4 +1496,12 @@ export function lastRateLimit(): RateLimitInfo | undefined {
  */
 function hookDirs(runner: DetectedRunner, approvalDir: string): string[] {
   return runner.provider === 'codex-cli' ? [approvalDir] : []
+}
+
+/** 이 프로젝트·실행 환경에서 위임에 쓸 수 있는 Puppeteer 에이전트 이름 */
+function delegatableAgents(projectPath: string, provider: ProviderId): string[] {
+  return library
+    .list()
+    .filter((agent) => library.appliesTo(agent, projectPath) && library.allowsProvider(agent, provider))
+    .map((agent) => agent.name)
 }

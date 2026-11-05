@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildDelegateResultPrompt,
   extractDelegates,
+  delegateInstruction,
   MAX_SUB_RUNS,
   shouldDropPendingDelegations,
   shouldHoldForDelegation,
@@ -93,5 +94,18 @@ describe('위임 대기 중 세션 유지', () => {
 
   it('보조 run 의 실패로 대기 위임을 버리지 않는다', () => {
     expect(shouldDropPendingDelegations('failed', false)).toBe(false)
+  })
+})
+
+// 실제 사고(2026-11): 모델이 CLI 내장 서브에이전트 이름 «Explore» 를 적어 보조 3개가 모두 실패했다.
+describe('delegateInstruction', () => {
+  it('쓸 수 있는 Puppeteer 에이전트 이름을 그대로 적고, CLI 내장 이름은 막는다', () => {
+    const text = delegateInstruction(['kcc-attendance', 'kcc-sql-safe'])
+    expect(text).toContain('다음 Puppeteer 에이전트 이름만 쓸 수 있습니다: kcc-attendance, kcc-sql-safe')
+    expect(text).toContain('Explore, general-purpose, Plan')
+  })
+
+  it('쓸 수 있는 에이전트가 없으면 agent 를 생략하라고 한다', () => {
+    expect(delegateInstruction([])).toContain('agent는 생략하세요')
   })
 })

@@ -16,15 +16,31 @@ export const MAX_SUB_RUNS = 3
  */
 export const SUB_RUN_TIMEOUT_MS = 10 * 60 * 1000
 
-export const DELEGATE_INSTRUCTION = `조사·확인처럼 병렬로 나눌 수 있는 일이 있으면 직접 하지 말고 보조 Agent에게 위임할 수 있습니다. 위임하려면 응답 끝에 아래 블록을 추가하세요.
+/**
+ * 위임 지침. **쓸 수 있는 Puppeteer 에이전트 이름을 그대로 적어 준다.**
+ *
+ * 예전에는 «사용할 수 있는 Agent 이름일 때만» 이라고만 했다. 그런데 모델의 시스템 프롬프트에는
+ * CLI 에 내장된 서브에이전트 목록(Explore·general-purpose·Plan 등)이 따로 있어서, 모델이 그 이름을
+ * 적었고 보조 3개가 «찾지 못했습니다» 로 모두 실패했다(2026-11). 목록을 주고 내장 이름은 막는다.
+ */
+export function delegateInstruction(agentNames: string[]): string {
+  const agentRule = agentNames.length
+    ? `- agent에는 다음 Puppeteer 에이전트 이름만 쓸 수 있습니다: ${agentNames.join(', ')}. 마땅한 것이 없으면 생략하세요.`
+    : '- 지금 쓸 수 있는 Puppeteer 에이전트가 없습니다. agent는 생략하세요.'
+  return `조사·확인처럼 병렬로 나눌 수 있는 일이 있으면 직접 하지 말고 보조 Agent에게 위임할 수 있습니다. 위임하려면 응답 끝에 아래 블록을 추가하세요.
 \`\`\`delegate
 {"runs":[{"agent":"에이전트 이름 또는 생략","task":"보조가 할 일을 자세히"}]}
 \`\`\`
 - 블록은 사용자에게 보이지 않습니다. 위임할 때는 무엇을 맡겼는지 응답 본문에도 한 줄로 적으세요.
 - 보조는 읽기 전용입니다. 파일 수정·명령 실행이 필요한 일은 위임하지 말고 직접 하세요.
 - 한 번에 ${MAX_SUB_RUNS}개까지 위임할 수 있고 서로 동시에 실행됩니다. 서로의 결과에 의존하지 않도록 나누세요. 결과는 다음 턴에 전달되며, 그때 최종 답변을 하세요.
-- agent는 사용할 수 있는 Agent 이름일 때만 적고, 마땅한 것이 없으면 생략하세요.
+${agentRule}
+- CLI 에 내장된 서브에이전트 이름(Explore, general-purpose, Plan 등)은 여기서 쓸 수 없습니다.
 - 스스로 답할 수 있는 일은 위임하지 마세요.`
+}
+
+/** 에이전트 목록 없이 쓰는 기본 지침(테스트·호환용) */
+export const DELEGATE_INSTRUCTION = delegateInstruction([])
 
 export interface ParsedDelegate {
   /** 적용할 Puppeteer Agent 이름. 없으면 역할 정본 없이 도는 보조 run 이다. */
