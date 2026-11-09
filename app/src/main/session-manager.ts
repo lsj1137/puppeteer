@@ -72,6 +72,7 @@ import {
   type ParsedDelegate,
 } from './delegate'
 import { prompt as skillPrompt, skillsHome } from './skill-library'
+import { RENDER_INSTRUCTION } from './render-instruction'
 import {
   needsWorktreeSafetyCheck,
   orphanWorktreePaths,
@@ -383,6 +384,7 @@ export class SessionManager {
       systemPrompt: [
         MEMORY_PROPOSAL_INSTRUCTION,
         delegateInstruction(delegatableAgents(input.cwd, input.runner.provider)),
+        RENDER_INSTRUCTION,
         skills,
       ]
         .filter(Boolean)

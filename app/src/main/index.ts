@@ -1,8 +1,8 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol } from 'electron'
 import { dirname, join, extname, resolve, sep } from 'node:path'
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { detectRunners } from './runner-detect'
+import { detectRunners, listWslDistros } from './runner-detect'
 import { lastRateLimit, SessionManager } from './session-manager'
 import * as db from './db'
 import * as library from './agent-library'
@@ -12,6 +12,7 @@ import { buildFacts as buildReportFacts, buildPrompt as buildReportPrompt } from
 import * as memory from './memory'
 import * as models from './models'
 import * as cliUpdate from './cli-update'
+import { defaultRoots, handleImageRequest, IMAGE_SCHEME } from './image-protocol'
 import * as skills from './skill-library'
 import { build as buildCheckpoint } from './checkpoint'
 import { commitProjectMemory, gitHistory, isRepo, projectMemoryDirty, repairLinkedWorktrees } from './git'
@@ -58,6 +59,13 @@ function projectRootForMemoryId(id: string): string | undefined {
 let mainWindow: BrowserWindow | undefined
 const conflictResolvers = new Map<string, WorktreeConflictResolverRequest>()
 const conflictResolverWindows = new Map<string, { token: string; win: BrowserWindow }>()
+// 대화에 붙는 로컬 이미지 통로. 스킴 권한은 app ready 전에 등록해야 한다.
+protocol.registerSchemesAsPrivileged([
+  { scheme: IMAGE_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
+])
+/** 탐지된 WSL 배포판. `/tmp/...` 같은 WSL 경로 이미지를 찾을 때 쓴다. */
+let knownDistros: string[] = []
+
 const smokeMode = process.env['AGENT_WORKSPACE_SMOKE'] === '1'
 const smokeUserData = process.env['AGENT_WORKSPACE_SMOKE_USER_DATA']
 const e2eMode = process.env['AGENT_WORKSPACE_E2E'] === '1'
@@ -257,6 +265,15 @@ function createConflictResolverWindow(
 }
 
 app.whenReady().then(() => {
+  protocol.handle(IMAGE_SCHEME, (request) =>
+    handleImageRequest(request, {
+      distros: async () => {
+        if (knownDistros.length === 0 && process.platform === 'win32') knownDistros = await listWslDistros()
+        return knownDistros
+      },
+      roots: (distros) => defaultRoots(db.listProjects().map((project) => project.path), app.getPath('userData'), distros),
+    }),
+  )
   if (!hasSingleInstanceLock) return
   db.openDb()
   // 이전 앱 프로세스와 함께 승인 hook도 사라졌다. 응답할 수 없는 요청을 재노출하지 않는다.
@@ -271,7 +288,11 @@ app.whenReady().then(() => {
   ipcMain.handle('app-update:install', () => appUpdates.install())
 
   // 실행 환경 탐지 — 사용자마다 CLI 설치 위치/방식이 다르므로 강제하지 않는다
-  ipcMain.handle('runner:detect', () => detectRunners())
+  ipcMain.handle('runner:detect', async () => {
+    const runners = await detectRunners()
+    knownDistros = [...new Set(runners.flatMap((runner) => (runner.kind === 'wsl' && runner.distro ? [runner.distro] : [])))]
+    return runners
+  })
 
   ipcMain.handle('project:pick', async () => {
     const r = await dialog.showOpenDialog({ properties: ['openDirectory'] })

@@ -28,6 +28,7 @@ import UsageSummary from './components/UsageSummary'
 import { limitRows, staleText } from './lib/usage-limit'
 import ConversationEntries from './components/ConversationEntries'
 import ConversationSearch from './components/ConversationSearch'
+import { MarkdownBaseContext } from './components/RichBlocks'
 import { useConversationSearch } from './hooks/use-conversation-search'
 import ApprovalCard from './components/ApprovalCard'
 import ArtifactSidebar from './components/ArtifactSidebar'
@@ -1343,13 +1344,16 @@ export default function App() {
         )}
 
         <div className="space-y-2.5">
-          <ConversationEntries
-            view={view}
-            waitingRunIds={myApprovals.flatMap((approval) => (approval.runId ? [approval.runId] : []))}
-            selectedArtifact={selectedArtifact}
-            onSelectArtifact={focusArtifact}
-            onOpenMemory={() => setScreen('memory')}
-          />
+          {/* 대화 이미지의 상대 경로는 세션이 실제로 일하는 폴더(worktree) 기준이다 */}
+          <MarkdownBaseContext.Provider value={selected?.worktree?.path ?? active}>
+            <ConversationEntries
+              view={view}
+              waitingRunIds={myApprovals.flatMap((approval) => (approval.runId ? [approval.runId] : []))}
+              selectedArtifact={selectedArtifact}
+              onSelectArtifact={focusArtifact}
+              onOpenMemory={() => setScreen('memory')}
+            />
+          </MarkdownBaseContext.Provider>
 
           {busy && (
             <div className="flex items-center gap-2 px-0.5 text-[12px] text-subtext0">

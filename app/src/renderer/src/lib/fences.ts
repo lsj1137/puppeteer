@@ -19,6 +19,9 @@ export type Segment =
 /** 이 줄 수 이하의 코드블록은 대화에 그대로 둔다 */
 export const INLINE_MAX_LINES = 5
 
+/** 그림으로 그리는 블록. 길어도 Artifact 로 빼지 않는다 — 대화 안에서 설명과 같이 보여야 한다. */
+const RENDERED_LANGS = new Set(['mermaid', 'svg'])
+
 /** ```ts:src/a.ts → { language:'ts', path:'src/a.ts' } */
 function parseInfo(info: string): { language?: string; path?: string } {
   const s = info.trim()
@@ -60,7 +63,7 @@ export function splitFences(
         const body = fence.body.join('\n')
         const { language, path } = parseInfo(fence.info)
 
-        if (fence.body.length > INLINE_MAX_LINES) {
+        if (fence.body.length > INLINE_MAX_LINES && !RENDERED_LANGS.has((language ?? '').toLowerCase())) {
           const id = `${keyPrefix}-a${n++}`
           artifacts.push({
             id,

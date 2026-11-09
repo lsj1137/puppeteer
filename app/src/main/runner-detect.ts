@@ -80,7 +80,7 @@ async function detectWindows(provider: ProviderId, bin: string): Promise<Detecte
 }
 
 /** 설치된 WSL 배포판 목록. wsl.exe -l -q 는 UTF-16LE 로 출력한다. */
-async function listWslDistros(): Promise<string[]> {
+export async function listWslDistros(): Promise<string[]> {
   if (process.platform !== 'win32') return []
   try {
     const { stdout } = await exec('wsl.exe', ['-l', '-q'], {

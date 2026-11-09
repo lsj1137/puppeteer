@@ -35,3 +35,13 @@ describe('splitFences', () => {
     expect(out.segments).toEqual([{ type: 'md', text: '```ts\nconst a = 1\n```' }])
   })
 })
+
+describe('그림 블록', () => {
+  it('mermaid·svg 는 길어도 Artifact 로 빼지 않고 대화에 남긴다', () => {
+    const body = ['flowchart TD', 'A-->B', 'B-->C', 'C-->D', 'D-->E', 'E-->F', 'F-->G'].join('\n')
+    const { segments, artifacts } = splitFences(`설명\n\`\`\`mermaid\n${body}\n\`\`\``, 'k')
+    expect(artifacts).toEqual([])
+    expect(segments.every((segment) => segment.type === 'md')).toBe(true)
+    expect(segments.map((segment) => (segment.type === 'md' ? segment.text : '')).join('\n')).toContain('```mermaid')
+  })
+})

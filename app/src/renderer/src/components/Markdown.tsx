@@ -1,6 +1,7 @@
-import ReactMarkdown, { type Components } from 'react-markdown'
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import Code from './Code'
+import { ChatImage, MermaidBlock, SvgBlock } from './RichBlocks'
 
 /** 대화 본문용 마크다운. 긴 코드블록은 이미 Artifact 로 빠진 뒤라 여기엔 짧은 것만 온다. */
 const components: Components = {
@@ -61,8 +62,13 @@ const components: Components = {
         </code>
       )
     }
+    // 설명용 그림 블록은 코드가 아니라 그림으로 그린다.
+    if (lang === 'mermaid') return <MermaidBlock code={text} />
+    if (lang === 'svg') return <SvgBlock code={text} />
     return <Code code={text} language={lang} className="my-2" />
   },
+
+  img: ({ src, alt }) => <ChatImage src={typeof src === 'string' ? src : undefined} alt={alt} />,
 
   // code 컴포넌트에서 이미 <pre> 를 만들어 주므로 감싸지 않는다
   pre: ({ children }) => <>{children}</>,
@@ -76,9 +82,14 @@ export default function Markdown({ children }: { children: string }) {
         「1월~2월, 3월~4월」 처럼 기간을 쓰면 두 번째·세 번째 물결이 짝을 이뤄
         의도치 않게 취소선이 된다. GFM 표준인 `~~글자~~` 만 취소선으로 처리한다.
       */}
+      {/*
+        urlTransform — 기본값은 `C:\…` 를 «c: 프로토콜» 로 보고 지운다. 이미지 주소는 ChatImage 가
+        종류를 가려(로컬은 앱 전용 통로, 외부는 눌러야 불러옴, 그 밖의 스킴은 버림) 처리하므로 그대로 넘긴다.
+      */}
       <ReactMarkdown
         remarkPlugins={[[remarkGfm, { singleTilde: false }]]}
         components={components}
+        urlTransform={(url, key) => (key === 'src' ? url : defaultUrlTransform(url))}
       >
         {children}
       </ReactMarkdown>
