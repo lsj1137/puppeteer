@@ -1,7 +1,7 @@
 import { realpathSync } from 'node:fs'
 import { readFile, realpath, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { extname, win32 } from 'node:path'
+import { extname, posix, win32 } from 'node:path'
 
 /**
  * 대화에 붙는 로컬 이미지(`![설명](경로)`)를 화면에 보여주는 앱 전용 통로 `pp-image://`.
@@ -29,8 +29,19 @@ export function imageMime(path: string): string | undefined {
   return MIME[extname(path).toLowerCase()]
 }
 
-/** 모델이 쓴 경로를 Windows 에서 열 수 있는 후보 경로로 바꾼다. WSL 홈·/tmp 는 배포판마다 후보가 생긴다. */
-export function candidatePaths(raw: string, base: string | undefined, distros: string[]): string[] {
+/**
+ * 모델이 쓴 경로를 이 PC 에서 열 수 있는 후보 경로로 바꾼다.
+ *
+ * **호스트 OS 기준이다.** Windows 에서는 WSL 경로(`/mnt/c/…` → `C:\…`, `/tmp/…` → 배포판별 UNC)를 바꾸지만,
+ * macOS·Linux 에서 `/…` 는 그냥 그 경로다. 처음엔 Windows 만 보고 짜서 macOS CI 에서 `/var/…` 임시 폴더를
+ * WSL 경로로 바꾸려다 이미지를 못 찾았다(v0.5.0 릴리스 실패).
+ */
+export function candidatePaths(
+  raw: string,
+  base: string | undefined,
+  distros: string[],
+  platform: NodeJS.Platform = process.platform,
+): string[] {
   let p = raw.trim()
   if (!p) return []
   try {
@@ -38,6 +49,13 @@ export function candidatePaths(raw: string, base: string | undefined, distros: s
   } catch {
     // 이미 풀린 경로
   }
+
+  if (platform !== 'win32') {
+    p = p.replace(/^file:\/\//i, '')
+    if (p.startsWith('/')) return [posix.normalize(p)]
+    return base ? [posix.resolve(base, p)] : []
+  }
+
   p = p.replace(/^file:\/\/\/?/i, '')
 
   if (/^[A-Za-z]:[\\/]/.test(p)) return [win32.normalize(p)]
@@ -47,18 +65,22 @@ export function candidatePaths(raw: string, base: string | undefined, distros: s
   if (p.startsWith('/')) return distros.map((distro) => win32.normalize(`\\\\wsl.localhost\\${distro}${p.replace(/\//g, '\\')}`))
   if (!base) return []
   // 상대 경로: base 도 WSL 경로일 수 있다.
-  return candidatePaths(base, undefined, distros).map((root) => win32.resolve(root, p))
+  return candidatePaths(base, undefined, distros, platform).map((root) => win32.resolve(root, p))
 }
 
-function key(path: string): string {
-  return path.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase()
+/** Windows 는 대소문자·구분자를 가리지 않고, macOS·Linux 는 경로 그대로 비교한다. */
+function key(path: string, platform: NodeJS.Platform): string {
+  return platform === 'win32'
+    ? path.replace(/[\\/]+$/, '').replace(/\//g, '\\').toLowerCase()
+    : path.replace(/\/+$/, '')
 }
 
-export function isInside(path: string, roots: string[]): boolean {
-  const target = key(path)
+export function isInside(path: string, roots: string[], platform: NodeJS.Platform = process.platform): boolean {
+  const sep = platform === 'win32' ? '\\' : '/'
+  const target = key(path, platform)
   return roots.some((root) => {
-    const r = key(root)
-    return target === r || target.startsWith(`${r}\\`)
+    const r = key(root, platform)
+    return target === r || target.startsWith(`${r}${sep}`)
   })
 }
 
