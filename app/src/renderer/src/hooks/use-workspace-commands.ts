@@ -27,6 +27,7 @@ import { runnerEnvironmentLabel } from '@shared/runner'
 import type { Command } from '../components/CommandPalette'
 import { approvalNavigationPath } from '../lib/navigation'
 import { baseName, timeLabel } from '../lib/session-view'
+import { orderForSearch, searchHint } from '../lib/session-search'
 
 interface WorkspaceCommandOptions {
   selected?: StoredSession
@@ -40,6 +41,12 @@ interface WorkspaceCommandOptions {
   running: RunningSession[]
   projects: StoredProject[]
   sessions: StoredSession[]
+  /**
+   * 팔레트를 열 때 받아 온 모든 프로젝트의 세션(숨긴 것 포함). 있으면 세션 검색은 이걸로 한다.
+   * 예전엔 지금 프로젝트의 보이는 세션만 찾을 수 있었다.
+   */
+  searchSessions?: StoredSession[]
+  onOpenFoundSession?: (session: StoredSession) => void
   onNewSession: () => void
   onCheckpoint: (sessionId: string) => void
   onShowOverview: () => void
@@ -69,6 +76,8 @@ export function useWorkspaceCommands({
   running,
   projects,
   sessions,
+  searchSessions,
+  onOpenFoundSession,
   onNewSession,
   onCheckpoint,
   onShowOverview,
@@ -171,14 +180,23 @@ export function useWorkspaceCommands({
       icon: FolderOpen,
       run: () => onSelectProject(project.path),
     })),
-    ...sessions.map((session) => ({
-      id: `ss:${session.id}`,
-      group: '세션',
-      label: session.title || '(제목 없음)',
-      hint: timeLabel(session.startedAt),
-      icon: MessageSquarePlus,
-      run: () => onOpenSession(session.id),
-    })),
+    ...(searchSessions && onOpenFoundSession
+      ? orderForSearch(searchSessions, activeProjectPath).map((session) => ({
+          id: `ss:${session.id}`,
+          group: '세션',
+          label: session.title || '(제목 없음)',
+          hint: searchHint(session, projects, activeProjectPath, timeLabel(session.startedAt)),
+          icon: MessageSquarePlus,
+          run: () => onOpenFoundSession(session),
+        }))
+      : sessions.map((session) => ({
+          id: `ss:${session.id}`,
+          group: '세션',
+          label: session.title || '(제목 없음)',
+          hint: timeLabel(session.startedAt),
+          icon: MessageSquarePlus,
+          run: () => onOpenSession(session.id),
+        }))),
   ]
 }
 

@@ -364,6 +364,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('session:list', (_e, projectPath: string) => db.listSessions(projectPath))
   ipcMain.handle('session:listHidden', (_e, projectPath: string) => db.listHiddenSessions(projectPath))
+  ipcMain.handle('session:listAll', () => db.listAllSessions())
   ipcMain.handle('session:reorder', (_e, projectPath: string, ids: string[]) =>
     db.reorderSessions(projectPath, ids),
   )

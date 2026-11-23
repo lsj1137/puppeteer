@@ -635,6 +635,18 @@ export function appendEvent(sessionId: string, event: SessionEvent, runId?: stri
   ).run(sessionId, runId ?? null, event.t, JSON.stringify(event), now())
 }
 
+/** 명령 팔레트의 세션 제목 검색용 — 모든 프로젝트, 숨긴 세션 포함. */
+export function listAllSessions(limit = 2000): StoredSession[] {
+  return db.prepare(
+    `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,
+            runner_id AS runnerId, title, agent_name AS agentName, status,
+            cost_usd AS costUsd, started_at AS startedAt, ended_at AS endedAt, worktree,
+            worktree_cleaned AS worktreeCleaned, sort_order AS sortOrder, hidden,
+            approval_mode AS approvalMode, model
+     FROM session ORDER BY started_at DESC LIMIT ?`,
+  ).all(limit).map(hydrate) as unknown as StoredSession[]
+}
+
 export function listHiddenSessions(projectPath: string, limit = 50): StoredSession[] {
   return db.prepare(
     `SELECT id, project_path AS projectPath, cli_session_id AS cliSessionId,

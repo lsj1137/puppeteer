@@ -177,6 +177,16 @@ export default function App() {
   const [artifactFocusRequest, setArtifactFocusRequest] = useState(0)
   const [confirmDrop, setConfirmDrop] = useState<string>()
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // 팔레트를 열 때마다 모든 프로젝트의 세션을 새로 받는다(세션 제목 검색).
+  const [paletteSessions, setPaletteSessions] = useState<StoredSession[]>()
+  useEffect(() => {
+    if (!paletteOpen) return
+    let alive = true
+    void window.api.listAllSessions().then((all) => alive && setPaletteSessions(all))
+    return () => {
+      alive = false
+    }
+  }, [paletteOpen])
   const [changes, setChanges] = useState<ChangedFile[]>([])
   const [attachments, setAttachments] = useState<{ path: string; url: string; name: string }[]>([])
   const [dragOver, setDragOver] = useState(false)
@@ -964,6 +974,20 @@ export default function App() {
     }
   }
 
+  /**
+   * 팔레트에서 찾은 세션 열기. 숨긴 세션은 «숨긴 세션» 목록에서 열 때처럼 숨김을 풀고 연다.
+   * 다른 프로젝트 세션이면 그 프로젝트로 넘어간다.
+   */
+  async function openFoundSession(session: StoredSession): Promise<void> {
+    if (session.hidden) await window.api.setSessionHidden(session.id, false)
+    if (session.projectPath !== active) {
+      await jumpTo(session.id, session.projectPath)
+      return
+    }
+    if (session.hidden) await refresh(active)
+    await openSession(session.id, [...sessions, { ...session, hidden: false }])
+  }
+
   async function restoreHiddenSession(session: StoredSession): Promise<void> {
     const restored = await window.api.setSessionHidden(session.id, false)
     if (!restored) return
@@ -1097,6 +1121,8 @@ export default function App() {
     running,
     projects,
     sessions,
+    searchSessions: paletteSessions,
+    onOpenFoundSession: (session) => void openFoundSession(session),
     onNewSession: newSession,
     onCheckpoint: (sessionId) => {
       void window.api.buildCheckpoint(sessionId).then((draft) => draft && setCheckpoint(draft))

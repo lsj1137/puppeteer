@@ -103,6 +103,8 @@ const api = {
     ipcRenderer.invoke('session:list', projectPath),
   listHiddenSessions: (projectPath: string): Promise<StoredSession[]> =>
     ipcRenderer.invoke('session:listHidden', projectPath),
+  /** 모든 프로젝트의 세션(숨긴 것 포함). 명령 팔레트의 제목 검색용 */
+  listAllSessions: (): Promise<StoredSession[]> => ipcRenderer.invoke('session:listAll'),
   reorderSessions: (projectPath: string, ids: string[]): Promise<void> =>
     ipcRenderer.invoke('session:reorder', projectPath, ids),
   setSessionHidden: (sessionId: string, hidden: boolean): Promise<StoredSession | undefined> =>
