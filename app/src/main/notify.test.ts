@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { APP_USER_MODEL_ID, macNotificationArgs } from './notify'
+import { APP_USER_MODEL_ID, macNotificationArgs, retain } from './notify'
 
 it('uses the same Windows AppUserModelId as electron-builder', () => {
   expect(APP_USER_MODEL_ID).toBe('com.lsj1137.puppeteer')
@@ -22,5 +22,13 @@ describe('macNotificationArgs', () => {
     expect(args[1]).not.toContain(title)
     expect(args[1]).not.toContain(body)
     expect(args.slice(2)).toEqual([title, body])
+  })
+})
+
+describe('retain', () => {
+  it('keeps the newest notifications up to the limit so click events still arrive', () => {
+    const list: number[] = []
+    for (let i = 1; i <= 5; i++) retain(list, i, 3)
+    expect(list).toEqual([3, 4, 5])
   })
 })

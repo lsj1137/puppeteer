@@ -18,6 +18,24 @@ let getWindow: () => BrowserWindow | undefined = () => undefined
 /** electron-builder의 package.json build.appId와 반드시 같아야 한다. */
 export const APP_USER_MODEL_ID = 'com.lsj1137.puppeteer'
 
+/**
+ * 띄운 알림을 붙잡아 둔다. 지역 변수로만 두면 GC 가 거둬 가서, 조금 뒤나 알림 센터에서 눌렀을 때
+ * `click` 이 오지 않아 세션으로 이동하지 못했다. Windows 는 토스트가 알림 센터로 넘어갈 때도
+ * `close` 를 보내므로 `close` 로는 놓지 않고, 개수로만 자른다.
+ */
+const MAX_RETAINED = 20
+const retained: Notification[] = []
+
+export function retain<T>(list: T[], item: T, max = MAX_RETAINED): void {
+  list.push(item)
+  if (list.length > max) list.splice(0, list.length - max)
+}
+
+function release(n: Notification): void {
+  const i = retained.indexOf(n)
+  if (i >= 0) retained.splice(i, 1)
+}
+
 export function initNotifications(win: () => BrowserWindow | undefined): void {
   getWindow = win
   // AppUserModelID는 창 생성 전에 index.ts에서 환경에 맞게 한 번 설정한다.
@@ -41,9 +59,11 @@ function show(title: string, body: string, jump?: { sessionId: string; cwd: stri
 
   const n = new Notification({ title, body, silent: false })
   n.on('failed', () => {
+    release(n)
     if (process.platform === 'darwin') showMacFallback(title, body)
   })
   n.on('click', () => {
+    release(n)
     const win = getWindow()
     if (!win) return
     if (win.isMinimized()) win.restore()
@@ -51,6 +71,7 @@ function show(title: string, body: string, jump?: { sessionId: string; cwd: stri
     win.focus()
     if (jump) win.webContents.send('notify:jump', jump)
   })
+  retain(retained, n)
   n.show()
 }
 
