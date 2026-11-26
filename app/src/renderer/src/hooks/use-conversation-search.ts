@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { COLLAPSED_ATTR, REVEAL_EVENT } from '../lib/collapse'
 import { matchOffsets } from '../lib/text-search'
 
 const ALL = 'conversation-search'
@@ -63,6 +64,13 @@ export function useConversationSearch(root: RefObject<HTMLElement | null>, reset
       const range = ranges.current[current]
       const container = root.current
       if (!range || !container) return
+      // 접힌 긴 입력 안의 일치면 먼저 편다. 펴면 대화가 바뀌어 다시 찾기가 돌고, 그때 자리를 잡는다.
+      const folded = range.startContainer.parentElement?.closest(`[${COLLAPSED_ATTR}]`)
+      if (folded) {
+        folded.dispatchEvent(new Event(REVEAL_EVENT))
+        requestAnimationFrame(() => scrollTo(current))
+        return
+      }
       const rect = range.getBoundingClientRect()
       const box = container.getBoundingClientRect()
       // 이미 화면 안쪽(위아래 여유 포함)이면 움직이지 않는다. 다음 일치로 넘길 때 화면이 덜 흔들린다.

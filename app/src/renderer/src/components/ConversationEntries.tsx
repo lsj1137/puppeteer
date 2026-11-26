@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   AlertTriangle,
   Check,
@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import type { MemoryProposal } from '@shared/session'
 import type { DelegationRun, SessionView } from '../lib/session-view'
+import { COLLAPSED_ATTR, PREVIEW_LINES, REVEAL_EVENT, isLongInput, lineTotal } from '../lib/collapse'
 import { entryDomId } from '../lib/scroll'
 import { artifactTitle, lineCount } from './ArtifactPanel'
 import Markdown from './Markdown'
@@ -56,16 +57,7 @@ export default function ConversationEntries({
 
       {view.entries.map((entry) => {
         if (entry.kind === 'user') {
-          return (
-            <div id={entryDomId(entry.id)} key={entry.id} className="min-w-0 max-w-full scroll-mt-6 rounded-lg bg-surface0/50 px-3.5 py-2.5">
-              <div className="mb-1 text-[11px] font-medium uppercase tracking-wider text-overlay1">
-                나
-              </div>
-              <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-sm text-text [overflow-wrap:anywhere]">
-                {entry.text}
-              </div>
-            </div>
-          )
+          return <UserMessage key={entry.id} id={entry.id} text={entry.text} />
         }
         if (entry.kind === 'tool') {
           return (
@@ -152,6 +144,57 @@ export default function ConversationEntries({
         )
       })}
     </>
+  )
+}
+
+/**
+ * 사용자 입력. 50줄을 넘으면 앞부분만 보이게 접는다.
+ * 글자는 DOM 에 그대로 두고 높이만 자른다 — 대화 찾기가 접힌 부분도 찾고, 찾으면 `REVEAL_EVENT` 로 편다.
+ */
+function UserMessage({ id, text }: { id: string; text: string }) {
+  const long = isLongInput(text)
+  const [open, setOpen] = useState(false)
+  const body = useRef<HTMLDivElement>(null)
+  const collapsed = long && !open
+
+  useEffect(() => {
+    const node = body.current
+    if (!node || !collapsed) return
+    const reveal = (): void => setOpen(true)
+    node.addEventListener(REVEAL_EVENT, reveal)
+    return () => node.removeEventListener(REVEAL_EVENT, reveal)
+  }, [collapsed])
+
+  return (
+    <div id={entryDomId(id)} className="min-w-0 max-w-full scroll-mt-6 rounded-lg bg-surface0/50 px-3.5 py-2.5">
+      <div className="mb-1 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-overlay1">
+        <span>나</span>
+        {long && <span className="font-mono normal-case tracking-normal">{lineTotal(text)}줄</span>}
+      </div>
+      <div
+        ref={body}
+        {...(collapsed ? { [COLLAPSED_ATTR]: 'true' } : {})}
+        style={collapsed ? { maxHeight: `${PREVIEW_LINES * 1.25}rem` } : undefined}
+        className={`relative min-w-0 max-w-full whitespace-pre-wrap break-words text-sm leading-5 text-text [overflow-wrap:anywhere] ${
+          collapsed ? 'overflow-hidden' : ''
+        }`}
+      >
+        {text}
+        {collapsed && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-surface0 to-transparent" />
+        )}
+      </div>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen((current) => !current)}
+          className="mt-1.5 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-overlay1 hover:bg-surface0 hover:text-text"
+        >
+          {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          {open ? '접기' : `펼치기 · ${lineTotal(text) - PREVIEW_LINES}줄 더`}
+        </button>
+      )}
+    </div>
   )
 }
 
