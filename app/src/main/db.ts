@@ -629,10 +629,12 @@ export function deleteSession(id: string): void {
 
 // ── 이벤트 ──────────────────────────────────────────────────
 
-export function appendEvent(sessionId: string, event: SessionEvent, runId?: string): void {
-  db.prepare(
+/** 저장한 이벤트의 id 를 돌려준다. 렌더러가 DB 복원과 실시간 수신을 겹치지 않게 잇는 데 쓴다. */
+export function appendEvent(sessionId: string, event: SessionEvent, runId?: string): number {
+  const result = db.prepare(
     'INSERT INTO event (session_id, run_id, t, payload, created_at) VALUES (?, ?, ?, ?, ?)',
   ).run(sessionId, runId ?? null, event.t, JSON.stringify(event), now())
+  return Number(result.lastInsertRowid)
 }
 
 /** 명령 팔레트의 세션 제목 검색용 — 모든 프로젝트, 숨긴 세션 포함. */

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import type { StoredProject, StoredSession } from '@shared/session'
-import type { SessionView } from '../lib/session-view'
 
 type Screen = 'project' | 'overview' | 'agents' | 'memory' | 'skills'
 type Attachment = { path: string; url: string; name: string }
@@ -10,7 +9,6 @@ interface Options {
   activeProjectPath?: string
   activeSessionId?: string
   sessions: StoredSession[]
-  views: Record<string, SessionView>
   forgetSessionView: (sessionId: string) => void
   refresh: (projectPath?: string) => Promise<void>
   restoreSessionView: (sessionId: string) => Promise<void>
@@ -36,7 +34,6 @@ export function useWorkspaceNavigation(options: Options) {
     activeProjectPath,
     activeSessionId,
     sessions,
-    views,
     forgetSessionView,
     refresh,
     restoreSessionView,
@@ -55,8 +52,6 @@ export function useWorkspaceNavigation(options: Options) {
     setSelectedArtifact,
     setSessions,
   } = options
-  const viewsRef = useRef(views)
-  viewsRef.current = views
   const sessionsRef = useRef(sessions)
   sessionsRef.current = sessions
   /** 빠르게 프로젝트를 바꿀 때 이전 목록 응답이 새 선택을 덮지 않게 한다. */
@@ -72,7 +67,8 @@ export function useWorkspaceNavigation(options: Options) {
       setScrolled(false)
       setActiveSessionId(id)
       setSelectedArtifact(undefined)
-      if (!viewsRef.current[id]) await restoreSessionView(id)
+      // 화면이 있어도 실시간 이벤트로만 만들어졌으면 앞부분이 비어 있다. 복원은 한 번만 실제로 읽는다.
+      await restoreSessionView(id)
     },
     [
       restoreSessionView,

@@ -1448,8 +1448,8 @@ export class SessionManager {
   }
 
   private persistAndSend(sessionId: string, event: SessionEvent, runId?: string): void {
-    db.appendEvent(sessionId, event, runId)
-    this.getWindow()?.webContents.send('session:event', { sessionId, runId, event })
+    const eventId = db.appendEvent(sessionId, event, runId)
+    this.getWindow()?.webContents.send('session:event', { sessionId, runId, eventId, event })
   }
 }
 

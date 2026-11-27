@@ -50,6 +50,8 @@ export interface SessionEventEnvelope {
   sessionId: string
   /** 이벤트를 낸 run. 비어 있으면 Lead run이다. */
   runId?: string
+  /** DB 이벤트 id. 복원 중에 도착한 이벤트가 DB 기록과 겹치는지 가리는 데 쓴다. */
+  eventId?: number
   event: SessionEvent
 }
 

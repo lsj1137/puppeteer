@@ -454,7 +454,6 @@ export default function App() {
     activeProjectPath: active,
     activeSessionId: activeSession,
     sessions,
-    views,
     forgetSessionView,
     refresh,
     restoreSessionView,
